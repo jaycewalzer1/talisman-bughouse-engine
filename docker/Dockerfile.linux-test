@@ -1,0 +1,5 @@
+FROM ubuntu:24.04
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq g++-14 cmake ninja-build git curl ca-certificates python3 >/dev/null
+ARG ORT=1.23.2
+RUN curl -sSL https://github.com/microsoft/onnxruntime/releases/download/v${ORT}/onnxruntime-linux-aarch64-${ORT}.tgz | tar xz -C /opt && mv /opt/onnxruntime-linux-aarch64-${ORT} /opt/onnxruntime
+ENV CC=gcc-14 CXX=g++-14 ONNXRuntime_ROOT=/opt/onnxruntime

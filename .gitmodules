@@ -1,0 +1,6 @@
+[submodule "third_party/hivemind"]
+	path = third_party/hivemind
+	url = https://github.com/aminwoo/hivemind.git
+[submodule "third_party/Fairy-Stockfish"]
+	path = third_party/Fairy-Stockfish
+	url = https://github.com/fairy-stockfish/Fairy-Stockfish.git
