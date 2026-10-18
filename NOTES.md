@@ -42,6 +42,21 @@ cmake --build build-ninja
 - macOS ASan is unusable here (runtime hangs in InitializeShadowMemory before main); use UBSan or Linux ASan in Docker.
 - Linux test image: `docker/Dockerfile.linux-test` (ubuntu:24.04 + g++-14 + ORT 1.23.2 aarch64); build: `docker build -t talisman-linux -f docker/Dockerfile.linux-test docker`.
 
+## Policy-index parity (2026-10-18)
+Tools: `tools/cpp/build.sh` → `tools/cpp/policy_dump` (engine indices per legal move);
+`.venv/bin/python tools/policy_parity.py --random 2000` (diff vs training labels);
+`.venv/bin/python tools/probe_policy_conventions.py` (which index the net learned). Run from repo root.
+
+Parity over 2008 positions (~107k legal moves): normal, drops, en passant, N/Q promotions all match. Mismatches, 100% of cases:
+- **Castling**: Python labels `e1g1`/`e1c1` (1348/3140); engine `get_fast_policy_index` uses Fairy's raw king→rook to_sq = `e1h1`/`e1a1` (1412/3268).
+- **Pass**: Python `label_to_index['pass']` = 63 (make_map has 64 duplicate 'pass' slots; dict keeps last); engine = 0.
+- R/B underpromotions: absent from both (by design; no policy planes).
+
+Training data is internally inconsistent: supervised labels (generate_planes, Python) use 63/e1g1; self-play targets (selfplay.cc marginal_policy) use 0/e1h1.
+**The shipped it04 net learned the engine convention**: pass@0 mean legal-rank 0.17 vs pass@63 1.00 (logit gap ≈ −11);
+O-O@e1h1 0.59 vs @e1g1 0.97. O-O-O inconclusive on random positions (both ~bottom) — recheck on real game positions.
+⇒ Engine inference is consistent with this net. Fix belongs on the **Python side** (generate_planes + make_map consumers: infer_from_fen, search_training_fen, inspect_data_loader, analyze_training_data, verify_augmentation) → canonicalize to pass=0, castling=king→rook.
+
 ## Week 1–2 TODO
 - [x] Reproduce C++ test failures on Linux (Docker) to classify mac-only vs upstream
 - [x] Root-cause selection starvation (finite-math) — fixed + compile-time guard (d80c337)
@@ -49,6 +64,8 @@ cmake --build build-ninja
 - [ ] Fork hivemind on GitHub, push `talisman/baseline-fixes`, repoint .gitmodules
 - [ ] Report finite-math bug upstream
 - [ ] Count params / document architecture from checkpoint
-- [ ] Python↔C++ parity harness (same positions → compare policy/value), incl. waiting, castling, drops, transfers
-- [ ] Failing tests for waiting + castling policy-index mismatches, then fix
+- [x] Policy-index parity harness (castling, pass, drops, promotions, ep)
+- [ ] Input-plane + value parity: Python board2planes vs C++ planes.cc on same positions (incl. pockets, clocks, time-advantage, promoted pieces)
+- [ ] Recheck O-O-O convention on real game positions
+- [ ] Failing Python tests for pass/castling labels, then fix Python side to engine convention
 - [ ] Fairy-Stockfish vs Hivemind legal-move diff
