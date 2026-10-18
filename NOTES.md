@@ -59,6 +59,14 @@ O-O@e1h1 0.59 vs @e1g1 0.97. O-O-O inconclusive on random positions (both ~botto
 Note: `tests/data/test_generate_planes.py` checked pass at index 0 while data used 63, so its both-boards-pass check was vacuous before this fix.
 ⇒ Engine inference is consistent with this net. Fix belonged on the **Python side** (generate_planes + make_map consumers: infer_from_fen, search_training_fen, inspect_data_loader, analyze_training_data, verify_augmentation) → canonicalize to pass=0, castling=king→rook.
 
+## Input-plane + value parity (2026-10-18)
+Tool: `tools/cpp/planes_dump.cc` (replays moves on engine Board, dumps board_to_planes + C++ Engine outputs);
+`.venv/bin/python tools/planes_parity.py --games 500` (replays the same games through BughouseBoard/board2planes, compares channels, values, top-1 legal move).
+- C++ ORT engine vs Python ORT on identical planes: value Δ ≤ 2e-6, policy Δ ≤ 3e-5 → inference path is sound.
+- Before fix: 277/505 positions differed in 3 channels/board: ep_square (python-chess sets after any double push; Fairy only if ep legal), last_to after castling (g1 vs h1), halfmove_clock (pawn drops reset in Fairy, not python-chess). End-to-end value Δ up to 0.17; 18/998 top-1 moves differed.
+- Fixed in hivemind (board2planes.py, board.py) following the engine; 3005 positions (seed 1): 0 channel mismatches, 5981/5981 top-1 agree.
+- **Not covered**: time-advantage *computation* (plane is fed from Python's clocks to both sides; the C++ clock→flag logic lives in UCI/search — check in arena work), board-swap/flip augmentation paths, FP16/TensorRT backend (PACE).
+
 ## Week 1–2 TODO
 - [x] Reproduce C++ test failures on Linux (Docker) to classify mac-only vs upstream
 - [x] Root-cause selection starvation (finite-math) — fixed + compile-time guard (d80c337)
@@ -67,7 +75,9 @@ Note: `tests/data/test_generate_planes.py` checked pass at index 0 while data us
 - [ ] Report finite-math bug upstream
 - [ ] Count params / document architecture from checkpoint
 - [x] Policy-index parity harness (castling, pass, drops, promotions, ep)
-- [ ] Input-plane + value parity: Python board2planes vs C++ planes.cc on same positions (incl. pockets, clocks, time-advantage, promoted pieces)
+- [x] Input-plane + value parity (board2planes ↔ board_to_planes, Python ORT ↔ C++ Engine)
+- [ ] Time-advantage flag: C++ clock→flag logic vs Python `time_advantage` (do with 4-clock runner)
+- [ ] Re-run parity on PACE with TensorRT FP16 backend
 - [ ] Recheck O-O-O convention on real game positions
 - [x] Python tests for pass/castling labels + fix Python side to engine convention
 - [x] Stale `test_default_validation_fraction` (0.10→0.05 in 4614b55). Python suite: 91 pass, 1 skip
