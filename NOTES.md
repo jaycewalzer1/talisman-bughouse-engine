@@ -55,7 +55,9 @@ Parity over 2008 positions (~107k legal moves): normal, drops, en passant, N/Q p
 Training data is internally inconsistent: supervised labels (generate_planes, Python) use 63/e1g1; self-play targets (selfplay.cc marginal_policy) use 0/e1h1.
 **The shipped it04 net learned the engine convention**: pass@0 mean legal-rank 0.17 vs pass@63 1.00 (logit gap ≈ −11);
 O-O@e1h1 0.59 vs @e1g1 0.97. O-O-O inconclusive on random positions (both ~bottom) — recheck on real game positions.
-⇒ Engine inference is consistent with this net. Fix belongs on the **Python side** (generate_planes + make_map consumers: infer_from_fen, search_training_fen, inspect_data_loader, analyze_training_data, verify_augmentation) → canonicalize to pass=0, castling=king→rook.
+**Fixed in hivemind commit after d80c337 (see `git -C third_party/hivemind log`)**: `move2planes.policy_label` + `make_label_index`; parity now 100% on representable moves (R/B underpromotions reported as `unrepresented`, by design).
+Note: `tests/data/test_generate_planes.py` checked pass at index 0 while data used 63, so its both-boards-pass check was vacuous before this fix.
+⇒ Engine inference is consistent with this net. Fix belonged on the **Python side** (generate_planes + make_map consumers: infer_from_fen, search_training_fen, inspect_data_loader, analyze_training_data, verify_augmentation) → canonicalize to pass=0, castling=king→rook.
 
 ## Week 1–2 TODO
 - [x] Reproduce C++ test failures on Linux (Docker) to classify mac-only vs upstream
@@ -67,5 +69,7 @@ O-O@e1h1 0.59 vs @e1g1 0.97. O-O-O inconclusive on random positions (both ~botto
 - [x] Policy-index parity harness (castling, pass, drops, promotions, ep)
 - [ ] Input-plane + value parity: Python board2planes vs C++ planes.cc on same positions (incl. pockets, clocks, time-advantage, promoted pieces)
 - [ ] Recheck O-O-O convention on real game positions
-- [ ] Failing Python tests for pass/castling labels, then fix Python side to engine convention
+- [x] Python tests for pass/castling labels + fix Python side to engine convention
+- [x] Stale `test_default_validation_fraction` (0.10→0.05 in 4614b55). Python suite: 91 pass, 1 skip
+- [ ] Regenerate any supervised planes made with the old labels (none exist locally)
 - [ ] Fairy-Stockfish vs Hivemind legal-move diff

@@ -1,8 +1,7 @@
 """Compare training-side (Python) and engine-side (C++) policy indices.
 
-Training labels come from hivemind.data.generate_planes: python-chess UCI,
-mirrored for Black, queen promotions stripped, looked up in
-{label: index for index, label in enumerate(make_map())}. The engine index
+Training labels come from hivemind.domain.move2planes.policy_label and
+make_label_index, which hivemind.data.generate_planes uses. The engine index
 comes from get_fast_policy_index via tools/cpp/policy_dump.
 
 Usage: .venv/bin/python tools/policy_parity.py [--random N] [--seed S]
@@ -18,7 +17,7 @@ from pathlib import Path
 import chess
 from chess.variant import CrazyhouseBoard
 
-from hivemind.domain.move2planes import make_map, mirrorMoveUCI
+from hivemind.domain.move2planes import make_label_index, policy_label
 
 ROOT = Path(__file__).resolve().parents[1]
 DUMP = ROOT / "tools" / "cpp" / "policy_dump"
@@ -67,15 +66,6 @@ def random_position(rng: random.Random) -> CrazyhouseBoard:
     return board
 
 
-def training_label(board: CrazyhouseBoard, move: chess.Move) -> str:
-    label = move.uci()
-    if board.turn == chess.BLACK:
-        label = mirrorMoveUCI(label)
-    if len(label) == 5 and label[-1] != "n":
-        label = label[:-1]
-    return label
-
-
 def run_dump(lines):
     out = subprocess.run(
         [str(DUMP)], input="\n".join(lines) + "\n",
@@ -94,7 +84,7 @@ def main():
     parser.add_argument("--examples", type=int, default=3)
     args = parser.parse_args()
 
-    label_to_index = {label: index for index, label in enumerate(make_map())}
+    label_to_index = make_label_index()
     rng = random.Random(args.seed)
     boards = [CrazyhouseBoard(fen) for fen in TARGETED]
     boards += [random_position(rng) for _ in range(args.random)]
@@ -123,10 +113,15 @@ def main():
                         else "en_passant" if board.is_en_passant(move)
                         else "normal")
                 color = "w" if board.turn == chess.WHITE else "b"
-                label = training_label(board, move)
+                label = policy_label(board, move)
                 py_idx = label_to_index.get(label, -1)
                 if uci not in engine:
-                    record(("missing_in_engine", kind, color), f"{uci} | {board.fen()}")
+                    # The engine filters R/B underpromotions (no policy planes);
+                    # training folds them into the queen-promotion slot.
+                    if move.promotion in (chess.ROOK, chess.BISHOP):
+                        stats[("unrepresented_underpromotion", kind, color)] += 1
+                    else:
+                        record(("missing_in_engine", kind, color), f"{uci} | {board.fen()}")
                     continue
                 cpp_idx = engine[uci][1]
                 if cpp_idx == py_idx:
@@ -148,7 +143,7 @@ def main():
     width = max(len(" ".join(k)) for k in stats)
     for key in sorted(stats):
         print(f"  {' '.join(key):<{width}}  {stats[key]}")
-    bad = {k: v for k, v in examples.items() if k[0] != "match"}
+    bad = {k: v for k, v in examples.items() if v}
     for key, items in sorted(bad.items()):
         print(f"\n{' '.join(key)}:")
         for item in items:
