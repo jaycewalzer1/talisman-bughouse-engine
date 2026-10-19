@@ -1,7 +1,7 @@
 # talisman-bughouse-engine — working notes
 
 ## Layout
-- `third_party/hivemind` — submodule, pinned at `1d01d6d` (the commit cited in the proposal). Do not edit in place; fixes go on a branch/fork.
+- `third_party/hivemind` — submodule tracking the fork `jaycewalzer1/hivemind`, branch `talisman/baseline-fixes` (based on `1d01d6d`, the commit cited in the proposal).
 - `third_party/Fairy-Stockfish` — submodule at `9f778da` (upstream master, 2026-09-23). Note Hivemind also vendors its own trimmed Fairy-Stockfish copy under `engine/src/Fairy-Stockfish`.
 - `.venv` — project Python env (3.13, macOS PyPI wheels; torch 2.14.1 with MPS). Upstream `uv.lock` pins CUDA torch and cannot resolve on macOS, so we don't use `uv run` inside the submodule.
 
@@ -34,7 +34,7 @@ cmake --build build-ninja
 - C++ tests (upstream flags, macOS/Clang): 283/296; 13 MCTS-selection failures, 2 segfaults; engine starved (24 nodes/3 s, 3.3M rejected selections).
 - **Root cause: `-Ofast` ⇒ `-ffinite-math-only`.** Selection seeds `bestScore = -infinity` (node.cc) and the solver uses infinity sentinels; Clang folds those comparisons, so selection returns nullptr.
   Evidence: Linux GCC 14 (Docker, Ubuntu 24.04 arm64) passes 294/296 with the same flags; Mac at `-O2` passes (UBSan clean); Mac `-Ofast -fno-finite-math-only` passes 294/296.
-  Fix: commit `d80c337` on branch `talisman/baseline-fixes` in the hivemind submodule — `-fno-finite-math-only` + `#error` guard on `__FINITE_MATH_ONLY__` in search_params.h. **Local-only commit**: push to a fork before cloning this repo elsewhere (PACE).
+  Fix: commit `d80c337` on branch `talisman/baseline-fixes` in the hivemind submodule — `-fno-finite-math-only` + `#error` guard on `__FINITE_MATH_ONLY__` in search_params.h. Pushed to the fork `jaycewalzer1/hivemind`.
   After fix: 657 nodes/3 s (~213 nps, network-bound), 16 rejected selections.
   GCC passing is luck, not correctness — keep the flag on all platforms (PACE too).
 - The 2 stale tests (PW exponent retune; FPU-dependent tie-break) are fixed in `d80c337`. **296/296 on macOS Clang 17 and Linux GCC 14.**
@@ -79,7 +79,7 @@ Drafts in `docs/upstream/` (not filed). Need fork links filled in.
 - [x] Reproduce C++ test failures on Linux (Docker) to classify mac-only vs upstream
 - [x] Root-cause selection starvation (finite-math) — fixed + compile-time guard (d80c337)
 - [x] Fix/update the 2 stale tests
-- [ ] Fork hivemind on GitHub, push `talisman/baseline-fixes`, repoint .gitmodules
+- [x] Fork hivemind (`jaycewalzer1/hivemind`), push `talisman/baseline-fixes`, repoint .gitmodules
 - [ ] File upstream reports (drafts in docs/upstream/) — needs user OK
 - [x] Count params / document architecture from checkpoint
 - [x] Policy-index parity harness (castling, pass, drops, promotions, ep)

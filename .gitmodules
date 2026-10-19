@@ -1,6 +1,7 @@
 [submodule "third_party/hivemind"]
 	path = third_party/hivemind
-	url = https://github.com/aminwoo/hivemind.git
+	url = https://github.com/jaycewalzer1/hivemind.git
+	branch = talisman/baseline-fixes
 [submodule "third_party/Fairy-Stockfish"]
 	path = third_party/Fairy-Stockfish
 	url = https://github.com/fairy-stockfish/Fairy-Stockfish.git
