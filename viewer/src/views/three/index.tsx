@@ -1,7 +1,7 @@
 // Entry point of the 3D view (lazy-loaded by App.tsx). Canvas + HTML overlays.
-// The scene renders at a fixed low internal resolution (~STYLE.render.width x height pixels, same
-// aspect as the window) and the browser upscales the canvas nearest-neighbour: PS2 framebuffer look,
-// and cheap enough for integrated GPUs. No shadow maps, no MSAA, no tone mapping (the night palette is set directly in the materials).
+// The scene renders at the full device pixel ratio (capped by STYLE.render.maxDpr), antialiased by
+// the composer's MSAA: a clean cel-cartoon frame. No shadow maps, no tone mapping (the palette is
+// set directly in the materials).
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { STYLE } from './style.config'
@@ -9,20 +9,24 @@ import { Scene } from './Scene'
 import { Hud } from './hud/Hud'
 import { CommsLog } from './graffiti/CommsLog'
 import { useView } from './viewStore'
+import { outlineShared } from './materials/outline'
+import { retroLight } from './materials/retroMaterial'
 
 const Effects = lazy(() => import('./Effects'))
 
-/** Pick a dpr so the drawing buffer holds ~render.width x render.height pixels at any window size. */
-function renderDpr(w: number, h: number): number {
-  const { width, height } = STYLE.render
-  const target = Math.sqrt((width * height) / Math.max(1, w * h))
-  return Math.min(target, window.devicePixelRatio || 1)
+/** Full device pixel ratio, capped. */
+function renderDpr(): number {
+  return Math.min(window.devicePixelRatio || 1, STYLE.render.maxDpr)
 }
 
+/** Keeps the outline hulls' pixel width and the retro resolution uniform in sync with the buffer. */
 function RenderScale() {
   const size = useThree(s => s.size)
-  const setDpr = useThree(s => s.setDpr)
-  useEffect(() => { setDpr(renderDpr(size.width, size.height)) }, [size.width, size.height, setDpr])
+  const dpr = useThree(s => s.viewport.dpr)
+  useEffect(() => {
+    outlineShared.viewHeight.value = size.height * dpr
+    retroLight.resolution.value = [size.width * dpr, size.height * dpr]
+  }, [size.width, size.height, dpr])
   return null
 }
 
@@ -64,8 +68,7 @@ interface ThreeViewProps {
 }
 
 export default function ThreeView({ thumb = false, paused = false }: ThreeViewProps) {
-  // first guess from the window; RenderScale corrects it to the canvas size right after mount
-  const [initialDpr] = useState(() => renderDpr(window.innerWidth, window.innerHeight))
+  const [initialDpr] = useState(renderDpr)
   // low-rate rendering only kicks in once the shrink animation has finished
   const [settled, setSettled] = useState(thumb)
   useEffect(() => {
@@ -89,9 +92,9 @@ export default function ThreeView({ thumb = false, paused = false }: ThreeViewPr
         // thumbnail is a CSS scale of this layer, and must not shrink the drawing buffer / composer
         resize={{ offsetSize: true }}
         dpr={initialDpr}
+        // the composer does the MSAA; the default framebuffer itself needs none
         gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ fov: 45, near: 0.05, far: 140, position: [0, 2.6, 6.8] }}
-        onCreated={({ gl }) => { gl.domElement.style.imageRendering = STYLE.render.pixelated ? 'pixelated' : 'auto' }}
       >
         <RenderScale />
         <ClockKeeper />

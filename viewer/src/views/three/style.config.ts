@@ -3,52 +3,67 @@
 
 export const STYLE = {
   render: {
-    width: 800,             // internal render resolution; upscaled nearest-neighbour to the window
-    height: 560,            // (640x448 read too crunchy with the grimy textures)
-    pixelated: true,        // false = smooth (bilinear) upscale
+    maxDpr: 2,              // full device-pixel-ratio render, capped (2 = retina; 1.5 helps weak iGPUs)
+    msaa: 0,                // composer multisample count (0 = off -> SMAA). >0 rendered a blank frame on Apple M-series + postprocessing 6.37; SMAA is cheaper anyway
+    smaa: true,             // post antialiasing when msaa is 0
   },
   post: {
     bloom: true,            // only things brighter than ~1.0 (lamp bulbs, neon, train windows) bloom
-    bloomIntensity: 0.55,
-    bloomThreshold: 0.86,
-    bloomSmoothing: 0.12,
-    bloomRadius: 0.6,
-    grain: true,            // film grain (postprocessing Noise, screen-blended)
-    grainOpacity: 0.16,
-    dither: true,
-    ditherStrength: 0.3,    // 0..1, ordered 4x4 Bayer
-    colorLevels: 32,        // quantization steps per channel (lower = crunchier)
-    vignette: true,
-    vignetteOffset: 0.22,
-    vignetteDarkness: 0.78,
+    bloomIntensity: 0.35,
+    bloomThreshold: 0.9,
+    bloomSmoothing: 0.1,
+    bloomRadius: 0.5,
+    inkEdges: true,         // ink lines from the depth buffer (silhouettes + creases of the set)
+    inkWidth: 1.75,         // CSS pixels (scaled by dpr)
+    inkSilhouette: 0.035,   // relative depth jump that draws a line
+    inkCrease: 0.025,       // relative depth bend that draws a crease line
+    inkStrength: 0.92,
+    inkFadeNear: 16,        // lines fade with distance (far skyline stays soft)
+    inkFadeFar: 42,
+    vignette: true,         // gentle, optional
+    vignetteOffset: 0.35,
+    vignetteDarkness: 0.4,
+  },
+  toon: {
+    enabled: true,          // false = smooth Gouraud lighting (old look) instead of 2-tone cel bands
+    shadowTone: 0.58,       // shadow band brightness relative to the lit band (0..1)
+    threshold: 0.32,        // N.L above this = lit band
+    softness: 0.03,         // width of the band edge (0 = razor; a hair keeps it antialiased)
+    shadowTint: '#7d7fb8',  // the shadow band is tinted cool (cel painters' blue-violet shadows)
+    outlines: true,         // inverted-hull ink outlines on characters / pieces / big props
+    outlineWidth: 2.4,      // pixels at 1080p
+    inkColor: '#14110f',
+    paintedTextures: true,  // set textures painted cel-style (flat fields + ink lines); false = old grimy noise
   },
   material: {
     vertexSnap: 0,          // 0 = off (PS2-clean). PS1 wobble would be ~ 160
-    ambient: 0.75,          // cool blue night ambient (colour: STYLE.world.ambientSky/Ground)
-    keyStrength: 0.9,       // warm sodium key from the work lamp overhead (colour: STYLE.world.keyColor)
-    chrome: 0.6,            // global multiplier for chrome/env shine (grimy: less bling)
+    ambient: 0.95,          // cool blue night ambient (colour: STYLE.world.ambientSky/Ground)
+    keyStrength: 0.85,      // warm sodium key from the work lamp overhead (colour: STYLE.world.keyColor)
+    chrome: 0.5,            // global multiplier for chrome/env shine (grimy: less bling)
   },
   world: {
-    fogNear: 9,
-    fogFar: 36,
-    skyTop: '#04060d',      // night sky gradient (top -> horizon -> bottom)
-    skyHorizon: '#3b2a24',  // faint orange city glow just above the horizon
-    skyBottom: '#0b0e14',
-    fogColor: '#151a23',    // dark blue-grey; the sky melts into it right at the horizon
-    keyColor: '#ffb469',    // sodium key light (shared retroLight uniform)
-    ambientSky: '#5468a0',  // cool blue hemisphere ambient, from above
-    ambientGround: '#17161c',
+    fogNear: 16,            // painted-background haze, not murk
+    fogFar: 62,
+    skyTop: '#1d2442',      // soft painted night gradient (top -> horizon -> bottom)
+    skyHorizon: '#8c5d4a',  // dusty rust city glow at the horizon
+    skyBottom: '#23252e',
+    fogColor: '#4a4454',    // warm grey-plum; the sky melts into it right at the horizon
+    keyColor: '#f2c48c',    // sodium key light (shared retroLight uniform), softened for cel bands
+    ambientSky: '#8890b8',  // cool flat ambient (toon uses a fixed mix of sky/ground, no gradient)
+    ambientGround: '#3c3644',
     blobShadows: true,
     wetGround: true,        // glossy puddle overlay that reflects the lamps (one cheap transparent plane)
     puddleShine: 1.0,
   },
   palette: {
-    T1: '#d9772e',          // sodium orange team (A_white + B_black)
-    T2: '#3f88c8',          // steel blue team (A_black + B_white)
-    magenta: '#a8467e',
-    lime: '#8db54a',
-    yellow: '#d8b04a',
-    ink: '#0c0d12',
+    T1: '#c0632f',          // rust orange team (A_white + B_black)
+    T2: '#4a79a6',          // denim blue team (A_black + B_white)
+    magenta: '#8c4a72',     // plum
+    lime: '#8a9a48',        // olive
+    yellow: '#c99b3c',      // mustard
+    ink: '#14110f',
+    // Downtown-ish set colours: flat muted fields
+    brick: '#8a4a3a', teal: '#3f7a78', olive: '#6e7040', offWhite: '#d8d0bc', warmGrey: '#7a726a',
   },
   comms: {
     bubbles: true,
@@ -93,10 +108,19 @@ export const STYLE = {
   scene: {
     skyline: true,          // far dark tower silhouettes with sparse lit windows (one instanced draw)
     stringLights: true,     // warm bulbs hung from the el
-    bulbGlow: 2.2,          // >1 so emissive bulbs/signs cross the bloom threshold
+    bulbGlow: 1.4,          // >1 so emissive bulbs/signs cross the bloom threshold
+    lightPoolScale: 0.55,   // global multiplier on the light-pool decals + cones (cel: flat, not glowing)
     lightPools: true,       // fake additive light decals on the ground/wall (bodega, lamps, train)
     lampCones: true,        // faint additive light cones under the lamps (haze)
     lampConeStrength: 0.07,
+  },
+  graffiti: {
+    enabled: true,          // the painted wall layer (one decal plane per wall)
+    pxPerMeter: 160,        // canvas resolution: back wall 26 m -> 4160 x 960, side wall 2080 x 960
+    tagCount: 140,          // handstyle tags scattered in the gaps on the back wall (side gets ~half)
+    oldLayer: true,         // older faded pieces + tags underneath the current ones
+    oldFade: 0.42,          // 0..1 how far the old layer is washed back toward the wall colour
+    paint: '#ece6da',       // tint on the paint layer (dims it a touch so it sits on the brick)
   },
 } as const
 

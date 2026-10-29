@@ -14,6 +14,7 @@ import { activeAnims, inflight, now, onMove, onPass, reserves, resetAnims, updat
 import { grabBus } from '../grab/grabChoreo'
 import { onFxReset, onGameEvent } from '../director'
 import { retroMaterial } from '../materials/retroMaterial'
+import { outlineMaterial, withOutline } from '../materials/outline'
 import { STYLE } from '../style.config'
 
 const CAP = 48
@@ -31,8 +32,8 @@ const jitter = (i: number) => (((i * 2654435761) >>> 0) % 1000) / 1000 - 0.5
 
 export function Pieces() {
   const mats = useMemo(() => ({
-    w: retroMaterial({ color: '#fff6ea', chrome: 0.5 }),
-    b: retroMaterial({ color: '#3a2c5a', chrome: 0.62 }),
+    w: retroMaterial({ color: '#efe6d2', chrome: 0.3 }),
+    b: retroMaterial({ color: '#4a3a5e', chrome: 0.35 }),
   }), [])
   const meshes = useMemo(() => {
     const out: Record<string, InstancedMesh> = {}
@@ -43,8 +44,22 @@ export function Pieces() {
     }
     return out
   }, [mats])
+  // ink hulls for the instanced pieces: same geometry + instance matrices, count mirrored per frame
+  const hulls = useMemo(() => {
+    if (!STYLE.toon.outlines) return {} as Record<string, InstancedMesh>
+    const out: Record<string, InstancedMesh> = {}
+    for (const k in meshes) {
+      const src = meshes[k]
+      const h = new InstancedMesh(src.geometry, outlineMaterial({ width: STYLE.toon.outlineWidth * 0.75 }), CAP)
+      h.instanceMatrix = src.instanceMatrix
+      h.count = 0; h.frustumCulled = false; h.raycast = () => {}
+      out[k] = h
+    }
+    return out
+  }, [meshes])
   const pool = useMemo(() => Array.from({ length: POOL }, () => {
-    const m = new Mesh(pieceGeometry('p'), mats.w); m.visible = false; return m
+    const m = new Mesh(pieceGeometry('p'), mats.w); m.visible = false
+    return withOutline(m, { width: STYLE.toon.outlineWidth * 0.75 })
   }), [mats])
 
   useEffect(() => {
@@ -94,7 +109,10 @@ export function Pieces() {
         }
       }
     }
-    for (const k in meshes) meshes[k].instanceMatrix.needsUpdate = true
+    for (const k in meshes) {
+      meshes[k].instanceMatrix.needsUpdate = true
+      if (hulls[k]) hulls[k].count = meshes[k].count
+    }
     // animated pieces. Characters run their IK before this (negative useFrame priority) and report
     // where their hands are, so a held piece is drawn in the actual hand.
     let i = 0
@@ -113,6 +131,7 @@ export function Pieces() {
       const m = pool[i++]
       const white = a.letter === a.letter.toUpperCase()
       m.geometry = pieceGeometry(a.letter)
+      for (const c of m.children) if ((c as Mesh).isMesh) (c as Mesh).geometry = m.geometry
       m.material = white ? mats.w : mats.b
       m.position.copy(tmp.p)
       const yaw = (white ? Math.PI : 0) + BOARD_ROT[a.board]
@@ -126,6 +145,7 @@ export function Pieces() {
   return (
     <group>
       {Object.entries(meshes).map(([k, m]) => <primitive key={k} object={m} />)}
+      {Object.entries(hulls).map(([k, m]) => <primitive key={`ink${k}`} object={m} />)}
       {pool.map((m, i) => <primitive key={`pool${i}`} object={m} />)}
       <LastMoveMarks />
     </group>

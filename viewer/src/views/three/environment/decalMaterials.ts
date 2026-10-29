@@ -3,11 +3,12 @@
 import { AdditiveBlending, Color, ShaderMaterial } from 'three'
 import { retroMaterial } from '../materials/retroMaterial'
 import { blobTexture } from './textures'
+import { STYLE } from '../style.config'
 
 /** Additive "light" decal material (radial falloff); tweak `uniforms.diffuse` to animate it. */
 export function lightPoolMaterial(color: string, intensity = 1): ShaderMaterial {
   const m = retroMaterial({
-    map: blobTexture(), color: new Color(color).multiplyScalar(intensity), unlit: true, transparent: true, mipmaps: false,
+    map: blobTexture(), color: new Color(color).multiplyScalar(intensity * STYLE.scene.lightPoolScale), unlit: true, transparent: true, mipmaps: false,
   })
   m.blending = AdditiveBlending
   m.depthWrite = false
@@ -21,7 +22,7 @@ export function lightPoolMaterial(color: string, intensity = 1): ShaderMaterial 
  */
 export function lightConeMaterial(color: string, intensity = 0.07): ShaderMaterial {
   return new ShaderMaterial({
-    uniforms: { color: { value: new Color(color).multiplyScalar(intensity) } },
+    uniforms: { color: { value: new Color(color).multiplyScalar(intensity * STYLE.scene.lightPoolScale) } },
     vertexShader: /* glsl */`
       varying float vY; varying float vFace;
       void main() {

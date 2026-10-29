@@ -1,7 +1,7 @@
 // Chrome / env-map shine, ported in spirit from the PSX-style metallic materials: a tiny generated
 // sphere map (sunset sky up top, a hard bright horizon band, dark ground) sampled by view-space
-// normal. One shared 128px texture, nearest-filtered.
-import { CanvasTexture, NearestFilter, SRGBColorSpace } from 'three'
+// normal. One shared 128px texture.
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from 'three'
 import { STYLE } from '../style.config'
 
 let tex: CanvasTexture | null = null
@@ -25,7 +25,7 @@ export function chromeTexture(): CanvasTexture {
   g.fillRect(S * 0.3, S * 0.24, S * 0.04, S * 0.1)
   // round mask: sphere maps only use the inscribed circle
   tex = new CanvasTexture(c)
-  tex.magFilter = NearestFilter; tex.minFilter = NearestFilter; tex.generateMipmaps = false
+  tex.magFilter = LinearFilter; tex.minFilter = LinearFilter; tex.generateMipmaps = false
   tex.colorSpace = SRGBColorSpace
   return tex
 }

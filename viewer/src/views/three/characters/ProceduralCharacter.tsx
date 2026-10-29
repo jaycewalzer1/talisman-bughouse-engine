@@ -17,6 +17,7 @@ import {
   type Joint, type PartGeo,
 } from './skaterParts'
 import { PORTRAIT_LAYER, registerPortraitTarget } from './portraits'
+import { outlineMaterial } from '../materials/outline'
 import { BlobShadow } from '../environment/BlobShadow'
 import { armPole, solveArm, type ArmChain, type ReachBudget } from '../grab/ik'
 import { buildHand } from '../grab/hand'
@@ -34,10 +35,15 @@ const GRAB_BUDGET = { maxLeanPerJoint: 0.6, maxRootShift: 0.15, maxStretch: 1.08
 const loggedTris = new Set<string>()
 const HAND_TRIS = 198
 
+/** A joint's meshes: one per finish, plus its merged ink hull (inverted-hull outline, moves with the joint). */
 function PartMeshes({ g }: { g: PartGeo }) {
   const M = skaterMaterials()
-  return <>{FINISHES.map(f => g[f] && <mesh key={f} geometry={g[f]!} material={M[f]} />)}</>
+  return <>
+    {FINISHES.map(f => g[f] && <mesh key={f} geometry={g[f]!} material={M[f]} />)}
+    {g.ink && <mesh geometry={g.ink} material={outlineMaterial()} raycast={noRaycast} userData={{ inkHull: true }} />}
+  </>
 }
+const noRaycast = () => {}
 
 interface ArmState { p: Vector3; w: number; live: boolean }
 const newSample = (): GrabSample => ({
@@ -50,7 +56,7 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
   useEffect(() => () => disposeSkater(built), [built])
   if (import.meta.env.DEV && !loggedTris.has(spec.id)) {
     loggedTris.add(spec.id)
-    console.info(`[characters] ${spec.id}: ${built.tris} tris (+${2 * HAND_TRIS} hands), ${built.drawCalls} draw calls (+10 hands)`)
+    console.info(`[characters] ${spec.id}: ${built.tris} tris + ${built.inkTris} ink-hull tris (+${2 * HAND_TRIS} hands, x2 with hulls), ${built.drawCalls} draw calls incl. hulls (+20 hands)`)
   }
   // rounded jointed hands: fingerless gloves in the (washed) team colour, rings if the look has them
   const hands = useMemo(() => {

@@ -1,12 +1,12 @@
-// The four skaters. All original designs (early-2000s skate fashion, no real people / brands).
-// Team colour dominates (T1 orange, T2 blue) but every garment colour is "washed" — desaturated and
-// a touch darker, like worn, faded fabric — so they sit in the grimy night scene and still read.
-// Each agent gets its own accent from STYLE.palette so partners still read apart. Silhouettes differ
-// at a glance:
+// The four skaters. All original designs (late-90s / early-2000s street fashion, no real people /
+// brands), styled after the flat cel look of MTV's "Downtown" (1999): muted, slightly desaturated
+// urban colours — rust, brick, olive, mustard, plum, denim, teal, off-white, warm greys. Team colour
+// still dominates (T1 → rust / burnt orange, T2 → denim / teal); every colour is "washed" from
+// STYLE.palette here so the toon bands stay calm. Silhouettes differ at a glance:
 //   RAZ  tall + lanky, hood up, headphones round the neck
-//   MOOK short + wide, XXL tee to the thighs, pom beanie, cargos, gold chain
-//   JUNO medium, layered tee, trucker cap twisted sideways, wide light jeans
-//   VEX  slim, zip hoodie, tall slouch beanie + mirrored shades, chain wallet
+//   MOOK shorter, XXL tee to the thighs, pom beanie, cargos, gold chain
+//   JUNO medium, layered tee over long sleeves, trucker cap twisted sideways + headphones, wide light jeans
+//   VEX  slim, zip hoodie, tall slouch beanie + shades, chain wallet
 import { Color } from 'three'
 import type { Seat } from '../../../events/types'
 import { STYLE } from '../style.config'
@@ -22,49 +22,54 @@ function wash(hex: string, desat = 0.25, dark = 0.1): string {
   return '#' + c.getHexString()
 }
 
-const T1 = wash(P.T1, 0.22, 0.08), T2 = wash(P.T2, 0.22, 0.08)
-const MAG = wash(P.magenta, 0.3, 0.05), LIME = wash(P.lime, 0.35, 0.12), YEL = wash(P.yellow, 0.3, 0.08)
-const OFFWHITE = '#d3cdc0', DIRTY = '#bdb6a7'
+const RUST = wash(P.T1, 0.4, 0.2)                 // T1 hoodie: burnt orange gone rusty
+const BRICK = wash('#b04a32', 0.3, 0.12)
+const DENIM = wash(P.T2, 0.38, 0.18)               // T2: washed denim blue
+const TEAL = wash('#2f8a8a', 0.4, 0.2)
+const PLUM = wash(P.magenta, 0.45, 0.25)
+const MUSTARD = wash(P.yellow, 0.35, 0.14)
+const OLIVE = wash(P.lime, 0.55, 0.38)
+const OFFWHITE = '#d6cfbf', WARMGREY = '#8c857a', DIRTY = '#b7ae9d'
 
 export const SPECS: Record<Seat, CharacterSpec> = {
-  // T1 — accent magenta
+  // T1 — accent plum
   A_white: {
-    id: 'RAZ', skin: '#c58c63', hair: '#2a1a12', team: T1, accent: MAG,
-    top: 'hoodie', topColor: T1, sleeveColor: T1, trim: MAG,
-    pants: 'jeans', pantsColor: '#283149',
-    shoe: OFFWHITE, shoeTrim: MAG, sole: '#29262c',
-    hat: 'hood', hatColor: T1, hatTrim: MAG,
-    deck: MAG, deckArt: T1, wheels: '#d8ccb0',
+    id: 'RAZ', skin: '#c08a64', hair: '#2a1a12', team: RUST, accent: PLUM,
+    top: 'hoodie', topColor: RUST, sleeveColor: RUST, trim: MUSTARD,
+    pants: 'jeans', pantsColor: '#33405a',
+    shoe: OFFWHITE, shoeTrim: PLUM, sole: '#3a363a',
+    hat: 'hood', hatColor: RUST, hatTrim: PLUM,
+    deck: PLUM, deckArt: RUST, wheels: '#d2c6aa',
     height: 1.07, bulk: 1.0, bag: 1.3, headphones: true, wristbands: true, rings: true,
   },
-  // T1 — accent yellow
+  // T1 — accent mustard
   B_black: {
-    id: 'MOOK', skin: '#6e4a33', hair: '#120c08', team: T1, accent: YEL,
-    top: 'tee', topColor: wash(P.T1, 0.3, 0.12), sleeveColor: wash(P.T1, 0.3, 0.12), trim: YEL,
-    pants: 'cargo', pantsColor: '#5e5440',
-    shoe: '#222026', shoeTrim: YEL, sole: DIRTY,
-    hat: 'beanie', hatColor: wash(P.T1, 0.35, 0.32), hatTrim: YEL,
-    deck: YEL, deckArt: '#1d1b22', wheels: T1,
+    id: 'MOOK', skin: '#6e4a33', hair: '#120c08', team: RUST, accent: MUSTARD,
+    top: 'tee', topColor: wash('#c8703c', 0.38, 0.14), sleeveColor: wash('#c8703c', 0.38, 0.14), trim: OFFWHITE,
+    pants: 'cargo', pantsColor: OLIVE,
+    shoe: '#2e2c30', shoeTrim: MUSTARD, sole: DIRTY,
+    hat: 'beanie', hatColor: BRICK, hatTrim: MUSTARD,
+    deck: MUSTARD, deckArt: '#25232a', wheels: RUST,
     height: 0.93, bulk: 1.3, bag: 1.45, chainWallet: true, necklace: 'gold', wristbands: true,
   },
-  // T2 — accent lime
+  // T2 — accent olive
   A_black: {
-    id: 'JUNO', skin: '#e2b48f', hair: '#6b3b1e', team: T2, accent: LIME,
-    top: 'layered', topColor: T2, sleeveColor: LIME, trim: OFFWHITE,
-    pants: 'jeans', pantsColor: '#7287a0',
-    shoe: wash(P.T2, 0.3, 0.25), shoeTrim: LIME, sole: OFFWHITE,
-    hat: 'trucker', hatColor: wash(P.T2, 0.25, 0.3), hatTrim: LIME,
-    deck: LIME, deckArt: T2, wheels: OFFWHITE,
+    id: 'JUNO', skin: '#dcb18e', hair: '#6b3b1e', team: DENIM, accent: MUSTARD,
+    top: 'layered', topColor: TEAL, sleeveColor: OLIVE, trim: OFFWHITE,
+    pants: 'jeans', pantsColor: '#8396ab',
+    shoe: WARMGREY, shoeTrim: OFFWHITE, sole: OFFWHITE,
+    hat: 'trucker', hatColor: wash(P.T2, 0.4, 0.4), hatTrim: OFFWHITE,
+    deck: OLIVE, deckArt: DENIM, wheels: OFFWHITE,
     height: 1.0, bulk: 1.0, bag: 1.5, headphones: true, rings: true, necklace: 'silver',
   },
-  // T2 — accent magenta
+  // T2 — accent plum
   B_white: {
-    id: 'VEX', skin: '#8d5a3b', hair: '#151515', team: T2, accent: MAG,
-    top: 'zip', topColor: wash(P.T2, 0.25, 0.15), sleeveColor: wash(P.T2, 0.25, 0.15), trim: MAG,
-    pants: 'cargo', pantsColor: '#202329',
-    shoe: wash(P.magenta, 0.3, 0.15), shoeTrim: OFFWHITE, sole: OFFWHITE,
-    hat: 'slouch', hatColor: '#1e2129', hatTrim: MAG,
-    deck: T2, deckArt: MAG, wheels: MAG,
+    id: 'VEX', skin: '#8d5a3b', hair: '#151515', team: DENIM, accent: PLUM,
+    top: 'zip', topColor: DENIM, sleeveColor: DENIM, trim: PLUM,
+    pants: 'cargo', pantsColor: '#34363a',
+    shoe: PLUM, shoeTrim: OFFWHITE, sole: OFFWHITE,
+    hat: 'slouch', hatColor: '#2a2c33', hatTrim: PLUM,
+    deck: DENIM, deckArt: PLUM, wheels: PLUM,
     height: 1.03, bulk: 0.92, bag: 1.2, chainWallet: true, shades: true, wristbands: true,
   },
 }

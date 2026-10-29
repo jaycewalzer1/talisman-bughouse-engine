@@ -1,17 +1,18 @@
 // Post-processing chain (lazy-loaded), in this order:
-//   (1) the scene is already rendered at ~STYLE.render.width x height (see index.tsx) and upscaled
-//       nearest-neighbour by the browser (CSS image-rendering: pixelated),
+//   (1) the scene renders at full device-pixel-ratio (capped by STYLE.render.maxDpr, see index.tsx),
+//       multisampled by the composer (STYLE.render.msaa samples),
 //   (2) bloom, thresholded high so only lamp bulbs / neon / train windows glow,
-//   (3) film grain (as in the original look),
-//   (4) light colour quantization + subtle ordered Bayer dither (post/QuantizeDitherEffect.ts),
-//   (5) a heavy vignette (as in the original look).
-// Every stage is toggleable / tunable in style.config.ts (STYLE.post).
+//   (3) ink edges from the depth buffer (post/InkEdgeEffect.ts) — the cel outline for the set,
+//   (4) SMAA on top if MSAA is off (STYLE.render.smaa),
+//   (5) an optional gentle vignette.
+// No dither, quantize, grain or pixelation: the look is a flat painted cartoon.
+// Every stage is toggleable / tunable in style.config.ts (STYLE.post, STYLE.render).
 import { useEffect, useMemo, useRef, type JSX } from 'react'
 import { useThree } from '@react-three/fiber'
-import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
-import { BlendFunction, type EffectComposer as EffectComposerImpl } from 'postprocessing'
+import { Bloom, EffectComposer, SMAA, Vignette } from '@react-three/postprocessing'
+import { type EffectComposer as EffectComposerImpl } from 'postprocessing'
 import { STYLE } from './style.config'
-import { QuantizeDitherEffect } from './post/QuantizeDitherEffect'
+import { InkEdgeEffect } from './post/InkEdgeEffect'
 
 const P = STYLE.post
 
@@ -19,24 +20,27 @@ export default function Effects() {
   const composer = useRef<EffectComposerImpl>(null)
   const dpr = useThree(s => s.viewport.dpr)
   const size = useThree(s => s.size)
-  // The internal resolution is driven by dpr (index.tsx). The composer only resizes on CSS-size
-  // changes by itself, so also resize its buffers whenever dpr changes.
+  // The composer only resizes on CSS-size changes by itself, so also resize on dpr changes.
   useEffect(() => { composer.current?.setSize(size.width, size.height) }, [dpr, size])
 
-  const dither = useMemo(() => new QuantizeDitherEffect({ strength: P.ditherStrength, levels: P.colorLevels }), [])
-  useEffect(() => () => dither.dispose(), [dither])
+  const ink = useMemo(() => new InkEdgeEffect({
+    color: STYLE.toon.inkColor, width: P.inkWidth, silhouette: P.inkSilhouette, crease: P.inkCrease,
+    strength: P.inkStrength, fadeNear: P.inkFadeNear, fadeFar: P.inkFadeFar,
+  }), [])
+  useEffect(() => { ink.width = P.inkWidth * Math.max(1, dpr) }, [ink, dpr])
+  useEffect(() => () => ink.dispose(), [ink])
 
   const fx: JSX.Element[] = []
   if (P.bloom) fx.push(
     <Bloom key="bloom" mipmapBlur intensity={P.bloomIntensity} luminanceThreshold={P.bloomThreshold}
       luminanceSmoothing={P.bloomSmoothing} radius={P.bloomRadius} />,
   )
-  if (P.grain) fx.push(<Noise key="grain" premultiply blendFunction={BlendFunction.SCREEN} opacity={P.grainOpacity} />)
-  if (P.dither) fx.push(<primitive key="dither" object={dither} />)
+  if (P.inkEdges) fx.push(<primitive key="ink" object={ink} />)
+  if (STYLE.render.smaa && !STYLE.render.msaa) fx.push(<SMAA key="smaa" />)
   if (P.vignette) fx.push(<Vignette key="vignette" offset={P.vignetteOffset} darkness={P.vignetteDarkness} />)
 
   return (
-    <EffectComposer ref={composer} multisampling={0}>
+    <EffectComposer ref={composer} multisampling={STYLE.render.msaa}>
       {fx}
     </EffectComposer>
   )

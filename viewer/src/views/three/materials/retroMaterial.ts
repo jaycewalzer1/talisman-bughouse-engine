@@ -1,14 +1,16 @@
-// The one material everything in the 3D view uses: PS2-style per-vertex (Gouraud) lighting from a
-// single key light plus hemisphere ambient, flat colour / vertex colours / small nearest-
-// filtered textures, optional chrome (sphere-map env shine), emissive, scene fog, and optional
-// vertex snapping (off by default — we want PS2 clean, not PS1 wobble).
+// The one material everything in the 3D view uses: a 2-tone cel (toon) shader in the look of a
+// late-90s TV cartoon. Per-pixel N.L from the single key light is cut into a lit band and one
+// cool shadow band with a hard (but antialiased) edge; ambient is flat, not a gradient, so colour
+// fields stay flat. Vertex colours, smooth-filtered textures, optional (banded) chrome shine,
+// emissive and scene fog all still work. STYLE.toon.enabled = false falls back to smooth lighting.
+// Ink outlines are separate: materials/outline.ts (hulls) + post/InkEdgeEffect.ts (depth edges).
 //
 // Usage:  const m = retroMaterial({ color: '#ff7a1a', chrome: 0.6 })
 //         <mesh material={m} />   or   <primitive object={m} attach="material" />
 // Cache materials (module-level or useMemo) — they're cheap but each one is a GPU program use.
 
 import {
-  Color, Matrix3, NearestFilter, NearestMipmapLinearFilter, ShaderMaterial, type Texture, UniformsLib,
+  Color, LinearFilter, LinearMipmapLinearFilter, Matrix3, ShaderMaterial, type Texture, UniformsLib,
   UniformsUtils, Vector3, SRGBColorSpace,
 } from 'three'
 import { STYLE } from '../style.config'
@@ -28,7 +30,7 @@ export interface RetroOptions {
   unlit?: boolean           // skip lighting (signs, neon, sky-facing decals)
   repeat?: [number, number] // UV repeat for `map` (else the texture's own offset/repeat is used)
   alphaTest?: number        // discard below this alpha (default 0.04; 0.5 for cut-out fences/crates)
-  mipmaps?: boolean         // default true: nearest texels up close, mip-blended far away (no shimmer)
+  mipmaps?: boolean         // default true: smooth (trilinear) filtering, no shimmer far away
 }
 
 // Shared lighting uniforms: change once, every retro material follows.
@@ -42,7 +44,12 @@ export const retroLight = {
   ambient: { value: STYLE.material.ambient },
   keyStrength: { value: STYLE.material.keyStrength },
   snap: { value: STYLE.material.vertexSnap },
-  resolution: { value: [STYLE.render.width, STYLE.render.height] as [number, number] },
+  resolution: { value: [1280, 720] as [number, number] },
+  toon: { value: STYLE.toon.enabled ? 1 : 0 },
+  toonThreshold: { value: STYLE.toon.threshold },
+  toonSoft: { value: STYLE.toon.softness },
+  toonShadow: { value: STYLE.toon.shadowTone },
+  toonShadowTint: { value: new Color(STYLE.toon.shadowTint) },
 }
 
 const vertexShader = /* glsl */`
@@ -51,7 +58,7 @@ const vertexShader = /* glsl */`
   uniform vec3 keyDir; uniform vec3 keyColor; uniform vec3 skyColor; uniform vec3 groundColor;
   uniform float ambient; uniform float keyStrength; uniform float snap; uniform float unlit;
   uniform vec2 resolution; uniform mat3 mapTransform;
-  varying vec3 vLight; varying vec2 vUv; varying vec2 vEnvUv;
+  varying vec3 vLight; varying vec2 vUv; varying vec2 vEnvUv; varying vec3 vWN;
   #ifdef USE_VCOLOR
     attribute vec3 color; varying vec3 vColor;
   #endif
@@ -67,7 +74,8 @@ const vertexShader = /* glsl */`
       objNormal = mat3(instanceMatrix) * objNormal;
     #endif
     vec3 wn = normalize(mat3(modelMatrix) * objNormal);
-    // Gouraud: lighting evaluated here, interpolated across the face.
+    vWN = wn;
+    // smooth fallback (toon off): lighting evaluated here, interpolated across the face.
     float nl = max(dot(wn, keyDir), 0.0);
     vec3 hemi = mix(groundColor, skyColor, wn.y * 0.5 + 0.5);
     vLight = mix(hemi * ambient + keyColor * nl * keyStrength, vec3(1.0), unlit);
@@ -95,10 +103,14 @@ const fragmentShader = /* glsl */`
   #include <fog_pars_fragment>
   uniform vec3 diffuse; uniform float opacity; uniform vec3 emissive; uniform float emissiveIntensity;
   uniform float chrome; uniform sampler2D envMap2; uniform float alphaTest;
+  uniform vec3 keyDir; uniform vec3 keyColor; uniform vec3 skyColor; uniform vec3 groundColor;
+  uniform float ambient; uniform float keyStrength; uniform float unlit;
+  uniform float toon; uniform float toonThreshold; uniform float toonSoft; uniform float toonShadow;
+  uniform vec3 toonShadowTint;
   #ifdef USE_RETRO_MAP
     uniform sampler2D map;
   #endif
-  varying vec3 vLight; varying vec2 vUv; varying vec2 vEnvUv;
+  varying vec3 vLight; varying vec2 vUv; varying vec2 vEnvUv; varying vec3 vWN;
   #ifdef USE_VCOLOR
     varying vec3 vColor;
   #endif
@@ -118,10 +130,30 @@ const fragmentShader = /* glsl */`
       base *= t;
     #endif
     if (base.a < alphaTest) discard;
-    vec3 col = base.rgb * vLight;
+    vec3 light = vLight;
+    float lit = 1.0;
+    if (toon > 0.5 && unlit < 0.5) {
+      // two flat tones: lit = flat ambient + key; shadow = lit * tone * cool tint. Hard edge, a
+      // hair of smoothstep (screen-space via fwidth) so the band boundary stays antialiased.
+      vec3 n = normalize(vWN);
+      if (!gl_FrontFacing) n = -n;
+      float nl = dot(n, keyDir);
+      float aa = max(toonSoft, fwidth(nl) * 0.75);
+      lit = smoothstep(toonThreshold - aa, toonThreshold + aa, nl);
+      vec3 amb = mix(groundColor, skyColor, 0.62) * ambient;
+      vec3 bright = amb + keyColor * keyStrength;
+      light = mix(bright * toonShadow * toonShadowTint, bright, lit);
+    }
+    vec3 col = base.rgb * light;
     if (chrome > 0.0) {
       vec3 env = texture2D(envMap2, vEnvUv).rgb;
-      col = mix(col, env * (0.35 + base.rgb * 0.9), chrome * 0.75) + env * env * chrome * 0.25;
+      if (toon > 0.5) {
+        // cel highlight: one flat glint band instead of a smooth env reflection
+        float gl = step(0.62, dot(env, vec3(0.333))) * lit;
+        col = mix(col, col * 1.25 + vec3(0.06), chrome * 0.6) + vec3(0.55, 0.52, 0.45) * gl * chrome * 0.35;
+      } else {
+        col = mix(col, env * (0.35 + base.rgb * 0.9), chrome * 0.75) + env * env * chrome * 0.25;
+      }
     }
     col += emissive * emissiveIntensity;
     gl_FragColor = vec4(col, base.a);
@@ -135,8 +167,9 @@ export function retroMaterial(o: RetroOptions = {}): ShaderMaterial {
   const emissive = o.emissive instanceof Color ? o.emissive : new Color(o.emissive ?? '#000000')
   if (o.map) {
     const mips = o.mipmaps ?? true
-    o.map.magFilter = NearestFilter
-    o.map.minFilter = mips ? NearestMipmapLinearFilter : NearestFilter
+    o.map.magFilter = LinearFilter
+    o.map.minFilter = mips ? LinearMipmapLinearFilter : LinearFilter
+    o.map.anisotropy = 4
     o.map.generateMipmaps = mips
     o.map.colorSpace = SRGBColorSpace
     o.map.needsUpdate = true

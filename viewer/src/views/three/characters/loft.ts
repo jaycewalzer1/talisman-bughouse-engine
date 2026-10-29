@@ -9,9 +9,11 @@
 // (hard rim, e.g. a sole) unless `smoothCaps` is set (round ends, e.g. a fingertip).
 // `arcSeg: [k0, k1]` builds only columns k0..k1 of the full section: an open patch that lies exactly
 // on (a scaled copy of) the same section — prints, pockets, stripes that follow the body.
+// Folds: a ring's `w` (relative amplitude) ripples its radius as 1 + w·cos(waves·θ + wavePh), so
+// baggy cloth gets soft vertical ridges (and a wavy silhouette the ink hull picks up).
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute } from 'three'
 
-export interface Ring { y: number; rx: number; rz?: number; x?: number; z?: number }
+export interface Ring { y: number; rx: number; rz?: number; x?: number; z?: number; w?: number }
 
 export interface LoftOpts {
   seg?: number
@@ -22,13 +24,16 @@ export interface LoftOpts {
   smoothCaps?: boolean
   arcSeg?: [number, number]
   inside?: boolean             // flip faces (a lining seen from inside a sleeve / hood)
+  waves?: number               // fold ridges around the section (with ring.w), default 5
+  wavePh?: number
 }
 
 const sgnPow = (v: number, e: number) => Math.sign(v) * Math.pow(Math.abs(v), e)
 
 /** Point on ring `r` at column angle θ. */
-export function ringPoint(r: Ring, th: number, sq = 1): [number, number, number] {
-  return [(r.x ?? 0) + r.rx * sgnPow(Math.sin(th), sq), r.y, (r.z ?? 0) + (r.rz ?? r.rx) * sgnPow(Math.cos(th), sq)]
+export function ringPoint(r: Ring, th: number, sq = 1, waves = 5, wavePh = 0): [number, number, number] {
+  const k = r.w ? 1 + r.w * Math.cos(waves * th + wavePh) : 1
+  return [(r.x ?? 0) + k * r.rx * sgnPow(Math.sin(th), sq), r.y, (r.z ?? 0) + k * (r.rz ?? r.rx) * sgnPow(Math.cos(th), sq)]
 }
 
 /** Linear interpolation of a ring stack at height y (for patches that follow a lofted body). */
@@ -39,7 +44,7 @@ export function ringAt(rings: Ring[], y: number, k = 1): Ring {
   const a = asc[i], b = asc[i + 1]
   const t = Math.max(0, Math.min(1, (y - a.y) / ((b.y - a.y) || 1)))
   const l = (p: number, q: number) => p + (q - p) * t
-  return { y, rx: l(a.rx, b.rx) * k, rz: l(a.rz ?? a.rx, b.rz ?? b.rx) * k, x: l(a.x ?? 0, b.x ?? 0), z: l(a.z ?? 0, b.z ?? 0) }
+  return { y, rx: l(a.rx, b.rx) * k, rz: l(a.rz ?? a.rx, b.rz ?? b.rx) * k, x: l(a.x ?? 0, b.x ?? 0), z: l(a.z ?? 0, b.z ?? 0), w: l(a.w ?? 0, b.w ?? 0) }
 }
 
 /** z of the front-most face of a ring (where flat decals sit). */
@@ -49,6 +54,7 @@ export function frontZ(r: Ring, seg: number, sq = 1, phase = Math.PI / seg) {
 
 export function loftGeo(rings: Ring[], o: LoftOpts = {}): BufferGeometry {
   const seg = o.seg ?? 8, sq = o.sq ?? 1, phase = o.phase ?? Math.PI / seg
+  const wv = o.waves ?? 5, wp = o.wavePh ?? 0
   const step = (Math.PI * 2) / seg
   const arc = o.arcSeg
   const cols = arc ? arc[1] - arc[0] + 1 : seg
@@ -59,7 +65,7 @@ export function loftGeo(rings: Ring[], o: LoftOpts = {}): BufferGeometry {
   const flip = (rings[rings.length - 1].y < rings[0].y) !== !!o.inside
   const tri = (a: number, b: number, c: number) => { if (flip) idx.push(a, c, b); else idx.push(a, b, c) }
   const th = (j: number) => phase + ((arc ? arc[0] : 0) + j) * step
-  for (const r of rings) for (let j = 0; j < cols; j++) pos.push(...ringPoint(r, th(j), sq))
+  for (const r of rings) for (let j = 0; j < cols; j++) pos.push(...ringPoint(r, th(j), sq, wv, wp))
   const n = wrap ? cols : cols - 1
   for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < n; j++) {
     const a = i * cols + j, b = i * cols + ((j + 1) % cols), c = a + cols, d = b + cols
@@ -70,7 +76,7 @@ export function loftGeo(rings: Ring[], o: LoftOpts = {}): BufferGeometry {
     let base = ri * cols
     if (!o.smoothCaps) {            // duplicate the rim so the cap gets its own (creased) normals
       base = pos.length / 3
-      for (let j = 0; j < cols; j++) pos.push(...ringPoint(r, th(j), sq))
+      for (let j = 0; j < cols; j++) pos.push(...ringPoint(r, th(j), sq, wv, wp))
     }
     const up = (rings[rings.length - 1].y >= rings[0].y) === top ? 1 : -1
     const apex = pos.length / 3

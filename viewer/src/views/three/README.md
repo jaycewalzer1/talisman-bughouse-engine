@@ -4,22 +4,25 @@ Lazy-loaded by `src/App.tsx` via `import('./views/three')` and kept mounted once
 into the corner thumbnail when the 2D view is active). It only **reads** the game store
 (`useGame` in `src/store/gameStore.ts`); event sources live in `src/sources/`.
 
-**Every look/feel knob is in `style.config.ts`** — render resolution, bloom, dither, grain,
-vignette, fog/sky/lighting colours, palette, comms, HUD and camera settings. Start there.
+Look: a flat late-90s TV-cartoon style (cel shading, ink outlines, muted urban palette, painted
+backgrounds) rendered in 3D. **Every look/feel knob is in `style.config.ts`**: render dpr and
+antialiasing, toon bands, outline widths, ink edge pass, bloom, vignette, fog/sky/lighting colours,
+palette, comms, HUD and camera settings. Start there.
 
 ## How the files fit together
 
 ```
-index.tsx          <Canvas> (low-res render, pixelated upscale), HUD overlay, thumbnail mode.
+index.tsx          <Canvas> (full-dpr render), HUD overlay, thumbnail mode.
 Scene.tsx          Everything inside the canvas; mounts the director; shakes the world group.
-Effects.tsx, post/ Bloom -> colour quantize + Bayer dither -> grain -> vignette.
+Effects.tsx, post/ Bloom -> depth ink edges (post/InkEdgeEffect.ts) -> SMAA -> gentle vignette.
 style.config.ts    All settings.
 director.ts        Turns the store's events into one-shot callbacks (onGameEvent / onFxReset).
 fxBus.ts           In-view bus for game "moments" (capture, drop, talk, announce, reaction).
 layout.ts          Where boards, seats, reserve piles and the wall sit in world space.
 viewStore.ts       View-only state: camera mode, sound, thumbnail flag; shared `fx.shake`.
 
-materials/         retroMaterial (per-vertex lighting, fog, chrome) used by everything; chrome map.
+materials/         retroMaterial (2-tone cel shading, fog, banded chrome) used by everything;
+                   outline.ts (inverted-hull ink outlines: withOutline / outlineTree); chrome map.
 environment/       Street + wet puddles, brick walls + graffiti, fence, el tracks, train, lamps,
                    sky, bodega/boombox/rail props, blob shadows, light pools, textures.ts.
 board/             Milk-crate tables, chess pieces + move/drop/toss animation, chess clocks.
@@ -35,7 +38,8 @@ comms/             Street-talk line table (lines.ts — edit the lines here), mo
 hud/               Trick text + combos, team boost meters, race clocks, camera/sound buttons.
 camera/            Free camera (default: drag/pan/zoom, WASD/QE/R, 1/2/0 focus) and the opt-in
                    AUTO CAM director; shots.ts has the shot list + occlusion check.
-graffiti/          Static graffiti painter; the old comms log (off unless STYLE.comms.showLog).
+graffiti/          Wall graffiti: glyphs.ts (letter skeletons), painter.ts (pieces, throw-ups, tags, extras),
+                   wallArt.ts (wall layouts, one canvas per wall), CREDITS.md; the old comms log.
 audio/sfx.ts       WebAudio-synthesised sounds (muted until the HUD sound button is clicked).
 ```
 

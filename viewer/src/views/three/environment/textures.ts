@@ -6,6 +6,10 @@
 // To use real CC0 photos later (Poly Haven / ambientCG), replace a function body with
 // `new TextureLoader().load('/textures/....jpg')` and keep the same wrap/repeat settings.
 import { CanvasTexture, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
+import { STYLE } from '../style.config'
+
+/** Cel-background mode: grime as a few flat painted blotches + ink lines instead of pixel noise. */
+const PAINTED = STYLE.toon.paintedTextures
 
 const cache = new Map<string, Texture>()
 
@@ -36,6 +40,21 @@ function tex(key: string, make: () => HTMLCanvasElement, opts: { color?: boolean
 function pick<T>(r: () => number, a: readonly T[]): T { return a[Math.floor(r() * a.length)] }
 
 function speckle(g: CanvasRenderingContext2D, w: number, h: number, n: number, r: () => number, colors: string[], size = 2) {
+  if (PAINTED) {
+    // a handful of flat, hard-edged blotches (hand-painted grime) instead of thousands of dots
+    const m = Math.max(2, Math.round(n / 220))
+    for (let i = 0; i < m; i++) {
+      g.fillStyle = colors[Math.floor(r() * colors.length)]
+      const x = r() * w, y = r() * h, rad = Math.max(2, Math.min(w, h) * (0.02 + r() * 0.05))
+      g.beginPath()
+      for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.6) {
+        const rr = rad * (0.7 + r() * 0.5)
+        g.lineTo(x + Math.cos(a) * rr * 1.4, y + Math.sin(a) * rr)
+      }
+      g.fill()
+    }
+    return
+  }
   for (let i = 0; i < n; i++) {
     g.fillStyle = colors[Math.floor(r() * colors.length)]
     g.fillRect(r() * w, r() * h, size * r() + 0.5, size * r() + 0.5)
@@ -112,7 +131,61 @@ function brickCanvas(bump: boolean): HTMLCanvasElement {
   }
   return c
 }
-export const brickTexture = () => tex('brick', () => brickCanvas(false))
+/**
+ * Cartoon brick: one flat brick-red field, a lighter worn patch or two, and only SOME bricks drawn
+ * as ink outlines in loose clusters (how cel background painters suggest brick), plus a couple of
+ * flat soot drips. Tiles like the original (16 rows x 4 bricks per tile).
+ */
+function paintedBrickCanvas(): HTMLCanvasElement {
+  const W = 512, H = 512, rows = 16, cols = 4
+  const [c, g] = canvas(W, H); const r = rng(7)
+  g.fillStyle = STYLE.palette.brick; g.fillRect(0, 0, W, H)
+  // flat lighter / darker painted patches (hard edges)
+  const patch = (color: string, n: number) => {
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = color
+      const x = r() * W, y = r() * H, rw = 60 + r() * 140, rh = 40 + r() * 90
+      g.beginPath()
+      for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.5) g.lineTo(x + Math.cos(a) * rw * (0.75 + r() * 0.3), y + Math.sin(a) * rh * (0.75 + r() * 0.3))
+      g.fill()
+    }
+  }
+  patch('rgba(176,104,80,0.55)', 3)
+  patch('rgba(70,34,30,0.35)', 3)
+  const bh = H / rows, bw = W / cols
+  // brick clusters: draw ink outlines only for bricks near a few cluster centres
+  const centres = Array.from({ length: 5 }, () => [r() * W, r() * H] as const)
+  g.strokeStyle = 'rgba(30,16,14,0.8)'; g.lineWidth = 2.5; g.lineJoin = 'round'
+  for (let y = 0; y < rows; y++) for (let x = -1; x < cols; x++) {
+    const ox = (y % 2) * bw / 2
+    const px = x * bw + ox, py = y * bh
+    const cx = px + bw / 2, cy = py + bh / 2
+    // wrap-aware distance so the tile stays seamless
+    let near = Infinity
+    for (const [ux, uy] of centres) {
+      const dx = Math.min(Math.abs(cx - ux), W - Math.abs(cx - ux)), dy = Math.min(Math.abs(cy - uy), H - Math.abs(cy - uy))
+      near = Math.min(near, Math.hypot(dx * 0.6, dy))
+    }
+    if (near > 70 + r() * 40) continue
+    if (r() < 0.5) { g.fillStyle = r() < 0.5 ? 'rgba(160,86,64,0.7)' : 'rgba(110,52,42,0.6)'; g.fillRect(px + 3, py + 3, bw - 6, bh - 6) }
+    // slightly wobbly rectangle
+    const j = () => (r() - 0.5) * 2
+    g.beginPath()
+    g.moveTo(px + 3 + j(), py + 3 + j()); g.lineTo(px + bw - 3 + j(), py + 3 + j())
+    g.lineTo(px + bw - 3 + j(), py + bh - 3 + j()); g.lineTo(px + 3 + j(), py + bh - 3 + j()); g.closePath()
+    g.stroke()
+  }
+  // flat soot drips from the top, and a dark band of street grime at the bottom
+  g.fillStyle = 'rgba(40,22,22,0.4)'
+  for (let i = 0; i < 6; i++) {
+    const x = r() * W, w = 10 + r() * 26, len = 80 + r() * 220
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 0.7, len * 0.8)
+    g.quadraticCurveTo(x + w * 0.5, len, x + w * 0.3, len * 0.8); g.closePath(); g.fill()
+  }
+  g.fillStyle = 'rgba(40,24,24,0.45)'; g.fillRect(0, H * 0.88, W, H * 0.12)
+  return c
+}
+export const brickTexture = () => tex('brick', () => PAINTED ? paintedBrickCanvas() : brickCanvas(false))
 export const brickBump = () => tex('brickBump', () => brickCanvas(true), { color: false })
 
 // ---------- wet asphalt + puddles (original) ----------
@@ -176,7 +249,15 @@ export const puddleMaskTexture = () => {
 export const plywoodTexture = () => tex('plywood', () => {
   const W = 512, H = 512; const [c, g] = canvas(W, H); const r = rng(3)
   g.fillStyle = '#a7814f'; g.fillRect(0, 0, W, H)
-  for (let y = 0; y < H; y += 2) {
+  if (PAINTED) { // a few long, flowing ink grain lines
+    g.strokeStyle = 'rgba(90,58,30,0.55)'; g.lineWidth = 2
+    for (let i = 0; i < 14; i++) {
+      const y0 = r() * H
+      g.beginPath(); g.moveTo(0, y0)
+      for (let x = 0; x <= W; x += 64) g.lineTo(x, y0 + Math.sin(x * 0.012 + i) * 8)
+      g.stroke()
+    }
+  } else for (let y = 0; y < H; y += 2) {
     g.fillStyle = `rgba(${90 + r() * 40},${60 + r() * 20},${30},${0.15 + 0.15 * Math.sin(y * 0.09 + r())})`
     g.fillRect(0, y, W, 2)
   }
@@ -205,6 +286,11 @@ export const stickerTexture = () => tex('stickers', () => {
 export const rustTexture = () => tex('rust', () => {
   const W = 256, H = 256; const [c, g] = canvas(W, H); const r = rng(21)
   g.fillStyle = '#2f3b33'; g.fillRect(0, 0, W, H)
+  if (PAINTED) { // flat rust patches + a few drip runs, hard edges
+    for (let i = 0; i < 14; i++) splat(g, r() * W, r() * H, 6 + r() * 18, i % 3 ? 'rgba(130,62,30,0.85)' : 'rgba(90,44,24,0.8)', r)
+    for (let i = 0; i < 10; i++) { g.fillStyle = 'rgba(120,55,25,0.6)'; g.fillRect(r() * W, r() * H, 3, 20 + r() * 50) }
+    return c
+  }
   for (let i = 0; i < 70; i++) {
     const x = r() * W, y = r() * H, rad = 3 + r() * 22
     const grd = g.createRadialGradient(x, y, 0, x, y, rad)
@@ -322,7 +408,13 @@ export const windowsTexture = () => tex('windows', () => {
 
 // ---------- radial gradient: blob shadows + fake light pools ----------
 export const blobTexture = () => tex('blob', () => {
-  const S = 64; const [c, g] = canvas(S, S)
+  const S = 128; const [c, g] = canvas(S, S)
+  if (PAINTED) {
+    // cel: two flat tones with hard (antialiased) edges — an outer pool and a brighter core
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.arc(S / 2, S / 2, S * 0.48, 0, 7); g.fill()
+    g.fillStyle = 'rgba(255,255,255,1)'; g.beginPath(); g.arc(S / 2, S / 2, S * 0.3, 0, 7); g.fill()
+    return c
+  }
   const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
   grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.5, 'rgba(255,255,255,0.7)'); grd.addColorStop(1, 'rgba(255,255,255,0)')
   g.fillStyle = grd; g.fillRect(0, 0, S, S)

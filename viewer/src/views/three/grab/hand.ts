@@ -1,7 +1,7 @@
 // Rounded low-poly hand: palm + cuff, 4 two-segment fingers and a two-segment thumb, all lofted
 // (characters/loft.ts) with smooth normals — a soft octagonal palm, 6-sided capsule-ish fingers with
 // rounded tips. ~198 tris, built as 5 vertex-coloured meshes so a hand costs 5 draw calls with ONE
-// shared material (e.g. the skaters' matte retro material):
+// shared material (e.g. the skaters' matte retro material), +5 ink-outline hulls (materials/outline.ts):
 //   palm+cuff | proximal finger bank | distal finger bank | thumb base | thumb tip
 // The four fingers curl together (a bank), which is all a low-poly hand needs; `spread`
 // widens the bank. Fingerless-glove look: cuff, palm and first finger segments in `glove`,
@@ -18,6 +18,10 @@
 import { BufferGeometry, Color, Float32BufferAttribute, type Material, Mesh, Object3D } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { loftGeo, type LoftOpts, type Ring } from '../characters/loft'
+import { withOutline } from '../materials/outline'
+
+/** Ink hull width for hands (thinner than the bodies' so curled fingers don't clot into a blob). */
+const HAND_INK_WIDTH = 1.5
 
 export interface HandPose {
   grip: number      // 0 open, 1 fist
@@ -118,7 +122,7 @@ export function buildHand(o: HandOptions): Hand {
   const mesh = (geo: BufferGeometry) => {
     const m = new Mesh(geo, o.material)
     m.castShadow = o.castShadow ?? false
-    return m
+    return withOutline(m, { width: HAND_INK_WIDTH })
   }
 
   root.add(mesh(G.palm))
@@ -172,12 +176,12 @@ export function buildHand(o: HandOptions): Hand {
   }
 }
 
-/** Triangle count of one hand (for budgets/tests). */
+/** Triangle count of one hand's own geometry (for budgets/tests; ink hulls share it and aren't counted). */
 export function handTriangles(h: Hand): number {
   let n = 0
   h.root.traverse(o => {
     const m = o as Mesh
-    if (m.isMesh) {
+    if (m.isMesh && !m.userData.inkHull) {
       const g = m.geometry
       n += (g.index ? g.index.count : g.attributes.position.count) / 3
     }
@@ -185,9 +189,9 @@ export function handTriangles(h: Hand): number {
   return n
 }
 
-/** Draw calls (meshes) of one hand. */
+/** Shaded meshes of one hand (each also has an ink hull child = one more draw when outlines are on). */
 export function handMeshes(h: Hand): number {
   let n = 0
-  h.root.traverse(o => { if ((o as Mesh).isMesh) n++ })
+  h.root.traverse(o => { if ((o as Mesh).isMesh && !o.userData.inkHull) n++ })
   return n
 }
