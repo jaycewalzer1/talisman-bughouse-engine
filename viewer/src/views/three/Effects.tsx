@@ -1,19 +1,43 @@
-// Post-processing stack (lazy-loaded): bloom on lights, chromatic aberration, light pixelation,
-// film grain and a heavy vignette. Lower `granularity` / Noise opacity here to tone it down.
-import { Bloom, ChromaticAberration, EffectComposer, Noise, Pixelation, Vignette } from '@react-three/postprocessing'
-import { BlendFunction } from 'postprocessing'
-import { Vector2 } from 'three'
+// Post-processing chain (lazy-loaded), in this order:
+//   (1) the scene is already rendered at ~STYLE.render.width x height (see index.tsx) and upscaled
+//       nearest-neighbour by the browser (CSS image-rendering: pixelated),
+//   (2) bloom, thresholded high so only lamp bulbs / neon / train windows glow,
+//   (3) film grain (as in the original look),
+//   (4) light colour quantization + subtle ordered Bayer dither (post/QuantizeDitherEffect.ts),
+//   (5) a heavy vignette (as in the original look).
+// Every stage is toggleable / tunable in style.config.ts (STYLE.post).
+import { useEffect, useMemo, useRef, type JSX } from 'react'
+import { useThree } from '@react-three/fiber'
+import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing'
+import { BlendFunction, type EffectComposer as EffectComposerImpl } from 'postprocessing'
+import { STYLE } from './style.config'
+import { QuantizeDitherEffect } from './post/QuantizeDitherEffect'
 
-const CA_OFFSET = new Vector2(0.0014, 0.0009)
+const P = STYLE.post
 
 export default function Effects() {
+  const composer = useRef<EffectComposerImpl>(null)
+  const dpr = useThree(s => s.viewport.dpr)
+  const size = useThree(s => s.size)
+  // The internal resolution is driven by dpr (index.tsx). The composer only resizes on CSS-size
+  // changes by itself, so also resize its buffers whenever dpr changes.
+  useEffect(() => { composer.current?.setSize(size.width, size.height) }, [dpr, size])
+
+  const dither = useMemo(() => new QuantizeDitherEffect({ strength: P.ditherStrength, levels: P.colorLevels }), [])
+  useEffect(() => () => dither.dispose(), [dither])
+
+  const fx: JSX.Element[] = []
+  if (P.bloom) fx.push(
+    <Bloom key="bloom" mipmapBlur intensity={P.bloomIntensity} luminanceThreshold={P.bloomThreshold}
+      luminanceSmoothing={P.bloomSmoothing} radius={P.bloomRadius} />,
+  )
+  if (P.grain) fx.push(<Noise key="grain" premultiply blendFunction={BlendFunction.SCREEN} opacity={P.grainOpacity} />)
+  if (P.dither) fx.push(<primitive key="dither" object={dither} />)
+  if (P.vignette) fx.push(<Vignette key="vignette" offset={P.vignetteOffset} darkness={P.vignetteDarkness} />)
+
   return (
-    <EffectComposer multisampling={0}>
-      <Bloom mipmapBlur intensity={0.85} luminanceThreshold={0.55} luminanceSmoothing={0.25} />
-      <ChromaticAberration offset={CA_OFFSET} radialModulation modulationOffset={0.25} />
-      <Pixelation granularity={2} />
-      <Noise premultiply blendFunction={BlendFunction.SCREEN} opacity={0.32} />
-      <Vignette offset={0.22} darkness={0.82} />
+    <EffectComposer ref={composer} multisampling={0}>
+      {fx}
     </EffectComposer>
   )
 }

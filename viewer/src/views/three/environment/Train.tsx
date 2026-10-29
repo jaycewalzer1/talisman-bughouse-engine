@@ -1,18 +1,36 @@
-// A J/M/Z-style el train that rolls past overhead every so often: rumble sound + world shake +
-// flickering window light spilling down through the ties.
-import { useRef } from 'react'
+// An el train that rolls past overhead every so often: rumble sound + world shake. Brushed steel
+// cars with the original purple stripe, glowing windows (bloom) and a faded abstract whole-car piece;
+// instead of a real light, a flickering additive light pool slides across the ground under it.
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import type { Group, PointLight } from 'three'
+import { CanvasTexture, Color, type Group } from 'three'
 import { TRACK_Y, TRACK_Z } from './Tracks'
 import { fx } from '../viewStore'
 import * as sfx from '../audio/sfx'
+import { retroMaterial } from '../materials/retroMaterial'
+import { drawAbstractPiece } from '../graffiti/sprayText'
+import { LightPool } from './BlobShadow'
+import { lightPoolMaterial } from './decalMaterials'
 
 const CARS = 5, CAR_LEN = 9, SPEED = 24, START = -70, END = 70
 
+const body = retroMaterial({ color: '#8d9399', chrome: 0.6 })
+const roof = retroMaterial({ color: '#5a5e64', chrome: 0.3 })
+const windows = retroMaterial({ color: '#000000', emissive: '#fff2c4', emissiveIntensity: 1.5, unlit: true })
+const stripeA = retroMaterial({ color: '#9b2fd6' })
+const stripeB = retroMaterial({ color: '#3a3c42' })
+
 export function Train() {
   const ref = useRef<Group>(null)
-  const light = useRef<PointLight>(null)
   const st = useRef({ x: START, running: false, nextAt: 9, dir: 1 })
+  const piece = useMemo(() => {
+    const m = retroMaterial({ map: new CanvasTexture(drawAbstractPiece(['#4f9a5b', '#3b6bb0', '#a03aa8'], 77, 256, 128)), transparent: true, mipmaps: false, color: '#c8c8c8' })
+    m.depthWrite = false; m.polygonOffset = true; m.polygonOffsetFactor = -1
+    return m
+  }, [])
+  const pool = useMemo(() => lightPoolMaterial('#d8e4ff', 0.0), [])
+  const poolRef = useRef<Group>(null)
+  const poolColor = useMemo(() => new Color('#d8e4ff'), [])
 
   useFrame(({ clock }, dt) => {
     const s = st.current, t = clock.elapsedTime, g = ref.current
@@ -32,7 +50,10 @@ export function Train() {
     const center = s.x - s.dir * (CARS * CAR_LEN) / 2
     fx.trainNear = s.running ? Math.max(0, 1 - Math.abs(center) / 35) : 0
     fx.shake = Math.max(fx.shake, fx.trainNear * 0.55)
-    if (light.current) light.current.intensity = fx.trainNear * (14 + Math.random() * 10)
+    // window light strobing down through the ties
+    const k = fx.trainNear * (0.35 + Math.random() * 0.25)
+    ;(pool.uniforms.diffuse.value as Color).copy(poolColor).multiplyScalar(k)
+    if (poolRef.current) { poolRef.current.position.x = Math.max(-8, Math.min(8, center)); poolRef.current.visible = k > 0.01 }
   })
 
   return (
@@ -40,24 +61,36 @@ export function Train() {
       <group ref={ref} position={[START, TRACK_Y + 1.65, TRACK_Z]} visible={false}>
         {Array.from({ length: CARS }, (_, i) => (
           <group key={i} position={[-i * (CAR_LEN + 0.4) - CAR_LEN / 2, 0, 0]}>
-            <mesh>
+            <mesh material={body}>
               <boxGeometry args={[CAR_LEN, 3, 2.9]} />
-              <meshStandardMaterial color="#8d9399" metalness={0.8} roughness={0.35} />
+            </mesh>
+            <mesh position={[0, 1.55, 0]} material={roof}>
+              <boxGeometry args={[CAR_LEN * 0.98, 0.15, 2.6]} />
             </mesh>
             {[1.46, -1.46].map(z => (
-              <mesh key={z} position={[0, 0.3, z]}>
-                <boxGeometry args={[CAR_LEN * 0.86, 0.75, 0.02]} />
-                <meshBasicMaterial color="#fff2c4" toneMapped={false} />
-              </mesh>
+              <group key={z}>
+                <mesh position={[0, 0.35, z]} material={windows}>
+                  <boxGeometry args={[CAR_LEN * 0.86, 0.7, 0.02]} />
+                </mesh>
+                <mesh position={[0, -0.55, z]} material={stripeA}>
+                  <boxGeometry args={[CAR_LEN, 0.16, 0.03]} />
+                </mesh>
+                <mesh position={[0, -0.75, z]} material={stripeB}>
+                  <boxGeometry args={[CAR_LEN, 0.08, 0.03]} />
+                </mesh>
+              </group>
             ))}
-            <mesh position={[0, -0.9, 1.47]}>
-              <boxGeometry args={[CAR_LEN * 0.9, 0.12, 0.02]} />
-              <meshBasicMaterial color="#9b2fd6" />
-            </mesh>
+            {i % 2 === 1 && (
+              <mesh position={[0, -0.25, 1.49]} material={piece} renderOrder={1}>
+                <planeGeometry args={[CAR_LEN * 0.7, CAR_LEN * 0.35]} />
+              </mesh>
+            )}
           </group>
         ))}
       </group>
-      <pointLight ref={light} position={[0, TRACK_Y - 1.2, TRACK_Z]} color="#d8e4ff" intensity={0} distance={18} decay={1.5} />
+      <group ref={poolRef} position={[0, 0, TRACK_Z]} visible={false}>
+        <LightPool color="#d8e4ff" material={pool} radius={2.6} stretch={3} />
+      </group>
     </group>
   )
 }

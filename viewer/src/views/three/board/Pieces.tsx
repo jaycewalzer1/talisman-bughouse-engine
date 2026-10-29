@@ -1,15 +1,20 @@
 // All chess pieces: on both boards, in the four reserve piles, and in flight.
 // Static pieces use 12 instanced meshes (6 types x 2 colors) rebuilt every frame from the store
 // (cheap: < 100 matrices). Animated pieces use a small pool of ordinary meshes on top.
+// Look: faceted chrome (retroMaterial sphere-map shine): white = pearl chrome, black = dark chrome
+// with a cool violet tint (team-agnostic). No shadow maps.
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Euler, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three'
+import { AdditiveBlending, Euler, InstancedMesh, Matrix4, Mesh, PlaneGeometry, Quaternion, Vector3 } from 'three'
 import { fenGrid, type BoardId } from '../../../events/types'
 import { useGame } from '../../../store/gameStore'
 import { BOARD_ROT, BOARD_Y, reserveSlot, squareWorld } from '../layout'
 import { PIECE_TYPES, pieceGeometry } from './pieceGeometry'
-import { activeAnims, inflight, onMove, onPass, reserves, resetAnims, updateAnims } from './anims'
+import { activeAnims, inflight, now, onMove, onPass, reserves, resetAnims, updateAnims } from './anims'
+import { grabBus } from '../grab/grabChoreo'
 import { onFxReset, onGameEvent } from '../director'
+import { retroMaterial } from '../materials/retroMaterial'
+import { STYLE } from '../style.config'
 
 const CAP = 48
 const POOL = 14
@@ -26,20 +31,20 @@ const jitter = (i: number) => (((i * 2654435761) >>> 0) % 1000) / 1000 - 0.5
 
 export function Pieces() {
   const mats = useMemo(() => ({
-    w: new MeshStandardMaterial({ color: '#efe3c6', roughness: 0.55, flatShading: true }),
-    b: new MeshStandardMaterial({ color: '#25202a', roughness: 0.45, metalness: 0.1, flatShading: true, emissive: '#120c18' }),
+    w: retroMaterial({ color: '#fff6ea', chrome: 0.5 }),
+    b: retroMaterial({ color: '#3a2c5a', chrome: 0.62 }),
   }), [])
   const meshes = useMemo(() => {
     const out: Record<string, InstancedMesh> = {}
     for (const t of PIECE_TYPES) for (const c of ['w', 'b'] as const) {
       const m = new InstancedMesh(pieceGeometry(t), mats[c], CAP)
-      m.castShadow = true; m.receiveShadow = true; m.count = 0; m.frustumCulled = false
+      m.count = 0; m.frustumCulled = false
       out[c === 'w' ? t.toUpperCase() : t] = m
     }
     return out
   }, [mats])
   const pool = useMemo(() => Array.from({ length: POOL }, () => {
-    const m = new Mesh(pieceGeometry('p'), mats.w); m.castShadow = true; m.visible = false; return m
+    const m = new Mesh(pieceGeometry('p'), mats.w); m.visible = false; return m
   }), [mats])
 
   useEffect(() => {
@@ -90,18 +95,29 @@ export function Pieces() {
       }
     }
     for (const k in meshes) meshes[k].instanceMatrix.needsUpdate = true
-    // animated pieces
+    // animated pieces. Characters run their IK before this (negative useFrame priority) and report
+    // where their hands are, so a held piece is drawn in the actual hand.
     let i = 0
+    const t = now()
     for (const a of anims) {
       if (i >= POOL) break
+      let lie = 0
+      if (a.kind === 'move' && a.seat) {
+        if (!grabBus.heldBase(a.seat, t, tmp.p)) tmp.p.copy(a.pos)
+        // reserve pieces lie on their side in the pile: stand them up as they lift
+        if (a.drop) lie = (Math.PI / 2) * (1 - Math.min(1, Math.max(0, (t - a.start) / (a.dur * 0.3))))
+      } else if (a.kind === 'ghost' && a.seat && grabBus.captureRelease(a.seat)) {
+        // the off hand plucks the captured piece and flicks it away (null = already let go)
+        if (!grabBus.capturedPos(a.seat, t, tmp.p)) continue
+      } else tmp.p.copy(a.pos)
       const m = pool[i++]
       const white = a.letter === a.letter.toUpperCase()
       m.geometry = pieceGeometry(a.letter)
       m.material = white ? mats.w : mats.b
-      m.position.copy(a.pos)
+      m.position.copy(tmp.p)
       const yaw = (white ? Math.PI : 0) + BOARD_ROT[a.board]
       if (a.kind === 'toss') m.rotation.set(a.tilt, a.tilt * 0.4, a.landed ? Math.PI / 2 : 0)
-      else m.rotation.set(a.tilt, yaw, 0)
+      else m.rotation.set(a.tilt + lie, yaw, 0)
       m.visible = true
     }
     for (; i < POOL; i++) pool[i].visible = false
@@ -120,7 +136,9 @@ export function Pieces() {
 function LastMoveMarks() {
   const marks = useMemo(() => {
     const geo = new PlaneGeometry(0.088, 0.088).rotateX(-Math.PI / 2)
-    const mat = new MeshStandardMaterial({ color: '#ffd23a', transparent: true, opacity: 0.35, emissive: '#ffb000', emissiveIntensity: 0.4, depthWrite: false })
+    const mat = retroMaterial({ color: STYLE.palette.yellow, unlit: true, transparent: true, opacity: 0.5, mipmaps: false })
+    mat.blending = AdditiveBlending
+    mat.depthWrite = false
     return BOARDS.flatMap(() => [new Mesh(geo, mat), new Mesh(geo, mat)])
   }, [])
   useFrame(() => {

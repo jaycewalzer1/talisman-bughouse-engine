@@ -1,58 +1,136 @@
-// Minimal HUD styled like stickers and tape (HTML overlay, bottom-left so the app shell's toggle
-// on top stays clear): camera mode, sound, stall markers and the result banner.
-import type { CSSProperties, ReactNode } from 'react'
-import { TEAM_OF, type Seat } from '../../../events/types'
+// Arcade HUD (HTML overlay over the canvas). Layout keeps the middle of the screen — where the
+// broadcast camera puts the boards — clear:
+//   top-centre      announcer hype text (transient) / result banner (after game end)
+//   left / right    comic speech bubbles + portrait cut-ins (T1 left edge, T2 right edge)
+//   bottom corners  per-team boost meter + race clocks (T1 bottom-left, T2 bottom-right)
+//   bottom centre   trick text (transient), camera hint (fades), camera/focus/sound buttons,
+//                   "sitting" chips
+// The whole HUD layer is pointer-events: none so the free camera can be dragged anywhere over it;
+// only real buttons (.h3-btn) take the pointer.
+// The app shell's sticker bar lives at the top-left, so nothing permanent goes there.
+// Every piece can be switched off in style.config.ts (STYLE.comms / STYLE.hud).
+import type { CSSProperties } from 'react'
+import { type Seat, type TeamId, TEAM_OF } from '../../../events/types'
 import { useGame } from '../../../store/gameStore'
-import { TEAM_COLOR } from '../layout'
 import { useView } from '../viewStore'
 import { setSoundEnabled } from '../audio/sfx'
+import { STYLE } from '../style.config'
+import { useMoments } from '../comms/moments'
+import { Announcer } from '../comms/Announcer'
+import { SpeechBubbles } from '../comms/SpeechBubbles'
+import { END_FALLBACK, END_TEXT } from '../comms/lines'
+import { TrickText } from './TrickText'
+import { BoostMeter } from './BoostMeter'
+import { RaceClock } from './RaceClock'
+import './hud.css'
 
-const sticker = (bg: string, rot: number, color = '#111'): CSSProperties => ({
-  background: bg, color, border: 'none', padding: '6px 12px', fontWeight: 900, fontSize: 13, letterSpacing: 1,
-  fontFamily: '"Arial Black", "Helvetica Neue", sans-serif', transform: `rotate(${rot}deg)`, cursor: 'pointer',
-  boxShadow: '2px 3px 0 rgba(0,0,0,.65)', borderRadius: 3, textTransform: 'uppercase', pointerEvents: 'auto',
-})
-
-function Sticker({ onClick, bg, rot, children, color }: { onClick?: () => void; bg: string; rot: number; children: ReactNode; color?: string }) {
-  return <button onClick={onClick} style={sticker(bg, rot, color)}>{children}</button>
+// Display fonts (free, OFL) — injected once as a <link> so it works regardless of CSS chunk order.
+const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Bowlby+One+SC&family=Russo+One&display=swap'
+if (typeof document !== 'undefined' && !document.querySelector(`link[href="${FONT_HREF}"]`)) {
+  const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = FONT_HREF
+  document.head.appendChild(l)
 }
 
-export function Hud() {
+const TEAM_SEATS: Record<TeamId, Seat[]> = { T1: ['A_white', 'B_black'], T2: ['A_black', 'B_white'] }
+
+function TeamPanel({ team }: { team: TeamId }) {
+  const H = STYLE.hud
+  if (!H.boostMeters && !H.raceClocks) return <div />
+  return (
+    <div className={`h3-team h3-${team} h3-side-${team === 'T1' ? 'left' : 'right'}`}>
+      {H.boostMeters && <BoostMeter team={team} />}
+      {H.raceClocks && (
+        <div className="h3-clocks">
+          {TEAM_SEATS[team].map(seat => <RaceClock key={seat} seat={seat} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** One-line controls hint for the free camera; fades out after STYLE.camera.hintMs (CSS only). */
+function CamHint() {
+  const style = { '--h3-hint-delay': `${STYLE.camera.hintMs}ms` } as CSSProperties
+  return (
+    <div className="h3-hint" style={style}>
+      DRAG to orbit · RIGHT-DRAG to pan · SCROLL to zoom · 1/2/0 focus
+    </div>
+  )
+}
+
+function Controls() {
   const mode = useView(s => s.cameraMode), setMode = useView(s => s.setCameraMode)
+  const focus = useView(s => s.requestFocus)
   const soundOn = useView(s => s.soundOn), setSound = useView(s => s.setSoundOn)
   const stalls = useGame(s => s.stalls)
-  const end = useGame(s => s.end)
   const seats = useGame(s => s.start?.seats)
   const toggleSound = () => { const on = !soundOn; setSoundEnabled(on); setSound(on) }
-
   return (
-    <>
-      <div style={{ position: 'absolute', left: 14, bottom: 14, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', pointerEvents: 'none', maxWidth: 'calc(100% - 380px)', minWidth: 200 }}>
-        <Sticker bg={mode === 'broadcast' ? '#ffd23a' : '#e9e2c8'} rot={-3} onClick={() => setMode(mode === 'broadcast' ? 'orbit' : 'broadcast')}>
-          {mode === 'broadcast' ? '📺 broadcast' : '🛹 free cam'}
-        </Sticker>
-        <Sticker bg={soundOn ? '#4fd16b' : '#3a3a3a'} color={soundOn ? '#111' : '#eee'} rot={2} onClick={toggleSound}>
-          {soundOn ? '🔊 sound on' : '🔇 sound off'}
-        </Sticker>
-        {(Object.keys(stalls) as Seat[]).map((seat, i) => (
-          <span key={seat} style={{ ...sticker('#e02424', i % 2 ? 2 : -2, '#fff'), cursor: 'default', borderLeft: `6px solid ${TEAM_COLOR[TEAM_OF[seat]]}` }}>
+    <div className="h3-center">
+      <div className="h3-stalls">
+        {(Object.keys(stalls) as Seat[]).map(seat => (
+          <span key={seat} className={`h3-chip h3-${TEAM_OF[seat]}`}>
             ⏸ {seats?.[seat]?.name ?? seat} sitting{stalls[seat] && stalls[seat] !== 'stall' ? ` · ${stalls[seat]}` : ''}
           </span>
         ))}
       </div>
-      {end && (
-        <div style={{ position: 'absolute', left: '50%', top: '22%', transform: 'translateX(-50%) rotate(-3deg)', pointerEvents: 'none' }}>
-          <div style={{
-            ...sticker(end.result === 'draw' ? '#e9e2c8' : TEAM_COLOR[end.result as 'T1' | 'T2'], 0), cursor: 'default',
-            fontSize: 'clamp(20px, 5vw, 44px)', padding: '10px 26px', boxShadow: '5px 6px 0 rgba(0,0,0,.7)',
-          }}>
-            {end.result === 'draw' ? 'DRAW' : `${end.result} WINS`}
-            <div style={{ fontSize: 'clamp(11px, 2vw, 15px)', opacity: 0.8 }}>
-              {end.reason}{end.board ? ` on board ${end.board}` : ''}{end.loserSeat ? ` · ${seats?.[end.loserSeat]?.name ?? end.loserSeat}` : ''}
-            </div>
-          </div>
+      {mode === 'free' && <CamHint />}
+      <div className="h3-buttons">
+        <button
+          className={`h3-btn ${mode === 'auto' ? 'h3-btn-on' : ''}`}
+          title={mode === 'auto' ? 'Auto director is driving: click to take the camera back' : 'Let the auto director cut between shots'}
+          onClick={() => setMode(mode === 'auto' ? 'free' : 'auto')}
+        >
+          {mode === 'auto' ? '📺 AUTO CAM' : '🎥 FREE CAM'}
+        </button>
+        <button className="h3-btn h3-btn-sm" title="Focus board A (1)" onClick={() => focus('A')}>A</button>
+        <button className="h3-btn h3-btn-sm" title="Focus board B (2)" onClick={() => focus('B')}>B</button>
+        <button className="h3-btn h3-btn-sm" title="Both boards (0 / R)" onClick={() => focus('both')}>A+B</button>
+        <button className={`h3-btn ${soundOn ? 'h3-btn-go' : 'h3-btn-off'}`} onClick={toggleSound}>
+          {soundOn ? '🔊 SOUND ON' : '🔇 SOUND OFF'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ResultBanner() {
+  const end = useGame(s => s.end)
+  const seats = useGame(s => s.start?.seats)
+  if (!end) return null
+  const cls = end.result === 'draw' ? 'h3-neutral' : `h3-${end.result}`
+  const winners = end.result === 'draw' ? null : TEAM_SEATS[end.result].map(s => seats?.[s]?.name ?? s).join(' + ')
+  return (
+    <div className="h3-result">
+      <div className={`h3-result-card ${cls}`}>
+        <div className="h3-result-title h3-display">{end.result === 'draw' ? 'DRAW' : `${end.result} WINS`}</div>
+        <div className="h3-result-sub">
+          {END_TEXT[end.reason] ?? END_FALLBACK}{end.board ? ` · board ${end.board}` : ''}
+          {end.loserSeat ? ` · ${seats?.[end.loserSeat]?.name ?? end.loserSeat}` : ''}
+          {winners ? <div>{winners}</div> : null}
         </div>
-      )}
-    </>
+      </div>
+    </div>
+  )
+}
+
+export function Hud() {
+  useMoments()
+  const vars = {
+    '--h3-t1': STYLE.palette.T1, '--h3-t2': STYLE.palette.T2, '--h3-ink': STYLE.palette.ink,
+    '--h3-yellow': STYLE.palette.yellow, '--h3-magenta': STYLE.palette.magenta,
+  } as CSSProperties
+  return (
+    <div className="h3-hud" style={vars}>
+      {STYLE.comms.announcer && <Announcer />}
+      <ResultBanner />
+      {STYLE.comms.bubbles && <SpeechBubbles />}
+      {STYLE.hud.trickText && <TrickText />}
+      <div className="h3-bottom">
+        <TeamPanel team="T1" />
+        <Controls />
+        <TeamPanel team="T2" />
+      </div>
+    </div>
   )
 }

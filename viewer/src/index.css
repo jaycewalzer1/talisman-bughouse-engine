@@ -38,7 +38,7 @@ body {
   position: fixed;
   top: 10px;
   left: 12px;
-  right: 12px;
+  right: calc(12px + var(--pip-w, 0px));   /* keep clear of the picture-in-picture card (top-right) */
   z-index: 100;
   display: flex;
   flex-wrap: wrap;
@@ -93,6 +93,123 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---------- view layers + picture-in-picture swap (App.tsx) ----------
+   z order: 2D layer (0) < 3D full (1) < 3D thumbnail (60) < PiP card (61) < shell (100) */
+.layer-2d { position: absolute; inset: 0; z-index: 0; }
+.layer-2d.is-in { animation: pip-grow 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: calc(100% - 140px) 80px; }
+@keyframes pip-grow { from { transform: scale(0.18); opacity: 0.2; } to { transform: none; opacity: 1; } }
+
+.layer-3d {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: 0 0;
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.layer-3d.is-thumb { z-index: 60; pointer-events: none; }   /* clicks go to the card above it */
+.layer-3d.is-hidden { visibility: hidden; }
+
+.pip-card {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 61;
+  cursor: pointer;
+  border: 3px solid #000;
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 #000, 0 10px 30px rgba(0, 0, 0, 0.55);
+  animation: pip-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  outline: none;
+}
+.pip-card:hover, .pip-card:focus-visible { box-shadow: 4px 4px 0 #000, 0 0 0 2px var(--pip-yellow, #d8b04a), 0 10px 30px rgba(0, 0, 0, 0.55); }
+/* masking tape over the top-left corner */
+.pip-card::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: -16px;
+  width: 52px;
+  height: 15px;
+  background: rgba(232, 222, 190, 0.85);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transform: rotate(-32deg);
+  z-index: 2;
+  pointer-events: none;
+}
+/* 2D mode: just a frame around the scaled-down 3D layer underneath; appears once the shrink is done */
+.pip-3d { background: transparent; animation-delay: 220ms; }
+.pip-3d .pip-label { position: absolute; left: 0; right: 0; bottom: 0; height: var(--pip-label-h, 22px); }
+/* 3D mode: the compact 2D table */
+.pip-2d {
+  padding: 8px 8px 0;
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 5px 5px,
+    linear-gradient(180deg, #16161d, #0b0b0f);
+  animation-delay: 120ms;
+}
+.pip-2d .pip-label { margin: 6px -8px 0; }
+.pip-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 28px 0 8px;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #111;
+  background: var(--paper);
+  border-top: 2px solid #000;
+  background-image: linear-gradient(90deg, var(--pip-t1, var(--t1)) 0 50%, var(--pip-t2, var(--t2)) 50% 100%);
+  background-size: 100% 3px;
+  background-repeat: no-repeat;
+  background-position: bottom;
+  white-space: nowrap;
+}
+.pip-label b { font-family: var(--font-marker); font-weight: 400; font-size: 14px; color: #111; text-shadow: 1px 1px 0 var(--pip-t2, var(--t2)); }
+.pip-collapse {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  width: 20px;
+  height: 17px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--paper);
+  background: #111;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  z-index: 3;
+}
+.pip-collapse:hover { background: var(--pip-t1, var(--t1)); color: #111; }
+.pip-tab {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 61;
+  font-family: var(--font-marker);
+  font-size: 14px;
+  color: #111;
+  background: var(--paper);
+  border: 2px solid #000;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 #000;
+  padding: 3px 10px;
+  transform: rotate(1.5deg);
+  cursor: pointer;
+}
+.pip-tab:hover { color: var(--pip-t1, var(--t1)); background: #111; }
+@keyframes pip-in { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .layer-3d { transition: none; }
+  .layer-2d.is-in, .pip-card { animation: none; }
 }
 
 @media (max-width: 700px) {

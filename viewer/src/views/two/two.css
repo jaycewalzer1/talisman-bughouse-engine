@@ -50,6 +50,8 @@
 .legend-team:nth-child(2) { transform: rotate(1.2deg); }
 .legend-team:nth-child(1) { transform: rotate(-1deg); }
 .tv-meta { margin-left: auto; font-family: var(--font-mono); font-size: 12px; opacity: 0.75; }
+/* the picture-in-picture 3D card sits top-right (App.tsx publishes its size as --pip-w / --pip-bottom) */
+.tv-header { padding-right: var(--pip-w, 0px); }
 
 /* ---------- main grid ---------- */
 .tv-main {
@@ -353,6 +355,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin-top: max(0px, calc(var(--pip-bottom, 0px) - 106px));   /* start below the PiP card */
   background: rgba(12, 12, 14, 0.88);
   border: 2px solid #26231f;
   box-shadow: 4px 4px 0 #000;
@@ -424,7 +427,13 @@
 
 /* ---------- smaller screens: log goes underneath ---------- */
 @media (max-width: 1000px) {
-  .tv-root { --bs: max(150px, min(calc((100vw - 110px) / 2), calc(100vh - 560px))); overflow-y: auto; }
+  .tv-root {
+    --bs: max(150px, min(calc((100vw - 110px) / 2), calc(100vh - 560px)));
+    overflow-y: auto;
+    padding-top: max(64px, var(--pip-bottom, 0px));   /* single column: everything starts below the PiP card */
+  }
+  .tv-header { padding-right: 0; }
+  .log { margin-top: 0; }
   .tv-main { grid-template-columns: 1fr; grid-template-rows: auto 240px; }
   .tables { gap: 30px; }
   .lane { width: calc(var(--bs) * 2 + 30px); }

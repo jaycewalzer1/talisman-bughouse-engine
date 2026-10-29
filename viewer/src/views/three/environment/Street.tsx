@@ -1,33 +1,45 @@
-// Wet asphalt with cheap puddle reflections (low-res reflector, puddles = low roughness).
-import { MeshReflectorMaterial } from '@react-three/drei'
-import { asphaltRoughness, asphaltTexture } from './textures'
+// The ground: the original wet asphalt (cracks, patches, puddles baked in), nearest-filtered and
+// mip-mapped, running out into the fog, plus a glossy puddle overlay that reflects the lamps
+// (wetMaterial.ts, a cheap stand-in for the original MeshReflectorMaterial) and the curb.
+import { useFrame } from '@react-three/fiber'
+import { STYLE } from '../style.config'
+import { retroMaterial } from '../materials/retroMaterial'
+import { asphaltTexture, puddleMaskTexture } from './textures'
+import { wetMaterial } from './wetMaterial'
+import { lampState } from './lamps'
+
+const SIZE = 120, TILE = 8.8          // original: 5 x 4 tiles over 44 x 34 m
+const REPEAT = SIZE / TILE
+const ground = retroMaterial({ map: asphaltTexture(), repeat: [REPEAT, REPEAT], color: '#c4c8d0' })
+const wet = wetMaterial(puddleMaskTexture(), REPEAT)
+const curb = retroMaterial({ color: '#55534f' })
+const curbPaint = retroMaterial({ color: '#8a7a3e' })   // faded yellow edge
+
+function Puddles() {
+  useFrame(({ clock }) => {
+    wet.uniforms.time.value = clock.elapsedTime
+    wet.uniforms.flicker.value = lampState.flicker
+  })
+  return (
+    <mesh rotation-x={-Math.PI / 2} position-y={0.004} material={wet}>
+      <planeGeometry args={[SIZE, SIZE]} />
+    </mesh>
+  )
+}
 
 export function Street() {
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} receiveShadow>
-        <planeGeometry args={[44, 34]} />
-        <MeshReflectorMaterial
-          map={asphaltTexture()}
-          roughnessMap={asphaltRoughness()}
-          roughness={1}
-          metalness={0.35}
-          color="#8a8a90"
-          resolution={256}
-          blur={[300, 80]}
-          mixBlur={1.2}
-          mixStrength={3.5}
-          mixContrast={1.1}
-          mirror={0.6}
-          depthScale={0.6}
-          minDepthThreshold={0.3}
-          maxDepthThreshold={1.4}
-        />
+      <mesh rotation-x={-Math.PI / 2} material={ground}>
+        <planeGeometry args={[SIZE, SIZE]} />
       </mesh>
-      {/* curb along the wall */}
-      <mesh position={[0, 0.08, -3.95]} receiveShadow>
+      {STYLE.world.wetGround && <Puddles />}
+      {/* curb along the wall, faded painted edge */}
+      <mesh position={[0, 0.08, -3.95]} material={curb}>
         <boxGeometry args={[30, 0.16, 0.5]} />
-        <meshStandardMaterial color="#55534f" roughness={0.95} />
+      </mesh>
+      <mesh position={[0, 0.08, -3.695]} material={curbPaint}>
+        <boxGeometry args={[30, 0.16, 0.012]} />
       </mesh>
     </group>
   )

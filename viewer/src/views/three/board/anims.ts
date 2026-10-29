@@ -3,12 +3,18 @@
 //
 // Safety for fast replays: a new move on a board instantly finishes that board's previous move
 // animation, durations shrink when moves come quickly, and reset() drops everything.
+//
+// Hands (../grab): before a piece lifts, the mover's hand gets a short reach lead (shrinks to 0 in
+// fast replays) during which the piece waits on its square / in the pile. The move is registered
+// with grabBus using the exact path function below, so the hand and the piece share one curve.
+// Visual only: game state is untouched.
 import { Vector3 } from 'three'
 import { fenGrid, fenPocket, type BoardId, type MoveEvent, type PassEvent, type Seat } from '../../../events/types'
 import { useGame, type GameState } from '../../../store/gameStore'
 import { reserveSlot, squareWorld } from '../layout'
 import * as sfx from '../audio/sfx'
 import { fx } from '../viewStore'
+import { grabBus } from '../grab/grabChoreo'
 
 export type AnimKind = 'move' | 'ghost' | 'toss'
 
@@ -19,6 +25,7 @@ export interface PieceAnim {
   hideSq?: string             // square on `board` whose static piece is hidden while animating
   pile?: string               // reserve pile key `${board}:${letter}` this toss lands in
   seat?: Seat                 // mover
+  drop?: boolean              // move from the reserve pile (piece lies on its side until lifted)
   from: Vector3
   to: Vector3
   start: number               // seconds (performance clock)
@@ -34,13 +41,14 @@ export const now = () => performance.now() / 1000
 
 const anims: PieceAnim[] = []
 const lastMoveAt: Partial<Record<BoardId, number>> = {}
-const lastDest: Partial<Record<BoardId, { sq: string; landAt: number }>> = {}
+const lastDest: Partial<Record<BoardId, { sq: string; landAt: number; seat: Seat }>> = {}
 let prevFen: Partial<Record<BoardId, string>> = {}
 
 export function activeAnims(): readonly PieceAnim[] { return anims }
 
 export function resetAnims() {
   anims.length = 0
+  grabBus.reset()
   const s = useGame.getState()
   prevFen = { ...s.fens }
 }
@@ -83,6 +91,7 @@ export function onMove(e: MoveEvent) {
   const gap = lastMoveAt[e.board] === undefined ? 9 : t - lastMoveAt[e.board]!
   lastMoveAt[e.board] = t
   const dur = Math.max(0.18, Math.min(0.55, gap * 0.7))
+  const start = t + grabBus.reachLead(gap)      // hand reaches first; the piece waits
   const before = prevFen[e.board]
   prevFen[e.board] = e.fen
   const dest = e.isDrop ? e.uci.slice(-2) : e.uci.slice(2, 4)
@@ -97,26 +106,32 @@ export function onMove(e: MoveEvent) {
   }
   const toV = squareWorld(e.board, dest)
   const knight = letter.toLowerCase() === 'n'
-  anims.push({
-    kind: 'move', letter, board: e.board, hideSq: dest, seat: e.seat, from, to: toV, start: t, dur,
+  const main: PieceAnim = {
+    kind: 'move', letter, board: e.board, hideSq: dest, seat: e.seat, drop: e.isDrop, from, to: toV, start, dur,
     arc: e.isDrop ? 0.22 : knight ? 0.16 : 0.1, spin: 0, pos: from.clone(), tilt: 0, landed: false,
-  })
-  // captured piece stays put until the slam
+  }
+  anims.push(main)
+  // captured piece: stays put until the off hand plucks it (and flicks it away) or the slam
+  let capPos: Vector3 | null = null, capLetter: string | undefined
   if (e.capture && !e.isDrop) {
     let capSq = dest
     if (before && !letterAt(before, dest)) capSq = dest[0] + e.uci[1] // en passant
-    const capLetter = letterAt(before, capSq) ?? e.capture
-    const p = squareWorld(e.board, capSq)
-    anims.push({ kind: 'ghost', letter: capLetter, board: e.board, from: p, to: p, start: t, dur, arc: 0, spin: 0, pos: p.clone(), tilt: 0, landed: false })
+    capLetter = letterAt(before, capSq) ?? e.capture
+    capPos = squareWorld(e.board, capSq)
+    anims.push({ kind: 'ghost', letter: capLetter, board: e.board, seat: e.seat, from: capPos, to: capPos, start: t, dur: start - t + dur, arc: 0, spin: 0, pos: capPos.clone(), tilt: 0, landed: false })
   }
-  lastDest[e.board] = { sq: dest, landAt: t + dur }
+  grabBus.requestMove({
+    seat: e.seat, letter, from, to: toV, start, dur, drop: e.isDrop, arc: main.arc, now: t,
+    capture: capPos, captureLetter: capLetter, path: (tt, out) => pathAt(main, tt, out),
+  })
+  lastDest[e.board] = { sq: dest, landAt: start + dur, seat: e.seat }
   // castling (king-to-target): slide the rook too
   if (!e.isDrop && letter.toLowerCase() === 'k' && Math.abs(e.uci.charCodeAt(0) - e.uci.charCodeAt(2)) === 2) {
     const rank = e.uci[1], kingside = e.uci[2] > e.uci[0]
     const rFrom = (kingside ? 'h' : 'a') + rank, rTo = (kingside ? 'f' : 'd') + rank
     anims.push({
       kind: 'move', letter: white ? 'R' : 'r', board: e.board, hideSq: rTo, from: squareWorld(e.board, rFrom),
-      to: squareWorld(e.board, rTo), start: t + dur * 0.3, dur: dur * 0.7, arc: 0.06, spin: 0, pos: new Vector3(), tilt: 0, landed: false,
+      to: squareWorld(e.board, rTo), start: start + dur * 0.3, dur: dur * 0.7, arc: 0.06, spin: 0, pos: new Vector3(), tilt: 0, landed: false,
     })
   }
 }
@@ -124,8 +139,11 @@ export function onMove(e: MoveEvent) {
 export function onPass(e: PassEvent) {
   const t = now()
   const src = lastDest[e.fromBoard]
-  const from = squareWorld(e.fromBoard, src?.sq ?? 'e4', undefined)
-  const start = Math.max(t, src?.landAt ?? t)
+  let from = squareWorld(e.fromBoard, src?.sq ?? 'e4', undefined)
+  let start = Math.max(t, src?.landAt ?? t)
+  // the capturer's off hand flicked the taken piece off the board: the toss starts from its hand
+  const rel = src ? grabBus.captureRelease(src.seat) : null
+  if (rel && rel.at + 0.05 >= t) { from = rel.pos; start = Math.max(t, rel.at) }
   const toBoard = e.toSeat[0] as BoardId
   const pile = reserves(useGame.getState())[toBoard]
   const white = e.piece === e.piece.toUpperCase()
@@ -149,6 +167,17 @@ export function inflight(board: BoardId, letter: string): number {
 
 const easeInOut = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2)
 
+/** Piece base position of a 'move' animation at time t (also handed to the grab choreography). */
+export function pathAt(a: PieceAnim, t: number, out: Vector3): Vector3 {
+  const u = Math.min(1, Math.max(0, (t - a.start) / a.dur))
+  const e = easeInOut(u)
+  out.lerpVectors(a.from, a.to, e)
+  // lift, arc, then slam down hard at the end
+  const lift = u < 0.85 ? Math.sin(Math.min(1, u / 0.85) * Math.PI * 0.5) : Math.pow(1 - (u - 0.85) / 0.15, 2)
+  out.y += a.arc * Math.sin(Math.PI * e) * 0.6 + lift * 0.06
+  return out
+}
+
 /** Advance all animations; called once per frame by Pieces. */
 export function updateAnims(t = now()) {
   for (let i = anims.length - 1; i >= 0; i--) {
@@ -157,11 +186,7 @@ export function updateAnims(t = now()) {
     if (a.kind === 'ghost') {
       a.pos.copy(a.from)
     } else if (a.kind === 'move') {
-      const e = easeInOut(u)
-      a.pos.lerpVectors(a.from, a.to, e)
-      // lift, arc, then slam down hard at the end
-      const lift = u < 0.85 ? Math.sin(Math.min(1, u / 0.85) * Math.PI * 0.5) : Math.pow(1 - (u - 0.85) / 0.15, 2)
-      a.pos.y += a.arc * Math.sin(Math.PI * e) * 0.6 + lift * 0.06
+      pathAt(a, t, a.pos)
       a.tilt = Math.sin(Math.PI * u) * 0.35
     } else {
       a.pos.lerpVectors(a.from, a.to, u)

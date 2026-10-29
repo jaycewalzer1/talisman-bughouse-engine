@@ -1,54 +1,62 @@
-// A strip of tape floating over each player: AI name in team color, plus a red "SITTING" sticker
-// while stalling and "..." while thinking. Canvas sprite, redrawn only when the text changes.
+// A small arcade-style tag over each skater: slanted team-colour plate with the handle, an accent
+// underline, "..." while thinking and a red WAIT sticker while stalling. Canvas sprite, redrawn
+// only when the text changes. (The HUD shows the full AI names.)
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { CanvasTexture, SRGBColorSpace, type Sprite } from 'three'
+import { CanvasTexture, NearestFilter, SRGBColorSpace, type Sprite } from 'three'
 import { TEAM_OF, type Seat } from '../../../events/types'
 import { useGame } from '../../../store/gameStore'
-import { TEAM_COLOR } from '../layout'
+import { STYLE } from '../style.config'
 import { SPECS } from './specs'
+
+const W = 192, H = 72
 
 export function NameTag({ seat, height }: { seat: Seat; height: number }) {
   const sprite = useRef<Sprite>(null)
   const { canvas, tex } = useMemo(() => {
-    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 96
+    const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H
     const tex = new CanvasTexture(canvas); tex.colorSpace = SRGBColorSpace
+    tex.magFilter = NearestFilter; tex.minFilter = NearestFilter; tex.generateMipmaps = false
     return { canvas, tex }
   }, [])
   const key = useRef('')
 
   useFrame(({ clock }) => {
     const s = useGame.getState()
-    // Character handle + player kind; the arena's full names are too long for a floating tag.
-    const kind = s.start?.seats[seat]?.kind
-    const name = kind ? `${SPECS[seat].id} · ${kind.slice(0, 5)}` : SPECS[seat].id
     const stall = s.stalls[seat]
     const thinking = !!s.thinking[seat]
-    const k = `${name}|${stall ?? ''}|${thinking}`
-    if (sprite.current && stall) sprite.current.position.y = height + Math.abs(Math.sin(clock.elapsedTime * 4)) * 0.04
+    if (sprite.current) sprite.current.position.y = height + (stall ? Math.abs(Math.sin(clock.elapsedTime * 5)) * 0.03 : 0)
+    const k = `${stall ?? ''}|${thinking}`
     if (k === key.current) return
     key.current = k
+    const spec = SPECS[seat]
+    const team = TEAM_OF[seat] === 'T1' ? STYLE.palette.T1 : STYLE.palette.T2
     const g = canvas.getContext('2d')!
-    g.clearRect(0, 0, 256, 96)
-    // tape strip
-    g.save(); g.translate(128, 30); g.rotate(-0.03)
-    g.fillStyle = 'rgba(232,226,205,0.95)'; g.fillRect(-118, -20, 236, 40)
-    g.fillStyle = TEAM_COLOR[TEAM_OF[seat]]; g.fillRect(-118, -20, 10, 40)
-    g.fillStyle = '#151515'; g.font = 'bold 24px "Courier New", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'
-    g.fillText((name + (thinking && !stall ? ' ...' : '')).slice(0, 16), 4, 2)
-    g.restore()
+    g.clearRect(0, 0, W, H)
+    // slanted plate
+    const plate = (x: number, y: number, w: number, h: number, sl: number) => {
+      g.beginPath(); g.moveTo(x + sl, y); g.lineTo(x + w, y); g.lineTo(x + w - sl, y + h); g.lineTo(x, y + h); g.closePath()
+    }
+    g.fillStyle = STYLE.palette.ink; plate(14, 6, 168, 38, 12); g.fill()
+    g.fillStyle = team; plate(10, 2, 168, 38, 12); g.fill()
+    g.fillStyle = spec.accent; plate(18, 36, 140, 6, 3); g.fill()
+    g.font = 'italic 900 26px "Arial Black", Impact, sans-serif'
+    g.textAlign = 'center'; g.textBaseline = 'middle'
+    const label = spec.id + (thinking && !stall ? '…' : '')
+    g.lineWidth = 5; g.strokeStyle = STYLE.palette.ink; g.strokeText(label, 94, 22)
+    g.fillStyle = '#ffffff'; g.fillText(label, 94, 22)
     if (stall) {
-      g.save(); g.translate(128, 72); g.rotate(0.05)
-      g.fillStyle = '#e02424'; g.fillRect(-80, -17, 160, 34)
-      g.fillStyle = '#fff'; g.font = 'bold 22px "Arial Black", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'
-      g.fillText('⏸ SITTING', 0, 1)
+      g.save(); g.translate(150, 56); g.rotate(-0.08)
+      g.fillStyle = '#e02424'; g.fillRect(-36, -12, 72, 24)
+      g.fillStyle = '#fff'; g.font = 'italic 900 16px "Arial Black", Impact, sans-serif'
+      g.fillText('WAIT', 0, 1)
       g.restore()
     }
     tex.needsUpdate = true
   })
 
   return (
-    <sprite ref={sprite} position={[0, height, 0]} scale={[0.55, 0.21, 1]}>
+    <sprite ref={sprite} position={[0, height, 0]} scale={[0.4, 0.15, 1]}>
       <spriteMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
     </sprite>
   )

@@ -1,14 +1,22 @@
 // Scrollable comms log overlay (HTML, not 3D). Status chatter is shown dimmed.
+// Off by default: comic speech bubbles (comms/SpeechBubbles.tsx) replace it. Flip
+// STYLE.comms.showLog in style.config.ts to bring the old log back.
 import { useEffect, useRef } from 'react'
 import { TEAM_OF } from '../../../events/types'
 import { useGame } from '../../../store/gameStore'
 import { TEAM_COLOR } from '../layout'
 import { useView } from '../viewStore'
 import { isWallWorthy } from './sprayText'
+import { STYLE } from '../style.config'
 
 const fmtTs = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
 export function CommsLog() {
+  if (!STYLE.comms.showLog) return null
+  return <CommsLogPanel />
+}
+
+function CommsLogPanel() {
   const messages = useGame(s => s.messages)
   const names = useGame(s => s.start?.seats)
   const show = useView(s => s.showLog)
