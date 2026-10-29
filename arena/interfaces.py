@@ -80,6 +80,9 @@ class Observation:
     legal_moves: list[str]  # this seat's legal moves; [] when it is not this seat's turn
     inbox: tuple[Message, ...] = ()
     ply: int = 0
+    # Split setups with lending: True when the partner's machine is idle (partner not searching and not
+    # lending it already), so this seat may borrow it for one search (Decision.borrow).
+    partner_machine_free: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,10 @@ class Decision:
     eval: float | None = None  # thinker's perspective, [-1, 1]
     messages: tuple[Message, ...] = ()  # sent when the decision lands (sent_ms is overwritten by the sim)
     stall_reason: str | None = None  # for kind="wait": "need_piece" | "time_advantage" | ...
+    # The search behind this decision also ran on the partner's machine (only when
+    # Observation.partner_machine_free). The partner's machine stays busy for think_ms; a partner that
+    # must decide meanwhile is deferred until it is returned.
+    borrow: bool = False
 
 
 class Player(Protocol):

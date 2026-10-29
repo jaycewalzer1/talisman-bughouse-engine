@@ -79,6 +79,9 @@ body {
 .sticker .scrub { width: 180px; accent-color: #111; }
 .sticker .time { font-family: var(--font-mono); font-size: 12px; padding: 0 4px; white-space: nowrap; }
 .sticker .url { font-family: var(--font-mono); font-size: 12px; width: 190px; padding: 3px 6px; border: 1.5px solid #111; border-radius: 4px; background: #fff; color: #111; }
+.sticker a.btn { text-decoration: none; display: inline-block; }
+.sticker a.btn:hover { background: rgba(0, 0, 0, 0.08); }
+.sticker.pages { margin-left: auto; transform: rotate(1.5deg); }
 .sticker.replay button:first-child { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .status-tape {

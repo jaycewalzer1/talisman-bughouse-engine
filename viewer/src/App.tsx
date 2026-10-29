@@ -4,6 +4,7 @@
 //   - picture-in-picture corner card (top-right): the view you're NOT in, live and clickable.
 //     In 3D mode it's a compact 2D table (views/two/MiniBoards); in 2D mode it's the 3D scene itself,
 //     shrunk into the corner. Clicking it (or the 2D|3D toggle — same state) swaps the two.
+//   - page links: Progress (build log tracker) and Dev panel (dev.html), each in a new tab
 // URL options: ?view=2d|3d  ?source=mock|live|replay  ?ws=ws://host:port  ?replay=/path/to/game.jsonl
 //
 // How the 3D thumbnail works: the 3D <Canvas> is never unmounted once loaded (remounting would
@@ -22,6 +23,9 @@ import MiniBoards from './views/two/MiniBoards'
 import { STYLE } from './views/three/style.config'   // plain object, no three.js: safe in the main bundle
 
 const ThreeView = lazy(() => import('./views/three'))
+
+/** Build log tracker (progress + learning notes), opened in a new tab from the shell. */
+const PROGRESS_URL = 'https://claude.ai/artifact/B8Wfe56MCf1xFekB2RJymf'
 
 type ViewKind = '2d' | '3d'
 
@@ -254,6 +258,10 @@ export default function App() {
         {source === 'live' && <LiveControls />}
         {source === 'mock' && <MockControls />}
         {status && <span className="status-tape">{status}</span>}
+        <div className="sticker seg pages" role="group" aria-label="other pages">
+          <a className="btn" href={PROGRESS_URL} target="_blank" rel="noopener noreferrer">Progress ↗</a>
+          <a className="btn" href="/dev.html" target="_blank" rel="noopener">Dev panel ↗</a>
+        </div>
       </nav>
     </>
   )

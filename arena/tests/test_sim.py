@@ -443,10 +443,65 @@ def test_events_match_documented_schema():
 EVENT_KEYS = {
     "game_start": {"type", "seq", "ts", "game_id", "setup", "seats", "fens", "clocks", "base_ms",
                    "increment_ms", "channel_delay_ms"},
-    "thinking": {"type", "seq", "ts", "seat", "phase", "think_ms", "nodes", "eval", "depth"},
+    "thinking": {"type", "seq", "ts", "seat", "phase", "think_ms", "nodes", "eval", "depth", "borrowed"},
     "move": {"type", "seq", "ts", "board", "seat", "uci", "san", "isDrop", "capture", "fen", "clocks"},
     "pass": {"type", "seq", "ts", "fromBoard", "fromSeat", "toSeat", "piece"},
     "message": {"type", "seq", "ts", "deliverTs", "fromSeat", "toSeat", "token", "text", "payload"},
     "stall": {"type", "seq", "ts", "seat", "active", "reason"},
     "game_end": {"type", "seq", "ts", "result", "reason", "board", "loserSeat"},
 }
+
+
+# ---------------------------------------------------------------------------------------------- machine lending
+
+def test_borrowed_machine_defers_partner_until_returned():
+    # t=0: A_white borrows idle B_black's machine for 300 ms; B_white moves at 100, so B_black is to
+    # move at 100 but its machine is busy until 300.
+    sim, players, _ = make(max_plies=3, scripts={
+        "A_white": lambda obs: mv(obs.legal_moves[0], think=300, borrow=obs.partner_machine_free),
+    })
+    sim.run()
+    ev = sim.events
+    check_stream(ev)
+    assert players["A_white"].observations[0].partner_machine_free is True
+    start = of(ev, "thinking", phase="start", seat="A_white")[0]
+    assert start["borrowed"] is True and start["think_ms"] == 300
+    assert players["B_black"].observations[0].now_ms == 300
+    assert of(ev, "thinking", phase="start", seat="B_black")[0]["ts"] == 300
+    assert of(ev, "move", seat="B_black")[0]["ts"] == 400  # its clock ran while it waited for the machine
+    assert of(ev, "move", seat="B_black")[0]["clocks"]["B_black"] == 60000 - 300
+
+
+def test_borrowing_a_busy_machine_raises():
+    # A_white thinks 100 on its own machine; B_black is to move at 50 and tries to borrow it.
+    sim, players, _ = make(max_plies=10, scripts={
+        "B_white": [mv("a2a3", think=50)],
+        "B_black": lambda obs: mv(obs.legal_moves[0], think=100, borrow=True),
+    })
+    with pytest.raises(ValueError, match="borrowed"):
+        sim.run()
+    assert players["B_black"].observations[0].partner_machine_free is False
+    assert all(p.closed for p in players.values())
+
+
+def test_search_behind_a_wait_keeps_own_machine_busy():
+    # A_white sits after a 400 ms search; its partner B_black (to move at 50) cannot borrow until 400.
+    sim, players, _ = make(max_plies=4, scripts={
+        "A_white": [wait(1000, think_ms=400)],
+        "B_white": [mv("a2a3", think=50)],
+    })
+    sim.run()
+    frees = [(o.now_ms, o.partner_machine_free) for o in players["B_black"].observations]
+    assert frees[0] == (50, False)
+
+
+def test_simulator_starts_at_forked_state_time():
+    state = FakeState()
+    state.advance_clocks(5000)  # both white clocks ran 5 s before the fork
+    sim, _, _ = make(state=state, max_plies=1)
+    sim.run()
+    ev = sim.events
+    check_stream(ev)
+    assert ev[0]["ts"] == 5000 and ev[0]["clocks"]["A_white"] == 55000
+    first = of(ev, "move")[0]
+    assert first["ts"] == 5100 and first["clocks"]["A_white"] == 54900

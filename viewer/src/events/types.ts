@@ -34,6 +34,8 @@ export interface ThinkingEvent extends Base {
   nodes?: number | null
   eval?: number | null
   depth?: number | null
+  /** the search also ran on the partner's idle machine (split setups, --lend) */
+  borrowed?: boolean
 }
 
 export interface MoveEvent extends Base {

@@ -32,8 +32,9 @@ The arena (`arena/`) emits one JSON object per event. The same stream feeds:
 
 // a player starts / finishes thinking. think_ms is the clock time the search will cost (start)
 // or did cost (end). nodes/eval/depth optional. eval is from the thinker's perspective, [-1, 1].
+// borrowed: the search also runs on the partner's idle machine (split setups, --lend).
 { "type": "thinking", "seq": 7, "ts": 1200, "seat": "A_white", "phase": "start", "think_ms": 800,
-  "nodes": 400, "eval": null, "depth": null }
+  "nodes": 400, "eval": null, "depth": null, "borrowed": false }
 
 // a move landed on a board
 { "type": "move", "seq": 8, "ts": 2000, "board": "A", "seat": "A_white", "uci": "e2e4", "san": "e4",

@@ -44,11 +44,25 @@ def event_to_dict(e) -> dict:
     return dict(e)
 
 
-def build_players(t1_setup: str, t2_setup: str, kind: str, *, seed: int, nodes: int) -> tuple[dict, list]:
-    """Seat -> Player with T1 on t1_setup and T2 on t2_setup; also the list of players to close."""
+def build_players(t1_setup: str, t2_setup: str, kind: str, *, seed: int, nodes: int,
+                  player_kw: dict | None = None) -> tuple[dict, list]:
+    """Seat -> Player with T1 on t1_setup and T2 on t2_setup; also the list of players to close.
+    player_kw goes to make_players (compute, lend, max_consecutive_sits, sit_ms, ...)."""
     from arena.players import make_players
 
-    players = make_players(t1_setup, kind, seed=seed, nodes=nodes, opponent_setup=t2_setup)
+    players = make_players(t1_setup, kind, seed=seed, nodes=nodes, opponent_setup=t2_setup, **(player_kw or {}))
+    return players, list({id(p): p for p in players.values()}.values())
+
+
+def build_team_players(teams: dict, *, seed: int) -> tuple[dict, list]:
+    """Seat -> Player where each team has its own setup, kind, node budget and player options."""
+    from arena.players import team_players
+
+    players: dict = {}
+    for i, team in enumerate(("T1", "T2")):
+        t = teams[team]
+        players.update(team_players(team, t["setup"], t["kind"], seed=seed + i, nodes=t["nodes"],
+                                    **(t.get("player_kw") or {})))
     return players, list({id(p): p for p in players.values()}.values())
 
 
@@ -61,12 +75,17 @@ def _close(player) -> None:
 
 def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
     """Build players and run one game. spec keys: game_id, t1_setup, t2_setup, kind, seed, nodes,
-    base_ms, increment_ms, fens, channel_delay_ms, max_plies, charge_wall_time."""
+    base_ms, increment_ms, fens, channel_delay_ms, max_plies, charge_wall_time, player_kw (optional).
+    With "teams" ({"T1": {setup, kind, nodes, player_kw}, "T2": ...}) each team is built from its own
+    entry and kind/nodes/player_kw are ignored."""
     from arena.sim import Simulator
     from arena.state import BughouseState
 
-    players, created = build_players(spec["t1_setup"], spec["t2_setup"], spec["kind"], seed=spec["seed"],
-                            nodes=spec["nodes"])
+    if spec.get("teams"):  # per-team players (arena.pool): {"T1": {setup, kind, nodes, player_kw}, "T2": ...}
+        players, created = build_team_players(spec["teams"], seed=spec["seed"])
+    else:
+        players, created = build_players(spec["t1_setup"], spec["t2_setup"], spec["kind"], seed=spec["seed"],
+                                         nodes=spec["nodes"], player_kw=spec.get("player_kw"))
     try:
         state = BughouseState(spec["base_ms"], spec.get("increment_ms", 0), fens=spec.get("fens"))
         sim = Simulator(state, players, game_id=spec["game_id"],
@@ -96,7 +115,9 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
 
 def make_specs(args) -> list[dict]:
     specs = []
-    for i, (pair, swap) in enumerate(paired_schedule(args.games, args.seed)):
+    from arena.openings import OPENING_SETS
+
+    for i, (pair, swap) in enumerate(paired_schedule(args.games, args.seed, OPENING_SETS[args.openings])):
         contender_team = "T2" if swap else "T1"
         t1, t2 = (args.baseline, args.contender) if swap else (args.contender, args.baseline)
         specs.append({
@@ -105,9 +126,15 @@ def make_specs(args) -> list[dict]:
             "fens": pair.fens, "swap": swap, "kind": args.kind, "seed": args.seed * 100003 + i,
             "nodes": args.nodes, "base_ms": args.base_ms, "increment_ms": args.increment_ms,
             "channel_delay_ms": args.channel_delay_ms, "max_plies": args.max_plies,
-            "charge_wall_time": args.charge_wall_time, "out": args.out,
+            "charge_wall_time": args.charge_wall_time, "out": args.out, "player_kw": player_kw(args),
         })
     return specs
+
+
+def player_kw(args) -> dict:
+    """Player options from the CLI; None means the setup's default."""
+    return {"compute": args.compute, "lend": args.lend, "max_consecutive_sits": args.max_consecutive_sits,
+            "sit_ms": args.sit_ms}
 
 
 def run_one(spec: dict) -> dict:
@@ -147,6 +174,16 @@ def parse_args(argv=None):
     ap.add_argument("--max-plies", type=int, default=400)
     ap.add_argument("--charge-wall-time", action="store_true",
                     help="charge real search wall time on the clock instead of the player's think_ms")
+    ap.add_argument("--compute", default="throughput", choices=("throughput", "nodes"),
+                    help="hivemind split setups: each player is half a machine (throughput, equal team "
+                         "compute) or a full machine at nodes//2 (nodes)")
+    ap.add_argument("--lend", action="store_true",
+                    help="hivemind split setups: a player may borrow its partner's idle machine")
+    ap.add_argument("--max-consecutive-sits", type=int, default=None,
+                    help="hivemind: sits in a row before a move is forced (default 2)")
+    ap.add_argument("--sit-ms", type=int, default=None, help="hivemind: length of one sit (default 1000)")
+    ap.add_argument("--openings", default="all", choices=("all", "train", "eval"),
+                    help="opening pairs: all (the original 24), train, or eval (held out for the final match)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=1, help="parallel games (processes)")
     ap.add_argument("--boot", type=int, default=2000, help="bootstrap resamples")

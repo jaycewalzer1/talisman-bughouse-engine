@@ -1,0 +1,30 @@
+{
+  "contender": {
+    "name": "split-share-lend",
+    "setup": "sharing",
+    "kind": "hivemind",
+    "nodes": 200,
+    "player_kw": {"compute": "throughput", "lend": true},
+    "group": "target",
+    "weight": 1.0,
+    "path": null
+  },
+  "shares": {"target": 0.5, "snapshot": 0.3, "variant": 0.2},
+  "snapshot_window": 5,
+  "opponents": [
+    {"name": "stock-centralized", "setup": "centralized", "kind": "hivemind", "nodes": 200,
+     "player_kw": {}, "group": "target", "weight": 1.0, "path": null},
+    {"name": "stock-centralized-100n", "setup": "centralized", "kind": "hivemind", "nodes": 100,
+     "player_kw": {}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "stock-centralized-400n", "setup": "centralized", "kind": "hivemind", "nodes": 400,
+     "player_kw": {}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "stock-centralized-sits4", "setup": "centralized", "kind": "hivemind", "nodes": 200,
+     "player_kw": {"max_consecutive_sits": 4, "sit_ms": 2000}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "stock-silent", "setup": "silent", "kind": "hivemind", "nodes": 200,
+     "player_kw": {"compute": "throughput"}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "stock-sharing", "setup": "sharing", "kind": "hivemind", "nodes": 200,
+     "player_kw": {"compute": "throughput"}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "heuristic-centralized", "setup": "centralized", "kind": "heuristic", "nodes": 200,
+     "player_kw": {}, "group": "variant", "weight": 0.5, "path": null}
+  ]
+}

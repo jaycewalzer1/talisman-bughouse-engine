@@ -295,3 +295,34 @@ def test_hivemind_one_decision_from_startpos():
     finally:
         p.close()
     assert proc.closed
+
+
+def test_make_players_hivemind_equal_compute_default():
+    ps = make_players("silent", "hivemind", nodes=400)
+    try:
+        assert ps["A_white"].nodes == 200 and ps["A_white"].ms_per_node == 2 * MS_PER_NODE
+        assert ps["A_white"].lend is False
+    finally:
+        for p in ps.values():
+            p.close()
+    ps = make_players("sharing", "hivemind", nodes=400, compute="nodes")
+    try:
+        assert ps["A_white"].ms_per_node == MS_PER_NODE
+    finally:
+        for p in ps.values():
+            p.close()
+    with pytest.raises(ValueError, match="lend"):
+        make_players("silent", "hivemind", nodes=400, compute="nodes", lend=True)
+
+
+def test_hivemind_player_borrows_idle_partner_machine():
+    from dataclasses import replace
+    stub = StubProcess(SearchResult("e2e4", None, 0.1, 20, None, 241, 3))
+    p = HivemindPlayer("A_white", stub, nodes=100, ms_per_node=10.0, lend=True)  # half machine: 10 ms/node
+    obs = make_obs("A_white", {"A": START, "B": START})
+    d = p.decide(replace(obs, partner_machine_free=True))
+    assert d.borrow and d.nodes == 200 and d.think_ms == 1000 and stub.calls[-1]["nodes"] == 200
+    d = p.decide(obs)
+    assert not d.borrow and d.nodes == 100 and d.think_ms == 1000 and stub.calls[-1]["nodes"] == 100
+    p_off = HivemindPlayer("A_white", stub, nodes=100, ms_per_node=10.0)
+    assert not p_off.decide(replace(obs, partner_machine_free=True)).borrow

@@ -218,3 +218,22 @@ def test_serve_late_joiner_gets_snapshot_first(tmp_path):
         proc.terminate()
         proc.wait(timeout=10)
     assert got == EVENTS and dt < 1.0
+
+
+def test_bench_heuristic_smoke():
+    from arena.bench import main as bench_main, parse_args, make_specs
+
+    args = parse_args(["--kind", "heuristic", "--setups", "silent", "sharing", "--games", "2"])
+    specs = make_specs(args)
+    assert [s["label"] for s in specs] == ["silent", "silent", "sharing", "sharing"]
+    assert specs[0]["player_kw"] == {"compute": "throughput", "lend": False}
+    assert bench_main(["--kind", "heuristic", "--setups", "silent", "--games", "2", "--plan-games", "10"]) == 0
+
+
+def test_runner_passes_player_options():
+    from arena.run import make_specs, parse_args
+
+    args = parse_args(["--kind", "hivemind", "--games", "2", "--lend", "--sit-ms", "3000", "--out", "x"])
+    spec = make_specs(args)[0]
+    assert spec["player_kw"] == {"compute": "throughput", "lend": True, "max_consecutive_sits": None,
+                                 "sit_ms": 3000}

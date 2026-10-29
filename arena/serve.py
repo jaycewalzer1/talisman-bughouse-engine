@@ -148,7 +148,8 @@ async def live_loop(args, hub: Hub) -> None:
                 "seed": args.seed * 100003 + i, "nodes": args.nodes, "base_ms": args.base_ms,
                 "increment_ms": args.increment_ms, "fens": pair.fens,
                 "channel_delay_ms": args.channel_delay_ms, "max_plies": args.max_plies,
-                "charge_wall_time": args.charge_wall_time}
+                "charge_wall_time": args.charge_wall_time,
+                "player_kw": {"compute": args.compute, "lend": args.lend}}
         log.info("game %s: %s, T1=%s T2=%s (contender %s)", spec["game_id"], pair.name, t1, t2,
                  "T2" if swap else "T1")
         q: asyncio.Queue = asyncio.Queue()
@@ -203,6 +204,8 @@ def parse_args(argv=None):
     ap.add_argument("--increment-ms", type=int, default=0)
     ap.add_argument("--channel-delay-ms", type=int, default=0)
     ap.add_argument("--nodes", type=int, default=200)
+    ap.add_argument("--compute", default="throughput", choices=("throughput", "nodes"))
+    ap.add_argument("--lend", action="store_true", help="hivemind split setups: borrow the partner's idle machine")
     ap.add_argument("--max-plies", type=int, default=400)
     ap.add_argument("--charge-wall-time", action="store_true")
     ap.add_argument("--seed", type=int, default=0)

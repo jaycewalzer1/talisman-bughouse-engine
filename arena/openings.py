@@ -76,8 +76,36 @@ def _build_pairs() -> tuple[OpeningPair, ...]:
 
 OPENING_PAIRS: tuple[OpeningPair, ...] = _build_pairs()
 
+# Held-out openings for the final evaluation (the 200-game match). Training never sees them, on either
+# board: TRAIN_PAIRS and EVAL_PAIRS are every ordered pair of two different openings from their own set.
+# Fixed before any training (2026-10-29); do not change after Phase 1 starts.
+EVAL_OPENINGS: tuple[str, ...] = (
+    "Italian Game", "Sicilian Alapin", "French Winawer", "Pirc Defence",
+    "Slav Defence", "Nimzo-Indian", "London System", "English Opening",
+)
+TRAIN_PAIR_ID0 = 1000
+EVAL_PAIR_ID0 = 2000
 
-def paired_schedule(n_games: int, seed: int = 0) -> Iterator[tuple[OpeningPair, bool]]:
+
+def _ordered_pairs(names: list[str], id0: int) -> tuple[OpeningPair, ...]:
+    moves = dict(OPENINGS)
+    out = []
+    for na in names:
+        for nb in names:
+            if na != nb:
+                out.append(OpeningPair(id0 + len(out), f"{na} / {nb}", opening_fen(moves[na]),
+                                       opening_fen(moves[nb])))
+    return tuple(out)
+
+
+TRAIN_PAIRS: tuple[OpeningPair, ...] = _ordered_pairs(
+    [n for n, _ in OPENINGS if n not in EVAL_OPENINGS], TRAIN_PAIR_ID0)
+EVAL_PAIRS: tuple[OpeningPair, ...] = _ordered_pairs(list(EVAL_OPENINGS), EVAL_PAIR_ID0)
+OPENING_SETS: dict[str, tuple[OpeningPair, ...]] = {"all": OPENING_PAIRS, "train": TRAIN_PAIRS, "eval": EVAL_PAIRS}
+
+
+def paired_schedule(n_games: int, seed: int = 0,
+                    pairs: tuple[OpeningPair, ...] = OPENING_PAIRS) -> Iterator[tuple[OpeningPair, bool]]:
     """Yield (opening_pair, swap_sides) for n_games games.
 
     Games come in twos: game 2k plays pair p with the contender as T1 (swap_sides=False), game 2k+1
@@ -89,7 +117,7 @@ def paired_schedule(n_games: int, seed: int = 0) -> Iterator[tuple[OpeningPair, 
     for g in range(n_games):
         if g % 2 == 0:
             if not order:
-                order = list(OPENING_PAIRS)
+                order = list(pairs)
                 rng.shuffle(order)
             pair = order.pop()
         yield pair, bool(g % 2)

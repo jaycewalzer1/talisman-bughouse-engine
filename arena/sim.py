@@ -82,6 +82,8 @@ class Simulator:
         self._gen: dict[str, int] = {s: 0 for s in SEATS}  # invalidates stale decide/land/wake entries
         self._inbox: dict[str, list[Message]] = {s: [] for s in SEATS}
         self._sitting: dict[str, bool] = {s: False for s in SEATS}
+        self._lent_until: dict[str, int] = {s: 0 for s in SEATS}  # seat's machine lent to its partner
+        self._sit_search_until: dict[str, int] = {s: 0 for s in SEATS}  # search behind a wait decision
         self._ran = False
 
     # ------------------------------------------------------------------ public
@@ -200,8 +202,9 @@ class Simulator:
 
     def _start(self) -> None:
         st = self.state
-        self.now = 0
-        st.advance_clocks(0)
+        # A state forked from a running game (arena.probe_wait) starts at its own clock time.
+        self.now = int(getattr(st, "last_ms", 0))
+        st.advance_clocks(self.now)
         self._emit(
             "game_start",
             game_id=self.game_id,
@@ -256,13 +259,21 @@ class Simulator:
             legal_moves=list(st.legal_moves(seat)),
             inbox=inbox,
             ply=self.plies,
+            partner_machine_free=self._machine_free(PARTNER[seat]),
         )
+
+    def _machine_free(self, seat: str) -> bool:
+        return (self._status[seat] != _THINKING and self._lent_until[seat] <= self.now
+                and self._sit_search_until[seat] <= self.now)
 
     def _on_decide(self, seat: str, gen: int) -> None:
         if gen != self._gen[seat] or self._status[seat] != _PENDING:
             return
         if self.state.to_move(BOARD_OF[seat]) != seat:  # defensive; should not happen
             self._status[seat] = _IDLE
+            return
+        if self._lent_until[seat] > self.now:  # our machine is searching for the partner: wait for it
+            self._push(self._lent_until[seat], _DECIDE, seat, gen)
             return
         obs = self._observe(seat)
         t0 = time.perf_counter()
@@ -273,12 +284,16 @@ class Simulator:
             # Guard: no legal moves (or a move that is not legal right now) -> sit briefly and re-ask.
             reason = "no_moves" if not obs.legal_moves else "invalid_move"
             dec = Decision(kind="wait", wait_ms=FALLBACK_WAIT_MS, messages=dec.messages, stall_reason=reason)
+        if dec.borrow and not obs.partner_machine_free:
+            raise ValueError(f"{seat} borrowed its partner's machine while it was busy")
 
         self._gen[seat] += 1
         g = self._gen[seat]
         if dec.kind == "move":
             cost = wall_ms if self.charge_wall_time else max(0, int(dec.think_ms))
             self._status[seat] = _THINKING
+            if dec.borrow:
+                self._lent_until[PARTNER[seat]] = self.now + cost
             self._emit(
                 "thinking",
                 seat=seat,
@@ -287,9 +302,13 @@ class Simulator:
                 nodes=dec.nodes,
                 eval=None,
                 depth=getattr(dec, "depth", None),
+                borrowed=dec.borrow,
             )
             self._push(self.now + cost, _LAND, seat, g, dec, self.now)
         else:
+            self._sit_search_until[seat] = self.now + max(0, int(dec.think_ms))
+            if dec.borrow:
+                self._lent_until[PARTNER[seat]] = self._sit_search_until[seat]
             self._status[seat] = _WAITING
             if not self._sitting[seat]:
                 self._sitting[seat] = True
@@ -306,7 +325,7 @@ class Simulator:
         board = BOARD_OF[seat]
         spent = self.now - started
         end_fields = dict(seat=seat, phase="end", think_ms=spent, nodes=dec.nodes,
-                          eval=dec.eval, depth=getattr(dec, "depth", None))
+                          eval=dec.eval, depth=getattr(dec, "depth", None), borrowed=dec.borrow)
         if dec.uci not in st.legal_moves(seat):
             self._emit("thinking", **end_fields)
             self._start_turn(seat)

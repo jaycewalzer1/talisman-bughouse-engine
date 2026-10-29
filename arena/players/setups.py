@@ -25,13 +25,14 @@ Equal team compute
 Compute is matched per *team decision*: a team has a budget of ``nodes`` network-evaluated MCTS nodes
 for each decision it makes. Centralized spends all ``nodes`` on one joint search; each independent
 player spends ``nodes // 2`` on its own search. Simulated think time is the fixed cost model
-``think_ms = nodes_requested * ms_per_node`` (``hivemind.MS_PER_NODE``, measured), so a centralized
-search costs twice the clock time of an independent one, and with the default ``compute="nodes"`` the
-two independent players together have the same node budget as the controller.
-Caveat: two independent players can search *simultaneously* (both clocks run), so per unit of
-simulated time the team may use up to twice the controller's throughput. ``compute="throughput"``
-instead models each independent player as half a machine (``ms_per_node`` doubled), which makes the
-team's nodes-per-second equal across setups at the price of slower independent moves.
+``think_ms = nodes_requested * ms_per_node`` (``hivemind.MS_PER_NODE``, measured, full machine).
+``compute="throughput"`` (the default) models each independent player as half a machine
+(``ms_per_node`` doubled), so a team's nodes per second are equal across setups: a split team has
+exactly the controller's compute. ``compute="nodes"`` instead gives each independent player a full
+machine at ``nodes // 2`` per search; two players can then search *simultaneously*, so per unit of
+simulated time the team may use up to twice the controller's throughput.
+``lend=True`` (throughput only) lets an independent player borrow its partner's idle half-machine for a
+search (twice the nodes, same think time): what a split team gains when one teammate is waiting.
 For the heuristic kind there are no nodes; think time follows the same complexity/clock formula in all
 setups, so the setups differ only in information and coordination.
 
@@ -54,9 +55,13 @@ from arena.players.random_player import RandomPlayer
 
 SETUPS = ("centralized", "silent", "sharing")
 KINDS = ("random", "heuristic", "hivemind")
+COMPUTE_MODELS = ("throughput", "nodes")
 
 
-def _team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **kw) -> dict:
+def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **kw) -> dict:
+    """{seat: Player} for one team's two seats."""
+    if setup not in SETUPS:
+        raise ValueError(f"unknown setup {setup!r}; expected one of {SETUPS}")
     seats = team_seats(team)
     if kind == "random":
         return {s: RandomPlayer(s, seed=seed, think_ms=kw.get("think_ms", 300)) for s in seats}
@@ -75,17 +80,23 @@ def _team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **
         model = kw.get("model", DEFAULT_MODEL)
         ms = float(kw.get("ms_per_node", MS_PER_NODE))
         pkw = dict(options=kw.get("engine_options"), reset_tree=kw.get("reset_tree", True))
-        skw = {k: kw[k] for k in ("max_consecutive_sits", "sit_ms") if k in kw}
+        skw = {k: kw[k] for k in ("max_consecutive_sits", "sit_ms") if k in kw and kw[k] is not None}
         if setup == "centralized":
             ctl = HivemindTeamController(team, HivemindProcess(binary, model, **pkw), nodes=nodes,
                                          ms_per_node=ms, **skw)
             return {s: ctl.player(s) for s in seats}
         half = max(1, nodes // 2)
-        if kw.get("compute", "nodes") == "throughput":
+        compute = kw.get("compute") or "throughput"
+        if compute not in COMPUTE_MODELS:
+            raise ValueError(f"unknown compute model {compute!r}; expected one of {COMPUTE_MODELS}")
+        lend = bool(kw.get("lend", False))
+        if lend and compute != "throughput":
+            raise ValueError("lend needs compute='throughput' (each player must be half a machine)")
+        if compute == "throughput":
             ms *= 2
         comm = "none" if setup == "silent" else "share"
         return {s: HivemindPlayer(s, HivemindProcess(binary, model, **pkw), nodes=half, ms_per_node=ms,
-                                  comm=comm, **skw) for s in seats}
+                                  comm=comm, lend=lend, **skw) for s in seats}
 
     raise ValueError(f"unknown kind {kind!r}; expected one of {KINDS}")
 
@@ -99,7 +110,7 @@ def make_players(setup: str, kind: str = "heuristic", *, seed: int = 0, nodes: i
         if s not in SETUPS:
             raise ValueError(f"unknown setup {s!r}; expected one of {SETUPS}")
     players: dict = {}
-    players.update(_team_players("T1", setup, kind, seed=seed, nodes=nodes, **kw))
-    players.update(_team_players("T2", t2_setup, kind, seed=seed + 1, nodes=nodes, **kw))
+    players.update(team_players("T1", setup, kind, seed=seed, nodes=nodes, **kw))
+    players.update(team_players("T2", t2_setup, kind, seed=seed + 1, nodes=nodes, **kw))
     assert set(players) == set(SEATS) and all(TEAM_OF[s] in ("T1", "T2") for s in players)
     return players

@@ -12,7 +12,7 @@ from arena.players.hivemind import (
     measure_ms_per_node,
 )
 from arena.players.random_player import RandomPlayer
-from arena.players.setups import KINDS, SETUPS, make_players
+from arena.players.setups import KINDS, SETUPS, make_players, team_players
 
 __all__ = [
     "RandomPlayer",
@@ -28,6 +28,7 @@ __all__ = [
     "hivemind_available",
     "measure_ms_per_node",
     "make_players",
+    "team_players",
     "SETUPS",
     "KINDS",
 ]
