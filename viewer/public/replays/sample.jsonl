@@ -1,0 +1,570 @@
+{"type":"game_start","seq":0,"ts":0,"game_id":"sample-0001","setup":"mock","seats":{"A_white":{"name":"Kickflip","team":"T1","kind":"mock"},"A_black":{"name":"Heelflip","team":"T2","kind":"mock"},"B_white":{"name":"Nollie","team":"T2","kind":"mock"},"B_black":{"name":"Boneless","team":"T1","kind":"mock"}},"fens":{"A":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1","B":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"},"clocks":{"A_white":120000,"A_black":120000,"B_white":120000,"B_black":120000},"base_ms":120000,"increment_ms":0,"channel_delay_ms":0}
+{"type":"thinking","seq":1,"ts":68,"seat":"B_white","phase":"start","think_ms":750,"nodes":407524,"eval":null,"depth":null}
+{"type":"thinking","seq":2,"ts":204,"seat":"A_white","phase":"start","think_ms":504,"nodes":331074,"eval":null,"depth":null}
+{"type":"thinking","seq":3,"ts":708,"seat":"A_white","phase":"end","think_ms":504,"nodes":331074,"eval":0,"depth":8}
+{"type":"move","seq":4,"ts":708,"board":"A","seat":"A_white","uci":"g1f3","san":"Nf3","isDrop":false,"capture":null,"fen":"rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R[] b KQkq - 1 1","clocks":{"A_white":119292,"A_black":120000,"B_white":119292,"B_black":120000}}
+{"type":"thinking","seq":5,"ts":818,"seat":"B_white","phase":"end","think_ms":750,"nodes":407524,"eval":0.06,"depth":8}
+{"type":"move","seq":6,"ts":818,"board":"B","seat":"B_white","uci":"g1f3","san":"Nf3","isDrop":false,"capture":null,"fen":"rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R[] b KQkq - 1 1","clocks":{"A_white":119292,"A_black":119890,"B_white":119182,"B_black":120000}}
+{"type":"thinking","seq":7,"ts":941,"seat":"A_black","phase":"start","think_ms":9000,"nodes":2997683,"eval":null,"depth":null}
+{"type":"thinking","seq":8,"ts":1021,"seat":"B_black","phase":"start","think_ms":1420,"nodes":754938,"eval":null,"depth":null}
+{"type":"thinking","seq":9,"ts":2441,"seat":"B_black","phase":"end","think_ms":1420,"nodes":754938,"eval":-0.03,"depth":9}
+{"type":"move","seq":10,"ts":2441,"board":"B","seat":"B_black","uci":"g8h6","san":"Nh6","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/7n/8/8/5N2/PPPPPPPP/RNBQKB1R[] w KQkq - 2 2","clocks":{"A_white":119292,"A_black":118267,"B_white":119182,"B_black":118377}}
+{"type":"thinking","seq":11,"ts":2690,"seat":"B_white","phase":"start","think_ms":596,"nodes":341906,"eval":null,"depth":null}
+{"type":"thinking","seq":12,"ts":3286,"seat":"B_white","phase":"end","think_ms":596,"nodes":341906,"eval":0.02,"depth":8}
+{"type":"move","seq":13,"ts":3286,"board":"B","seat":"B_white","uci":"b1a3","san":"Na3","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/7n/8/8/N4N2/PPPPPPPP/R1BQKB1R[] b KQkq - 3 2","clocks":{"A_white":119292,"A_black":117422,"B_white":118337,"B_black":118377}}
+{"type":"thinking","seq":14,"ts":3462,"seat":"B_black","phase":"start","think_ms":2006,"nodes":1569366,"eval":null,"depth":null}
+{"type":"thinking","seq":15,"ts":5468,"seat":"B_black","phase":"end","think_ms":2006,"nodes":1569366,"eval":-0.07,"depth":9}
+{"type":"move","seq":16,"ts":5468,"board":"B","seat":"B_black","uci":"b8a6","san":"Na6","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n6n/8/8/N4N2/PPPPPPPP/R1BQKB1R[] w KQkq - 4 3","clocks":{"A_white":119292,"A_black":115240,"B_white":118337,"B_black":116195}}
+{"type":"thinking","seq":17,"ts":5580,"seat":"B_white","phase":"start","think_ms":314,"nodes":97181,"eval":null,"depth":null}
+{"type":"thinking","seq":18,"ts":5894,"seat":"B_white","phase":"end","think_ms":314,"nodes":97181,"eval":-0.06,"depth":8}
+{"type":"move","seq":19,"ts":5894,"board":"B","seat":"B_white","uci":"e2e3","san":"e3","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n6n/8/8/N3PN2/PPPP1PPP/R1BQKB1R[] b KQkq - 0 3","clocks":{"A_white":119292,"A_black":114814,"B_white":117911,"B_black":116195}}
+{"type":"thinking","seq":20,"ts":6049,"seat":"B_black","phase":"start","think_ms":2282,"nodes":1678593,"eval":null,"depth":null}
+{"type":"thinking","seq":21,"ts":8331,"seat":"B_black","phase":"end","think_ms":2282,"nodes":1678593,"eval":0.06,"depth":9}
+{"type":"move","seq":22,"ts":8331,"board":"B","seat":"B_black","uci":"a6b8","san":"Nb8","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/7n/8/8/N3PN2/PPPP1PPP/R1BQKB1R[] w KQkq - 1 4","clocks":{"A_white":119292,"A_black":112377,"B_white":117911,"B_black":113758}}
+{"type":"thinking","seq":23,"ts":8555,"seat":"B_white","phase":"start","think_ms":2216,"nodes":1407048,"eval":null,"depth":null}
+{"type":"thinking","seq":24,"ts":9941,"seat":"A_black","phase":"end","think_ms":9000,"nodes":2997683,"eval":0.04,"depth":10}
+{"type":"move","seq":25,"ts":9941,"board":"A","seat":"A_black","uci":"g8f6","san":"Nf6","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R[] w KQkq - 2 2","clocks":{"A_white":119292,"A_black":110767,"B_white":116301,"B_black":113758}}
+{"type":"thinking","seq":26,"ts":10170,"seat":"A_white","phase":"start","think_ms":1968,"nodes":1307356,"eval":null,"depth":null}
+{"type":"thinking","seq":27,"ts":10771,"seat":"B_white","phase":"end","think_ms":2216,"nodes":1407048,"eval":0.04,"depth":9}
+{"type":"move","seq":28,"ts":10771,"board":"B","seat":"B_white","uci":"d2d3","san":"d3","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/7n/8/8/N2PPN2/PPP2PPP/R1BQKB1R[] b KQkq - 0 4","clocks":{"A_white":118462,"A_black":110767,"B_white":115471,"B_black":113758}}
+{"type":"thinking","seq":29,"ts":10909,"seat":"B_black","phase":"start","think_ms":1423,"nodes":703607,"eval":null,"depth":null}
+{"type":"thinking","seq":30,"ts":12138,"seat":"A_white","phase":"end","think_ms":1968,"nodes":1307356,"eval":-0.01,"depth":9}
+{"type":"move","seq":31,"ts":12138,"board":"A","seat":"A_white","uci":"d2d3","san":"d3","isDrop":false,"capture":null,"fen":"rnbqkb1r/pppppppp/5n2/8/8/3P1N2/PPP1PPPP/RNBQKB1R[] b KQkq - 0 2","clocks":{"A_white":117095,"A_black":110767,"B_white":115471,"B_black":112391}}
+{"type":"thinking","seq":32,"ts":12277,"seat":"A_black","phase":"start","think_ms":338,"nodes":231228,"eval":null,"depth":null}
+{"type":"thinking","seq":33,"ts":12332,"seat":"B_black","phase":"end","think_ms":1423,"nodes":703607,"eval":-0.02,"depth":9}
+{"type":"move","seq":34,"ts":12332,"board":"B","seat":"B_black","uci":"b8a6","san":"Na6","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n6n/8/8/N2PPN2/PPP2PPP/R1BQKB1R[] w KQkq - 1 5","clocks":{"A_white":117095,"A_black":110573,"B_white":115471,"B_black":112197}}
+{"type":"thinking","seq":35,"ts":12394,"seat":"B_white","phase":"start","think_ms":674,"nodes":218055,"eval":null,"depth":null}
+{"type":"thinking","seq":36,"ts":12615,"seat":"A_black","phase":"end","think_ms":338,"nodes":231228,"eval":-0.06,"depth":8}
+{"type":"move","seq":37,"ts":12615,"board":"A","seat":"A_black","uci":"b8a6","san":"Na6","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n4n2/8/8/3P1N2/PPP1PPPP/RNBQKB1R[] w KQkq - 1 3","clocks":{"A_white":117095,"A_black":110290,"B_white":115188,"B_black":112197}}
+{"type":"thinking","seq":38,"ts":12709,"seat":"A_white","phase":"start","think_ms":516,"nodes":248894,"eval":null,"depth":null}
+{"type":"thinking","seq":39,"ts":13068,"seat":"B_white","phase":"end","think_ms":674,"nodes":218055,"eval":-0.01,"depth":8}
+{"type":"move","seq":40,"ts":13068,"board":"B","seat":"B_white","uci":"f1e2","san":"Be2","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n6n/8/8/N2PPN2/PPP1BPPP/R1BQK2R[] b KQkq - 2 5","clocks":{"A_white":116642,"A_black":110290,"B_white":114735,"B_black":112197}}
+{"type":"thinking","seq":41,"ts":13225,"seat":"A_white","phase":"end","think_ms":516,"nodes":248894,"eval":0.01,"depth":8}
+{"type":"move","seq":42,"ts":13225,"board":"A","seat":"A_white","uci":"c1e3","san":"Be3","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/n4n2/8/8/3PBN2/PPP1PPPP/RN1QKB1R[] b KQkq - 2 3","clocks":{"A_white":116485,"A_black":110290,"B_white":114735,"B_black":112040}}
+{"type":"thinking","seq":43,"ts":13286,"seat":"B_black","phase":"start","think_ms":2242,"nodes":1751539,"eval":null,"depth":null}
+{"type":"thinking","seq":44,"ts":13308,"seat":"A_black","phase":"start","think_ms":727,"nodes":274305,"eval":null,"depth":null}
+{"type":"thinking","seq":45,"ts":14035,"seat":"A_black","phase":"end","think_ms":727,"nodes":274305,"eval":0.01,"depth":8}
+{"type":"move","seq":46,"ts":14035,"board":"A","seat":"A_black","uci":"d7d6","san":"d6","isDrop":false,"capture":null,"fen":"r1bqkb1r/ppp1pppp/n2p1n2/8/8/3PBN2/PPP1PPPP/RN1QKB1R[] w KQkq - 0 4","clocks":{"A_white":116485,"A_black":109480,"B_white":114735,"B_black":111230}}
+{"type":"thinking","seq":47,"ts":14148,"seat":"A_white","phase":"start","think_ms":2313,"nodes":1045706,"eval":null,"depth":null}
+{"type":"thinking","seq":48,"ts":15528,"seat":"B_black","phase":"end","think_ms":2242,"nodes":1751539,"eval":0.06,"depth":9}
+{"type":"move","seq":49,"ts":15528,"board":"B","seat":"B_black","uci":"a6b4","san":"Nb4","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/7n/8/1n6/N2PPN2/PPP1BPPP/R1BQK2R[] w KQkq - 3 6","clocks":{"A_white":114992,"A_black":109480,"B_white":114735,"B_black":109737}}
+{"type":"thinking","seq":50,"ts":15754,"seat":"B_white","phase":"start","think_ms":3780,"nodes":2298188,"eval":null,"depth":null}
+{"type":"thinking","seq":51,"ts":16461,"seat":"A_white","phase":"end","think_ms":2313,"nodes":1045706,"eval":0.04,"depth":9}
+{"type":"move","seq":52,"ts":16461,"board":"A","seat":"A_white","uci":"b1d2","san":"Nbd2","isDrop":false,"capture":null,"fen":"r1bqkb1r/ppp1pppp/n2p1n2/8/8/3PBN2/PPPNPPPP/R2QKB1R[] b KQkq - 1 4","clocks":{"A_white":114059,"A_black":109480,"B_white":113802,"B_black":109737}}
+{"type":"thinking","seq":53,"ts":16709,"seat":"A_black","phase":"start","think_ms":2458,"nodes":1413619,"eval":null,"depth":null}
+{"type":"thinking","seq":54,"ts":19167,"seat":"A_black","phase":"end","think_ms":2458,"nodes":1413619,"eval":0.01,"depth":9}
+{"type":"move","seq":55,"ts":19167,"board":"A","seat":"A_black","uci":"c8e6","san":"Be6","isDrop":false,"capture":null,"fen":"r2qkb1r/ppp1pppp/n2pbn2/8/8/3PBN2/PPPNPPPP/R2QKB1R[] w KQkq - 2 5","clocks":{"A_white":114059,"A_black":106774,"B_white":111096,"B_black":109737}}
+{"type":"thinking","seq":56,"ts":19363,"seat":"A_white","phase":"start","think_ms":2129,"nodes":758536,"eval":null,"depth":null}
+{"type":"thinking","seq":57,"ts":19534,"seat":"B_white","phase":"end","think_ms":3780,"nodes":2298188,"eval":0.07,"depth":10}
+{"type":"move","seq":58,"ts":19534,"board":"B","seat":"B_white","uci":"e1g1","san":"O-O","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppppppp/7n/8/1n6/N2PPN2/PPP1BPPP/R1BQ1RK1[] b kq - 4 6","clocks":{"A_white":113692,"A_black":106774,"B_white":110729,"B_black":109737}}
+{"type":"thinking","seq":59,"ts":19633,"seat":"B_black","phase":"start","think_ms":1870,"nodes":691822,"eval":null,"depth":null}
+{"type":"thinking","seq":60,"ts":21492,"seat":"A_white","phase":"end","think_ms":2129,"nodes":758536,"eval":0,"depth":9}
+{"type":"move","seq":61,"ts":21492,"board":"A","seat":"A_white","uci":"a2a3","san":"a3","isDrop":false,"capture":null,"fen":"r2qkb1r/ppp1pppp/n2pbn2/8/8/P2PBN2/1PPNPPPP/R2QKB1R[] b KQkq - 0 5","clocks":{"A_white":111734,"A_black":106774,"B_white":110729,"B_black":107779}}
+{"type":"thinking","seq":62,"ts":21503,"seat":"B_black","phase":"end","think_ms":1870,"nodes":691822,"eval":0.06,"depth":9}
+{"type":"move","seq":63,"ts":21503,"board":"B","seat":"B_black","uci":"e7e6","san":"e6","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppp1ppp/4p2n/8/1n6/N2PPN2/PPP1BPPP/R1BQ1RK1[] w kq - 0 7","clocks":{"A_white":111734,"A_black":106763,"B_white":110729,"B_black":107768}}
+{"type":"thinking","seq":64,"ts":21639,"seat":"B_white","phase":"start","think_ms":2205,"nodes":1746110,"eval":null,"depth":null}
+{"type":"thinking","seq":65,"ts":21674,"seat":"A_black","phase":"start","think_ms":995,"nodes":561739,"eval":null,"depth":null}
+{"type":"thinking","seq":66,"ts":22669,"seat":"A_black","phase":"end","think_ms":995,"nodes":561739,"eval":0.02,"depth":9}
+{"type":"move","seq":67,"ts":22669,"board":"A","seat":"A_black","uci":"f6d7","san":"Nd7","isDrop":false,"capture":null,"fen":"r2qkb1r/pppnpppp/n2pb3/8/8/P2PBN2/1PPNPPPP/R2QKB1R[] w KQkq - 1 6","clocks":{"A_white":111734,"A_black":105597,"B_white":109563,"B_black":107768}}
+{"type":"thinking","seq":68,"ts":22929,"seat":"A_white","phase":"start","think_ms":7451,"nodes":3312990,"eval":null,"depth":null}
+{"type":"thinking","seq":69,"ts":23844,"seat":"B_white","phase":"end","think_ms":2205,"nodes":1746110,"eval":0.02,"depth":9}
+{"type":"move","seq":70,"ts":23844,"board":"B","seat":"B_white","uci":"d3d4","san":"d4","isDrop":false,"capture":null,"fen":"r1bqkb1r/pppp1ppp/4p2n/8/1n1P4/N3PN2/PPP1BPPP/R1BQ1RK1[] b kq - 0 7","clocks":{"A_white":110559,"A_black":105597,"B_white":108388,"B_black":107768}}
+{"type":"thinking","seq":71,"ts":23973,"seat":"B_black","phase":"start","think_ms":1773,"nodes":600472,"eval":null,"depth":null}
+{"type":"message","seq":72,"ts":24416,"deliverTs":24416,"fromSeat":"A_white","toSeat":"B_black","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":29416,"value":0.38}}
+{"type":"message","seq":73,"ts":25037,"deliverTs":25037,"fromSeat":"B_black","toSeat":"A_white","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":74,"ts":25746,"seat":"B_black","phase":"end","think_ms":1773,"nodes":600472,"eval":-0.06,"depth":9}
+{"type":"move","seq":75,"ts":25746,"board":"B","seat":"B_black","uci":"b4a2","san":"Nxa2","isDrop":false,"capture":"P","fen":"r1bqkb1r/pppp1ppp/4p2n/8/3P4/N3PN2/nPP1BPPP/R1BQ1RK1[] w kq - 0 8","clocks":{"A_white":108657,"A_black":105597,"B_white":108388,"B_black":105866}}
+{"type":"pass","seq":76,"ts":25746,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":77,"ts":25932,"seat":"B_white","phase":"start","think_ms":6992,"nodes":3329710,"eval":null,"depth":null}
+{"type":"message","seq":78,"ts":27680,"deliverTs":27680,"fromSeat":"A_black","toSeat":"B_white","token":"need_N","text":"need a knight in 5s","payload":{"piece":"N","deadlineTs":32680,"value":0.39}}
+{"type":"message","seq":79,"ts":30127,"deliverTs":30127,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a knight","payload":{}}
+{"type":"thinking","seq":80,"ts":30380,"seat":"A_white","phase":"end","think_ms":7451,"nodes":3312990,"eval":0.06,"depth":10}
+{"type":"move","seq":81,"ts":30380,"board":"A","seat":"A_white","uci":"P@a5","san":"P@a5","isDrop":true,"capture":null,"fen":"r2qkb1r/pppnpppp/n2pb3/P7/8/P2PBN2/1PPNPPPP/R2QKB1R[] b KQkq - 0 6","clocks":{"A_white":104023,"A_black":105597,"B_white":103754,"B_black":105866}}
+{"type":"thinking","seq":82,"ts":30478,"seat":"A_black","phase":"start","think_ms":1241,"nodes":455183,"eval":null,"depth":null}
+{"type":"thinking","seq":83,"ts":31719,"seat":"A_black","phase":"end","think_ms":1241,"nodes":455183,"eval":-0.14,"depth":9}
+{"type":"move","seq":84,"ts":31719,"board":"A","seat":"A_black","uci":"e6f5","san":"Bf5","isDrop":false,"capture":null,"fen":"r2qkb1r/pppnpppp/n2p4/P4b2/8/P2PBN2/1PPNPPPP/R2QKB1R[] w KQkq - 1 7","clocks":{"A_white":104023,"A_black":104258,"B_white":102415,"B_black":105866}}
+{"type":"thinking","seq":85,"ts":31856,"seat":"A_white","phase":"start","think_ms":1014,"nodes":686576,"eval":null,"depth":null}
+{"type":"thinking","seq":86,"ts":32870,"seat":"A_white","phase":"end","think_ms":1014,"nodes":686576,"eval":0.06,"depth":9}
+{"type":"move","seq":87,"ts":32870,"board":"A","seat":"A_white","uci":"d3d4","san":"d4","isDrop":false,"capture":null,"fen":"r2qkb1r/pppnpppp/n2p4/P4b2/3P4/P3BN2/1PPNPPPP/R2QKB1R[] b KQkq - 0 7","clocks":{"A_white":102872,"A_black":104258,"B_white":101264,"B_black":105866}}
+{"type":"thinking","seq":88,"ts":32924,"seat":"B_white","phase":"end","think_ms":6992,"nodes":3329710,"eval":-0.13,"depth":10}
+{"type":"move","seq":89,"ts":32924,"board":"B","seat":"B_white","uci":"a1a2","san":"Rxa2","isDrop":false,"capture":"n","fen":"r1bqkb1r/pppp1ppp/4p2n/8/3P4/N3PN2/RPP1BPPP/2BQ1RK1[] b kq - 0 8","clocks":{"A_white":102872,"A_black":104204,"B_white":101210,"B_black":105866}}
+{"type":"pass","seq":90,"ts":32924,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"n"}
+{"type":"message","seq":91,"ts":32924,"deliverTs":32924,"fromSeat":"B_white","toSeat":"A_black","token":"have_N","text":"knight coming your way","payload":{"piece":"N"}}
+{"type":"thinking","seq":92,"ts":33063,"seat":"A_black","phase":"start","think_ms":1454,"nodes":761170,"eval":null,"depth":null}
+{"type":"thinking","seq":93,"ts":33134,"seat":"B_black","phase":"start","think_ms":1048,"nodes":657166,"eval":null,"depth":null}
+{"type":"thinking","seq":94,"ts":34182,"seat":"B_black","phase":"end","think_ms":1048,"nodes":657166,"eval":-0.31,"depth":9}
+{"type":"move","seq":95,"ts":34182,"board":"B","seat":"B_black","uci":"f8a3","san":"Bxa3","isDrop":false,"capture":"N","fen":"r1bqk2r/pppp1ppp/4p2n/8/3P4/b3PN2/RPP1BPPP/2BQ1RK1[] w kq - 0 9","clocks":{"A_white":102872,"A_black":102946,"B_white":101210,"B_black":104608}}
+{"type":"pass","seq":96,"ts":34182,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"message","seq":97,"ts":34182,"deliverTs":34182,"fromSeat":"B_black","toSeat":"A_white","token":"have_N","text":"knight coming your way","payload":{"piece":"N"}}
+{"type":"thinking","seq":98,"ts":34272,"seat":"B_white","phase":"start","think_ms":2845,"nodes":1854360,"eval":null,"depth":null}
+{"type":"thinking","seq":99,"ts":34517,"seat":"A_black","phase":"end","think_ms":1454,"nodes":761170,"eval":-0.13,"depth":9}
+{"type":"move","seq":100,"ts":34517,"board":"A","seat":"A_black","uci":"N@d3","san":"N@d3+","isDrop":true,"capture":null,"fen":"r2qkb1r/pppnpppp/n2p4/P4b2/3P4/P2nBN2/1PPNPPPP/R2QKB1R[N] w KQkq - 0 8","clocks":{"A_white":102872,"A_black":102611,"B_white":100875,"B_black":104608}}
+{"type":"thinking","seq":101,"ts":34646,"seat":"A_white","phase":"start","think_ms":1755,"nodes":1187002,"eval":null,"depth":null}
+{"type":"thinking","seq":102,"ts":36401,"seat":"A_white","phase":"end","think_ms":1755,"nodes":1187002,"eval":0.11,"depth":9}
+{"type":"move","seq":103,"ts":36401,"board":"A","seat":"A_white","uci":"e2d3","san":"exd3","isDrop":false,"capture":"n","fen":"r2qkb1r/pppnpppp/n2p4/P4b2/3P4/P2PBN2/1PPN1PPP/R2QKB1R[N] b KQkq - 0 8","clocks":{"A_white":100988,"A_black":102611,"B_white":98991,"B_black":104608}}
+{"type":"pass","seq":104,"ts":36401,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"thinking","seq":105,"ts":36523,"seat":"A_black","phase":"start","think_ms":3684,"nodes":2671590,"eval":null,"depth":null}
+{"type":"thinking","seq":106,"ts":37117,"seat":"B_white","phase":"end","think_ms":2845,"nodes":1854360,"eval":-0.47,"depth":9}
+{"type":"move","seq":107,"ts":37117,"board":"B","seat":"B_white","uci":"b2a3","san":"bxa3","isDrop":false,"capture":"b","fen":"r1bqk2r/pppp1ppp/4p2n/8/3P4/P3PN2/R1P1BPPP/2BQ1RK1[n] b kq - 0 9","clocks":{"A_white":100988,"A_black":101895,"B_white":98275,"B_black":104608}}
+{"type":"pass","seq":108,"ts":37117,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"b"}
+{"type":"thinking","seq":109,"ts":37363,"seat":"B_black","phase":"start","think_ms":946,"nodes":609957,"eval":null,"depth":null}
+{"type":"thinking","seq":110,"ts":38309,"seat":"B_black","phase":"end","think_ms":946,"nodes":609957,"eval":0.09,"depth":9}
+{"type":"move","seq":111,"ts":38309,"board":"B","seat":"B_black","uci":"e8g8","san":"O-O","isDrop":false,"capture":null,"fen":"r1bq1rk1/pppp1ppp/4p2n/8/3P4/P3PN2/R1P1BPPP/2BQ1RK1[n] w - - 1 10","clocks":{"A_white":100988,"A_black":100703,"B_white":98275,"B_black":103416}}
+{"type":"thinking","seq":112,"ts":38500,"seat":"B_white","phase":"start","think_ms":2270,"nodes":991771,"eval":null,"depth":null}
+{"type":"thinking","seq":113,"ts":40207,"seat":"A_black","phase":"end","think_ms":3684,"nodes":2671590,"eval":-0.08,"depth":10}
+{"type":"move","seq":114,"ts":40207,"board":"A","seat":"A_black","uci":"B@g8","san":"B@g8","isDrop":true,"capture":null,"fen":"r2qkbbr/pppnpppp/n2p4/P4b2/3P4/P2PBN2/1PPN1PPP/R2QKB1R[N] w KQkq - 0 9","clocks":{"A_white":100988,"A_black":98805,"B_white":96377,"B_black":103416}}
+{"type":"thinking","seq":115,"ts":40384,"seat":"A_white","phase":"start","think_ms":8859,"nodes":2848797,"eval":null,"depth":null}
+{"type":"thinking","seq":116,"ts":40770,"seat":"B_white","phase":"end","think_ms":2270,"nodes":991771,"eval":-0.04,"depth":9}
+{"type":"move","seq":117,"ts":40770,"board":"B","seat":"B_white","uci":"e2d3","san":"Bd3","isDrop":false,"capture":null,"fen":"r1bq1rk1/pppp1ppp/4p2n/8/3P4/P2BPN2/R1P2PPP/2BQ1RK1[n] b - - 2 10","clocks":{"A_white":100425,"A_black":98805,"B_white":95814,"B_black":103416}}
+{"type":"thinking","seq":118,"ts":40900,"seat":"B_black","phase":"start","think_ms":1258,"nodes":805128,"eval":null,"depth":null}
+{"type":"thinking","seq":119,"ts":42158,"seat":"B_black","phase":"end","think_ms":1258,"nodes":805128,"eval":0.13,"depth":9}
+{"type":"move","seq":120,"ts":42158,"board":"B","seat":"B_black","uci":"d7d5","san":"d5","isDrop":false,"capture":null,"fen":"r1bq1rk1/ppp2ppp/4p2n/3p4/3P4/P2BPN2/R1P2PPP/2BQ1RK1[n] w - - 0 11","clocks":{"A_white":99037,"A_black":98805,"B_white":95814,"B_black":102028}}
+{"type":"thinking","seq":121,"ts":42232,"seat":"B_white","phase":"start","think_ms":2011,"nodes":1273222,"eval":null,"depth":null}
+{"type":"thinking","seq":122,"ts":44243,"seat":"B_white","phase":"end","think_ms":2011,"nodes":1273222,"eval":-0.16,"depth":9}
+{"type":"move","seq":123,"ts":44243,"board":"B","seat":"B_white","uci":"h2h3","san":"h3","isDrop":false,"capture":null,"fen":"r1bq1rk1/ppp2ppp/4p2n/3p4/3P4/P2BPN1P/R1P2PP1/2BQ1RK1[n] b - - 0 11","clocks":{"A_white":96952,"A_black":98805,"B_white":93729,"B_black":102028}}
+{"type":"thinking","seq":124,"ts":44334,"seat":"B_black","phase":"start","think_ms":848,"nodes":632415,"eval":null,"depth":null}
+{"type":"thinking","seq":125,"ts":45182,"seat":"B_black","phase":"end","think_ms":848,"nodes":632415,"eval":0.15,"depth":9}
+{"type":"move","seq":126,"ts":45182,"board":"B","seat":"B_black","uci":"N@d7","san":"N@d7","isDrop":true,"capture":null,"fen":"r1bq1rk1/pppn1ppp/4p2n/3p4/3P4/P2BPN1P/R1P2PP1/2BQ1RK1[] w - - 0 12","clocks":{"A_white":96013,"A_black":98805,"B_white":93729,"B_black":101089}}
+{"type":"thinking","seq":127,"ts":45384,"seat":"B_white","phase":"start","think_ms":2020,"nodes":1481941,"eval":null,"depth":null}
+{"type":"message","seq":128,"ts":45889,"deliverTs":45889,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":50889,"value":0.64}}
+{"type":"message","seq":129,"ts":46596,"deliverTs":46596,"fromSeat":"B_white","toSeat":"A_black","token":"no","text":"can't get a pawn now","payload":{}}
+{"type":"thinking","seq":130,"ts":47404,"seat":"B_white","phase":"end","think_ms":2020,"nodes":1481941,"eval":-0.07,"depth":9}
+{"type":"move","seq":131,"ts":47404,"board":"B","seat":"B_white","uci":"c1d2","san":"Bd2","isDrop":false,"capture":null,"fen":"r1bq1rk1/pppn1ppp/4p2n/3p4/3P4/P2BPN1P/R1PB1PP1/3Q1RK1[] b - - 1 12","clocks":{"A_white":93791,"A_black":98805,"B_white":91507,"B_black":101089}}
+{"type":"thinking","seq":132,"ts":47469,"seat":"B_black","phase":"start","think_ms":5441,"nodes":3218039,"eval":null,"depth":null}
+{"type":"thinking","seq":133,"ts":49243,"seat":"A_white","phase":"end","think_ms":8859,"nodes":2848797,"eval":0.06,"depth":10}
+{"type":"move","seq":134,"ts":49243,"board":"A","seat":"A_white","uci":"N@g5","san":"N@g5","isDrop":true,"capture":null,"fen":"r2qkbbr/pppnpppp/n2p4/P4bN1/3P4/P2PBN2/1PPN1PPP/R2QKB1R[] b KQkq - 0 9","clocks":{"A_white":91952,"A_black":98805,"B_white":91507,"B_black":99250}}
+{"type":"thinking","seq":135,"ts":49456,"seat":"A_black","phase":"start","think_ms":9000,"nodes":4812884,"eval":null,"depth":null}
+{"type":"thinking","seq":136,"ts":52910,"seat":"B_black","phase":"end","think_ms":5441,"nodes":3218039,"eval":0.16,"depth":10}
+{"type":"move","seq":137,"ts":52910,"board":"B","seat":"B_black","uci":"d8f6","san":"Qf6","isDrop":false,"capture":null,"fen":"r1b2rk1/pppn1ppp/4pq1n/3p4/3P4/P2BPN1P/R1PB1PP1/3Q1RK1[] w - - 2 13","clocks":{"A_white":91952,"A_black":95138,"B_white":91507,"B_black":95583}}
+{"type":"thinking","seq":138,"ts":53086,"seat":"B_white","phase":"start","think_ms":2662,"nodes":2051102,"eval":null,"depth":null}
+{"type":"thinking","seq":139,"ts":55748,"seat":"B_white","phase":"end","think_ms":2662,"nodes":2051102,"eval":-0.12,"depth":10}
+{"type":"move","seq":140,"ts":55748,"board":"B","seat":"B_white","uci":"f3e1","san":"Ne1","isDrop":false,"capture":null,"fen":"r1b2rk1/pppn1ppp/4pq1n/3p4/3P4/P2BP2P/R1PB1PP1/3QNRK1[] b - - 3 13","clocks":{"A_white":91952,"A_black":92300,"B_white":88669,"B_black":95583}}
+{"type":"thinking","seq":141,"ts":55918,"seat":"B_black","phase":"start","think_ms":571,"nodes":446865,"eval":null,"depth":null}
+{"type":"thinking","seq":142,"ts":56489,"seat":"B_black","phase":"end","think_ms":571,"nodes":446865,"eval":0.06,"depth":9}
+{"type":"move","seq":143,"ts":56489,"board":"B","seat":"B_black","uci":"f6g5","san":"Qg5","isDrop":false,"capture":null,"fen":"r1b2rk1/pppn1ppp/4p2n/3p2q1/3P4/P2BP2P/R1PB1PP1/3QNRK1[] w - - 4 14","clocks":{"A_white":91952,"A_black":91559,"B_white":88669,"B_black":94842}}
+{"type":"thinking","seq":144,"ts":56575,"seat":"B_white","phase":"start","think_ms":1834,"nodes":876496,"eval":null,"depth":null}
+{"type":"message","seq":145,"ts":57034,"deliverTs":57034,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":62034,"value":0.57}}
+{"type":"message","seq":146,"ts":57675,"deliverTs":57675,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":147,"ts":58409,"seat":"B_white","phase":"end","think_ms":1834,"nodes":876496,"eval":-0.1,"depth":9}
+{"type":"move","seq":148,"ts":58409,"board":"B","seat":"B_white","uci":"d3h7","san":"Bxh7+","isDrop":false,"capture":"p","fen":"r1b2rk1/pppn1ppB/4p2n/3p2q1/3P4/P3P2P/R1PB1PP1/3QNRK1[] b - - 0 14","clocks":{"A_white":91952,"A_black":89639,"B_white":86749,"B_black":94842}}
+{"type":"pass","seq":149,"ts":58409,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"thinking","seq":150,"ts":58456,"seat":"A_black","phase":"end","think_ms":9000,"nodes":4812884,"eval":-0.08,"depth":10}
+{"type":"move","seq":151,"ts":58456,"board":"A","seat":"A_black","uci":"f7f6","san":"f6","isDrop":false,"capture":null,"fen":"r2qkbbr/pppnp1pp/n2p1p2/P4bN1/3P4/P2PBN2/1PPN1PPP/R2QKB1R[p] w KQkq - 0 10","clocks":{"A_white":91952,"A_black":89592,"B_white":86749,"B_black":94795}}
+{"type":"thinking","seq":152,"ts":58667,"seat":"B_black","phase":"start","think_ms":5373,"nodes":3221742,"eval":null,"depth":null}
+{"type":"thinking","seq":153,"ts":58705,"seat":"A_white","phase":"start","think_ms":2767,"nodes":1320934,"eval":null,"depth":null}
+{"type":"thinking","seq":154,"ts":61472,"seat":"A_white","phase":"end","think_ms":2767,"nodes":1320934,"eval":0.08,"depth":9}
+{"type":"move","seq":155,"ts":61472,"board":"A","seat":"A_white","uci":"f1e2","san":"Be2","isDrop":false,"capture":null,"fen":"r2qkbbr/pppnp1pp/n2p1p2/P4bN1/3P4/P2PBN2/1PPNBPPP/R2QK2R[p] b KQkq - 1 10","clocks":{"A_white":88936,"A_black":89592,"B_white":86749,"B_black":91779}}
+{"type":"thinking","seq":156,"ts":61608,"seat":"A_black","phase":"start","think_ms":4049,"nodes":1575085,"eval":null,"depth":null}
+{"type":"thinking","seq":157,"ts":64040,"seat":"B_black","phase":"end","think_ms":5373,"nodes":3221742,"eval":0.07,"depth":10}
+{"type":"move","seq":158,"ts":64040,"board":"B","seat":"B_black","uci":"g8h7","san":"Kxh7","isDrop":false,"capture":"B","fen":"r1b2r2/pppn1ppk/4p2n/3p2q1/3P4/P3P2P/R1PB1PP1/3QNRK1[] w - - 0 15","clocks":{"A_white":88936,"A_black":87024,"B_white":86749,"B_black":89211}}
+{"type":"pass","seq":159,"ts":64040,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"B"}
+{"type":"thinking","seq":160,"ts":64279,"seat":"B_white","phase":"start","think_ms":2928,"nodes":1002120,"eval":null,"depth":null}
+{"type":"thinking","seq":161,"ts":65657,"seat":"A_black","phase":"end","think_ms":4049,"nodes":1575085,"eval":-0.26,"depth":9}
+{"type":"move","seq":162,"ts":65657,"board":"A","seat":"A_black","uci":"f6g5","san":"fxg5","isDrop":false,"capture":"N","fen":"r2qkbbr/pppnp1pp/n2p4/P4bp1/3P4/P2PBN2/1PPNBPPP/R2QK2R[Bp] w KQkq - 0 11","clocks":{"A_white":88936,"A_black":85407,"B_white":85132,"B_black":89211}}
+{"type":"pass","seq":163,"ts":65657,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"thinking","seq":164,"ts":65753,"seat":"A_white","phase":"start","think_ms":4283,"nodes":1879243,"eval":null,"depth":null}
+{"type":"thinking","seq":165,"ts":67207,"seat":"B_white","phase":"end","think_ms":2928,"nodes":1002120,"eval":-0.11,"depth":9}
+{"type":"move","seq":166,"ts":67207,"board":"B","seat":"B_white","uci":"N@f3","san":"N@f3","isDrop":true,"capture":null,"fen":"r1b2r2/pppn1ppk/4p2n/3p2q1/3P4/P3PN1P/R1PB1PP1/3QNRK1[] b - - 0 15","clocks":{"A_white":87386,"A_black":85407,"B_white":83582,"B_black":89211}}
+{"type":"thinking","seq":167,"ts":67381,"seat":"B_black","phase":"start","think_ms":976,"nodes":596867,"eval":null,"depth":null}
+{"type":"thinking","seq":168,"ts":68357,"seat":"B_black","phase":"end","think_ms":976,"nodes":596867,"eval":0.05,"depth":9}
+{"type":"move","seq":169,"ts":68357,"board":"B","seat":"B_black","uci":"g5e7","san":"Qe7","isDrop":false,"capture":null,"fen":"r1b2r2/pppnqppk/4p2n/3p4/3P4/P3PN1P/R1PB1PP1/3QNRK1[] w - - 1 16","clocks":{"A_white":86236,"A_black":85407,"B_white":83582,"B_black":88061}}
+{"type":"thinking","seq":170,"ts":68611,"seat":"B_white","phase":"start","think_ms":445,"nodes":348444,"eval":null,"depth":null}
+{"type":"thinking","seq":171,"ts":69056,"seat":"B_white","phase":"end","think_ms":445,"nodes":348444,"eval":0.06,"depth":8}
+{"type":"move","seq":172,"ts":69056,"board":"B","seat":"B_white","uci":"a3a4","san":"a4","isDrop":false,"capture":null,"fen":"r1b2r2/pppnqppk/4p2n/3p4/P2P4/4PN1P/R1PB1PP1/3QNRK1[] b - - 0 16","clocks":{"A_white":85537,"A_black":85407,"B_white":82883,"B_black":88061}}
+{"type":"thinking","seq":173,"ts":69198,"seat":"B_black","phase":"start","think_ms":3032,"nodes":2341908,"eval":null,"depth":null}
+{"type":"thinking","seq":174,"ts":70036,"seat":"A_white","phase":"end","think_ms":4283,"nodes":1879243,"eval":0.02,"depth":9}
+{"type":"move","seq":175,"ts":70036,"board":"A","seat":"A_white","uci":"B@h5","san":"B@h5+","isDrop":true,"capture":null,"fen":"r2qkbbr/pppnp1pp/n2p4/P4bpB/3P4/P2PBN2/1PPNBPPP/R2QK2R[p] b KQkq - 0 11","clocks":{"A_white":84557,"A_black":85407,"B_white":82883,"B_black":87081}}
+{"type":"thinking","seq":176,"ts":70284,"seat":"A_black","phase":"start","think_ms":1251,"nodes":710437,"eval":null,"depth":null}
+{"type":"thinking","seq":177,"ts":71535,"seat":"A_black","phase":"end","think_ms":1251,"nodes":710437,"eval":-0.07,"depth":9}
+{"type":"move","seq":178,"ts":71535,"board":"A","seat":"A_black","uci":"P@f7","san":"P@f7","isDrop":true,"capture":null,"fen":"r2qkbbr/pppnpppp/n2p4/P4bpB/3P4/P2PBN2/1PPNBPPP/R2QK2R[] w KQkq - 0 12","clocks":{"A_white":84557,"A_black":83908,"B_white":82883,"B_black":85582}}
+{"type":"thinking","seq":179,"ts":71716,"seat":"A_white","phase":"start","think_ms":1415,"nodes":763842,"eval":null,"depth":null}
+{"type":"thinking","seq":180,"ts":72230,"seat":"B_black","phase":"end","think_ms":3032,"nodes":2341908,"eval":0.02,"depth":10}
+{"type":"move","seq":181,"ts":72230,"board":"B","seat":"B_black","uci":"f8d8","san":"Rd8","isDrop":false,"capture":null,"fen":"r1br4/pppnqppk/4p2n/3p4/P2P4/4PN1P/R1PB1PP1/3QNRK1[] w - - 1 17","clocks":{"A_white":83862,"A_black":83908,"B_white":82883,"B_black":84887}}
+{"type":"thinking","seq":182,"ts":72405,"seat":"B_white","phase":"start","think_ms":1078,"nodes":814116,"eval":null,"depth":null}
+{"type":"thinking","seq":183,"ts":73131,"seat":"A_white","phase":"end","think_ms":1415,"nodes":763842,"eval":-0.02,"depth":9}
+{"type":"move","seq":184,"ts":73131,"board":"A","seat":"A_white","uci":"e3g5","san":"Bxg5","isDrop":false,"capture":"p","fen":"r2qkbbr/pppnpppp/n2p4/P4bBB/3P4/P2P1N2/1PPNBPPP/R2QK2R[] b KQkq - 0 12","clocks":{"A_white":82961,"A_black":83908,"B_white":81982,"B_black":84887}}
+{"type":"pass","seq":185,"ts":73131,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":186,"ts":73382,"seat":"A_black","phase":"start","think_ms":1407,"nodes":762165,"eval":null,"depth":null}
+{"type":"thinking","seq":187,"ts":73483,"seat":"B_white","phase":"end","think_ms":1078,"nodes":814116,"eval":-0.13,"depth":9}
+{"type":"move","seq":188,"ts":73483,"board":"B","seat":"B_white","uci":"a2b2","san":"Rb2","isDrop":false,"capture":null,"fen":"r1br4/pppnqppk/4p2n/3p4/P2P4/4PN1P/1RPB1PP1/3QNRK1[p] b - - 2 17","clocks":{"A_white":82961,"A_black":83556,"B_white":81630,"B_black":84887}}
+{"type":"thinking","seq":189,"ts":73607,"seat":"B_black","phase":"start","think_ms":1114,"nodes":342510,"eval":null,"depth":null}
+{"type":"thinking","seq":190,"ts":74721,"seat":"B_black","phase":"end","think_ms":1114,"nodes":342510,"eval":0.17,"depth":8}
+{"type":"move","seq":191,"ts":74721,"board":"B","seat":"B_black","uci":"P@h2","san":"P@h2+","isDrop":true,"capture":null,"fen":"r1br4/pppnqppk/4p2n/3p4/P2P4/4PN1P/1RPB1PPp/3QNRK1[] w - - 0 18","clocks":{"A_white":82961,"A_black":82318,"B_white":81630,"B_black":83649}}
+{"type":"thinking","seq":192,"ts":74789,"seat":"A_black","phase":"end","think_ms":1407,"nodes":762165,"eval":-0.07,"depth":9}
+{"type":"move","seq":193,"ts":74789,"board":"A","seat":"A_black","uci":"e7e6","san":"e6","isDrop":false,"capture":null,"fen":"r2qkbbr/pppn1ppp/n2pp3/P4bBB/3P4/P2P1N2/1PPNBPPP/R2QK2R[] w KQkq - 0 13","clocks":{"A_white":82961,"A_black":82250,"B_white":81562,"B_black":83649}}
+{"type":"thinking","seq":194,"ts":74887,"seat":"B_white","phase":"start","think_ms":1196,"nodes":598578,"eval":null,"depth":null}
+{"type":"thinking","seq":195,"ts":74892,"seat":"A_white","phase":"start","think_ms":2280,"nodes":1262895,"eval":null,"depth":null}
+{"type":"message","seq":196,"ts":75186,"deliverTs":75186,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":80186,"value":0.37}}
+{"type":"message","seq":197,"ts":75605,"deliverTs":75605,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":198,"ts":76083,"seat":"B_white","phase":"end","think_ms":1196,"nodes":598578,"eval":-0.2,"depth":9}
+{"type":"move","seq":199,"ts":76083,"board":"B","seat":"B_white","uci":"f3h2","san":"Nxh2","isDrop":false,"capture":"p","fen":"r1br4/pppnqppk/4p2n/3p4/P2P4/4P2P/1RPB1PPN/3QNRK1[] b - - 0 18","clocks":{"A_white":81667,"A_black":82250,"B_white":80268,"B_black":83649}}
+{"type":"pass","seq":200,"ts":76083,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"thinking","seq":201,"ts":76309,"seat":"B_black","phase":"start","think_ms":1054,"nodes":496797,"eval":null,"depth":null}
+{"type":"thinking","seq":202,"ts":77172,"seat":"A_white","phase":"end","think_ms":2280,"nodes":1262895,"eval":0.04,"depth":9}
+{"type":"move","seq":203,"ts":77172,"board":"A","seat":"A_white","uci":"g5d8","san":"Bxd8","isDrop":false,"capture":"q","fen":"r2Bkbbr/pppn1ppp/n2pp3/P4b1B/3P4/P2P1N2/1PPNBPPP/R2QK2R[p] b KQkq - 0 13","clocks":{"A_white":80578,"A_black":82250,"B_white":80268,"B_black":82560}}
+{"type":"pass","seq":204,"ts":77172,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"q"}
+{"type":"thinking","seq":205,"ts":77304,"seat":"A_black","phase":"start","think_ms":1624,"nodes":593895,"eval":null,"depth":null}
+{"type":"thinking","seq":206,"ts":77363,"seat":"B_black","phase":"end","think_ms":1054,"nodes":496797,"eval":0.7,"depth":9}
+{"type":"move","seq":207,"ts":77363,"board":"B","seat":"B_black","uci":"Q@g5","san":"Q@g5","isDrop":true,"capture":null,"fen":"r1br4/pppnqppk/4p2n/3p2q1/P2P4/4P2P/1RPB1PPN/3QNRK1[] w - - 0 19","clocks":{"A_white":80578,"A_black":82059,"B_white":80268,"B_black":82369}}
+{"type":"thinking","seq":208,"ts":77433,"seat":"B_white","phase":"start","think_ms":3197,"nodes":1763476,"eval":null,"depth":null}
+{"type":"message","seq":209,"ts":78232,"deliverTs":78232,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":83232,"value":0.39}}
+{"type":"thinking","seq":210,"ts":78928,"seat":"A_black","phase":"end","think_ms":1624,"nodes":593895,"eval":-0.75,"depth":9}
+{"type":"move","seq":211,"ts":78928,"board":"A","seat":"A_black","uci":"a8d8","san":"Rxd8","isDrop":false,"capture":"B","fen":"3rkbbr/pppn1ppp/n2pp3/P4b1B/3P4/P2P1N2/1PPNBPPP/R2QK2R[p] w KQk - 0 14","clocks":{"A_white":80578,"A_black":80494,"B_white":78703,"B_black":82369}}
+{"type":"pass","seq":212,"ts":78928,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"B"}
+{"type":"thinking","seq":213,"ts":79121,"seat":"A_white","phase":"start","think_ms":1608,"nodes":972317,"eval":null,"depth":null}
+{"type":"message","seq":214,"ts":79351,"deliverTs":79351,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":215,"ts":80630,"seat":"B_white","phase":"end","think_ms":3197,"nodes":1763476,"eval":-0.66,"depth":9}
+{"type":"move","seq":216,"ts":80630,"board":"B","seat":"B_white","uci":"B@d3","san":"B@d3+","isDrop":true,"capture":null,"fen":"r1br4/pppnqppk/4p2n/3p2q1/P2P4/3BP2P/1RPB1PPN/3QNRK1[] b - - 0 19","clocks":{"A_white":78876,"A_black":80494,"B_white":77001,"B_black":82369}}
+{"type":"thinking","seq":217,"ts":80729,"seat":"A_white","phase":"end","think_ms":1608,"nodes":972317,"eval":0.65,"depth":9}
+{"type":"move","seq":218,"ts":80729,"board":"A","seat":"A_white","uci":"a1a2","san":"Ra2","isDrop":false,"capture":null,"fen":"3rkbbr/pppn1ppp/n2pp3/P4b1B/3P4/P2P1N2/RPPNBPPP/3QK2R[p] b Kk - 1 14","clocks":{"A_white":78777,"A_black":80494,"B_white":77001,"B_black":82270}}
+{"type":"thinking","seq":219,"ts":80836,"seat":"B_black","phase":"start","think_ms":2265,"nodes":1124871,"eval":null,"depth":null}
+{"type":"thinking","seq":220,"ts":80926,"seat":"A_black","phase":"start","think_ms":6007,"nodes":4377019,"eval":null,"depth":null}
+{"type":"thinking","seq":221,"ts":83101,"seat":"B_black","phase":"end","think_ms":2265,"nodes":1124871,"eval":0.62,"depth":9}
+{"type":"move","seq":222,"ts":83101,"board":"B","seat":"B_black","uci":"h7h8","san":"Kh8","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/4p2n/3p2q1/P2P4/3BP2P/1RPB1PPN/3QNRK1[] w - - 1 20","clocks":{"A_white":78777,"A_black":78122,"B_white":77001,"B_black":79898}}
+{"type":"thinking","seq":223,"ts":83300,"seat":"B_white","phase":"start","think_ms":815,"nodes":399581,"eval":null,"depth":null}
+{"type":"thinking","seq":224,"ts":84115,"seat":"B_white","phase":"end","think_ms":815,"nodes":399581,"eval":-0.7,"depth":8}
+{"type":"move","seq":225,"ts":84115,"board":"B","seat":"B_white","uci":"d1c1","san":"Qc1","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/4p2n/3p2q1/P2P4/3BP2P/1RPB1PPN/2Q1NRK1[] b - - 2 20","clocks":{"A_white":78777,"A_black":77108,"B_white":75987,"B_black":79898}}
+{"type":"thinking","seq":226,"ts":84269,"seat":"B_black","phase":"start","think_ms":3689,"nodes":1500051,"eval":null,"depth":null}
+{"type":"thinking","seq":227,"ts":86933,"seat":"A_black","phase":"end","think_ms":6007,"nodes":4377019,"eval":-0.72,"depth":10}
+{"type":"move","seq":228,"ts":86933,"board":"A","seat":"A_black","uci":"P@d5","san":"P@d5","isDrop":true,"capture":null,"fen":"3rkbbr/pppn1ppp/n2pp3/P2p1b1B/3P4/P2P1N2/RPPNBPPP/3QK2R[] w Kk - 0 15","clocks":{"A_white":78777,"A_black":74290,"B_white":75987,"B_black":77080}}
+{"type":"thinking","seq":229,"ts":87114,"seat":"A_white","phase":"start","think_ms":4097,"nodes":2342293,"eval":null,"depth":null}
+{"type":"thinking","seq":230,"ts":87958,"seat":"B_black","phase":"end","think_ms":3689,"nodes":1500051,"eval":0.67,"depth":9}
+{"type":"move","seq":231,"ts":87958,"board":"B","seat":"B_black","uci":"g5f6","san":"Qgf6","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/4pq1n/3p4/P2P4/3BP2P/1RPB1PPN/2Q1NRK1[] w - - 3 21","clocks":{"A_white":77752,"A_black":74290,"B_white":75987,"B_black":76055}}
+{"type":"message","seq":232,"ts":87958,"deliverTs":87958,"fromSeat":"B_white","toSeat":"A_black","token":"need_Q","text":"need a queen, mate on h7","payload":{"piece":"Q","deadlineTs":93958,"value":0.9}}
+{"type":"thinking","seq":233,"ts":88171,"seat":"B_white","phase":"start","think_ms":6962,"nodes":3789110,"eval":null,"depth":null}
+{"type":"message","seq":234,"ts":88560,"deliverTs":88560,"fromSeat":"A_black","toSeat":"B_white","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"thinking","seq":235,"ts":91211,"seat":"A_white","phase":"end","think_ms":4097,"nodes":2342293,"eval":0.68,"depth":10}
+{"type":"move","seq":236,"ts":91211,"board":"A","seat":"A_white","uci":"h1f1","san":"Rf1","isDrop":false,"capture":null,"fen":"3rkbbr/pppn1ppp/n2pp3/P2p1b1B/3P4/P2P1N2/RPPNBPPP/3QKR2[] b k - 1 15","clocks":{"A_white":74499,"A_black":74290,"B_white":72734,"B_black":76055}}
+{"type":"thinking","seq":237,"ts":91334,"seat":"A_black","phase":"start","think_ms":1728,"nodes":754121,"eval":null,"depth":null}
+{"type":"thinking","seq":238,"ts":93062,"seat":"A_black","phase":"end","think_ms":1728,"nodes":754121,"eval":-0.68,"depth":9}
+{"type":"move","seq":239,"ts":93062,"board":"A","seat":"A_black","uci":"d8a8","san":"Ra8","isDrop":false,"capture":null,"fen":"r3kbbr/pppn1ppp/n2pp3/P2p1b1B/3P4/P2P1N2/RPPNBPPP/3QKR2[] w k - 2 16","clocks":{"A_white":74499,"A_black":72439,"B_white":70883,"B_black":76055}}
+{"type":"thinking","seq":240,"ts":93286,"seat":"A_white","phase":"start","think_ms":577,"nodes":376436,"eval":null,"depth":null}
+{"type":"message","seq":241,"ts":93430,"deliverTs":93430,"fromSeat":"B_black","toSeat":"A_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":98430,"value":0.4}}
+{"type":"message","seq":242,"ts":93632,"deliverTs":93632,"fromSeat":"A_white","toSeat":"B_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":243,"ts":93863,"seat":"A_white","phase":"end","think_ms":577,"nodes":376436,"eval":0.7,"depth":8}
+{"type":"move","seq":244,"ts":93863,"board":"A","seat":"A_white","uci":"h5f7","san":"Bxf7+","isDrop":false,"capture":"p","fen":"r3kbbr/pppn1Bpp/n2pp3/P2p1b2/3P4/P2P1N2/RPPNBPPP/3QKR2[] b k - 0 16","clocks":{"A_white":73698,"A_black":72439,"B_white":70082,"B_black":76055}}
+{"type":"pass","seq":245,"ts":93863,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":246,"ts":93991,"seat":"A_black","phase":"start","think_ms":3101,"nodes":1566694,"eval":null,"depth":null}
+{"type":"message","seq":247,"ts":94766,"deliverTs":94766,"fromSeat":"B_white","toSeat":"A_black","token":"need_B","text":"need a bishop in 5s","payload":{"piece":"B","deadlineTs":99766,"value":0.39}}
+{"type":"thinking","seq":248,"ts":95133,"seat":"B_white","phase":"end","think_ms":6962,"nodes":3789110,"eval":-0.69,"depth":10}
+{"type":"move","seq":249,"ts":95133,"board":"B","seat":"B_white","uci":"b2b5","san":"Rb5","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/4pq1n/1R1p4/P2P4/3BP2P/2PB1PPN/2Q1NRK1[p] b - - 4 21","clocks":{"A_white":73698,"A_black":71169,"B_white":68812,"B_black":76055}}
+{"type":"thinking","seq":250,"ts":95214,"seat":"B_black","phase":"start","think_ms":1301,"nodes":842050,"eval":null,"depth":null}
+{"type":"message","seq":251,"ts":95852,"deliverTs":95852,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"ok, taking a bishop","payload":{}}
+{"type":"thinking","seq":252,"ts":96515,"seat":"B_black","phase":"end","think_ms":1301,"nodes":842050,"eval":0.68,"depth":9}
+{"type":"move","seq":253,"ts":96515,"board":"B","seat":"B_black","uci":"P@h5","san":"P@h5","isDrop":true,"capture":null,"fen":"r1br3k/pppnqpp1/4pq1n/1R1p3p/P2P4/3BP2P/2PB1PPN/2Q1NRK1[] w - - 0 22","clocks":{"A_white":73698,"A_black":69787,"B_white":68812,"B_black":74673}}
+{"type":"thinking","seq":254,"ts":96646,"seat":"B_white","phase":"start","think_ms":1688,"nodes":981102,"eval":null,"depth":null}
+{"type":"message","seq":255,"ts":97068,"deliverTs":97068,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":102068,"value":0.49}}
+{"type":"thinking","seq":256,"ts":97092,"seat":"A_black","phase":"end","think_ms":3101,"nodes":1566694,"eval":-0.76,"depth":9}
+{"type":"move","seq":257,"ts":97092,"board":"A","seat":"A_black","uci":"g8f7","san":"Bxf7","isDrop":false,"capture":"B","fen":"r3kb1r/pppn1bpp/n2pp3/P2p1b2/3P4/P2P1N2/RPPNBPPP/3QKR2[] w k - 0 17","clocks":{"A_white":73698,"A_black":69210,"B_white":68235,"B_black":74673}}
+{"type":"pass","seq":258,"ts":97092,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"B"}
+{"type":"thinking","seq":259,"ts":97234,"seat":"A_white","phase":"start","think_ms":972,"nodes":452023,"eval":null,"depth":null}
+{"type":"message","seq":260,"ts":97659,"deliverTs":97659,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":261,"ts":98206,"seat":"A_white","phase":"end","think_ms":972,"nodes":452023,"eval":0.39,"depth":9}
+{"type":"move","seq":262,"ts":98206,"board":"A","seat":"A_white","uci":"f1g1","san":"Rg1","isDrop":false,"capture":null,"fen":"r3kb1r/pppn1bpp/n2pp3/P2p1b2/3P4/P2P1N2/RPPNBPPP/3QK1R1[] b k - 1 17","clocks":{"A_white":72584,"A_black":69210,"B_white":67121,"B_black":74673}}
+{"type":"thinking","seq":263,"ts":98334,"seat":"B_white","phase":"end","think_ms":1688,"nodes":981102,"eval":-0.51,"depth":9}
+{"type":"move","seq":264,"ts":98334,"board":"B","seat":"B_white","uci":"b5d5","san":"Rxd5","isDrop":false,"capture":"p","fen":"r1br3k/pppnqpp1/4pq1n/3R3p/P2P4/3BP2P/2PB1PPN/2Q1NRK1[B] b - - 0 22","clocks":{"A_white":72584,"A_black":69082,"B_white":66993,"B_black":74673}}
+{"type":"pass","seq":265,"ts":98334,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"thinking","seq":266,"ts":98396,"seat":"A_black","phase":"start","think_ms":2472,"nodes":1826344,"eval":null,"depth":null}
+{"type":"thinking","seq":267,"ts":98593,"seat":"B_black","phase":"start","think_ms":1447,"nodes":738529,"eval":null,"depth":null}
+{"type":"thinking","seq":268,"ts":100040,"seat":"B_black","phase":"end","think_ms":1447,"nodes":738529,"eval":0.41,"depth":9}
+{"type":"move","seq":269,"ts":100040,"board":"B","seat":"B_black","uci":"e6d5","san":"exd5","isDrop":false,"capture":"R","fen":"r1br3k/pppnqpp1/5q1n/3p3p/P2P4/3BP2P/2PB1PPN/2Q1NRK1[B] w - - 0 23","clocks":{"A_white":72584,"A_black":67376,"B_white":66993,"B_black":72967}}
+{"type":"pass","seq":270,"ts":100040,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"R"}
+{"type":"message","seq":271,"ts":100040,"deliverTs":100040,"fromSeat":"B_white","toSeat":"A_black","token":"need_Q","text":"need a queen, mate on h7","payload":{"piece":"Q","deadlineTs":106040,"value":0.9}}
+{"type":"message","seq":272,"ts":100040,"deliverTs":100040,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting until the queen comes","payload":{}}
+{"type":"stall","seq":273,"ts":100040,"seat":"B_white","active":true,"reason":"need_piece"}
+{"type":"message","seq":274,"ts":100375,"deliverTs":100375,"fromSeat":"A_black","toSeat":"B_white","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"message","seq":275,"ts":100375,"deliverTs":100375,"fromSeat":"A_black","toSeat":"B_white","token":"go","text":"go, don't wait","payload":{}}
+{"type":"stall","seq":276,"ts":100837,"seat":"B_white","active":false,"reason":"need_piece"}
+{"type":"thinking","seq":277,"ts":100868,"seat":"A_black","phase":"end","think_ms":2472,"nodes":1826344,"eval":-0.79,"depth":9}
+{"type":"move","seq":278,"ts":100868,"board":"A","seat":"A_black","uci":"P@c6","san":"P@c6","isDrop":true,"capture":null,"fen":"r3kb1r/pppn1bpp/n1ppp3/P2p1b2/3P4/P2P1N2/RPPNBPPP/3QK1R1[R] w k - 0 18","clocks":{"A_white":72584,"A_black":66548,"B_white":66165,"B_black":72967}}
+{"type":"thinking","seq":279,"ts":100992,"seat":"B_white","phase":"start","think_ms":590,"nodes":371774,"eval":null,"depth":null}
+{"type":"thinking","seq":280,"ts":101004,"seat":"A_white","phase":"start","think_ms":1833,"nodes":1420245,"eval":null,"depth":null}
+{"type":"thinking","seq":281,"ts":101582,"seat":"B_white","phase":"end","think_ms":590,"nodes":371774,"eval":-0.79,"depth":8}
+{"type":"move","seq":282,"ts":101582,"board":"B","seat":"B_white","uci":"c1d1","san":"Qd1","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/5q1n/3p3p/P2P4/3BP2P/2PB1PPN/3QNRK1[B] b - - 1 23","clocks":{"A_white":71870,"A_black":66548,"B_white":65451,"B_black":72967}}
+{"type":"thinking","seq":283,"ts":101802,"seat":"B_black","phase":"start","think_ms":2123,"nodes":817851,"eval":null,"depth":null}
+{"type":"thinking","seq":284,"ts":102837,"seat":"A_white","phase":"end","think_ms":1833,"nodes":1420245,"eval":0.7,"depth":9}
+{"type":"move","seq":285,"ts":102837,"board":"A","seat":"A_white","uci":"R@a1","san":"R@a1","isDrop":true,"capture":null,"fen":"r3kb1r/pppn1bpp/n1ppp3/P2p1b2/3P4/P2P1N2/RPPNBPPP/R2QK1R1[] b k - 0 18","clocks":{"A_white":70615,"A_black":66548,"B_white":65451,"B_black":71712}}
+{"type":"thinking","seq":286,"ts":103078,"seat":"A_black","phase":"start","think_ms":2290,"nodes":871968,"eval":null,"depth":null}
+{"type":"thinking","seq":287,"ts":103925,"seat":"B_black","phase":"end","think_ms":2123,"nodes":817851,"eval":0.78,"depth":9}
+{"type":"move","seq":288,"ts":103925,"board":"B","seat":"B_black","uci":"h5h4","san":"h4","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/5q1n/3p4/P2P3p/3BP2P/2PB1PPN/3QNRK1[B] w - - 0 24","clocks":{"A_white":70615,"A_black":65460,"B_white":65451,"B_black":70624}}
+{"type":"thinking","seq":289,"ts":104173,"seat":"B_white","phase":"start","think_ms":2357,"nodes":1665113,"eval":null,"depth":null}
+{"type":"thinking","seq":290,"ts":105368,"seat":"A_black","phase":"end","think_ms":2290,"nodes":871968,"eval":-0.8,"depth":9}
+{"type":"move","seq":291,"ts":105368,"board":"A","seat":"A_black","uci":"f5g4","san":"Bg4","isDrop":false,"capture":null,"fen":"r3kb1r/pppn1bpp/n1ppp3/P2p4/3P2b1/P2P1N2/RPPNBPPP/R2QK1R1[] w k - 1 19","clocks":{"A_white":70615,"A_black":64017,"B_white":64008,"B_black":70624}}
+{"type":"thinking","seq":292,"ts":105626,"seat":"A_white","phase":"start","think_ms":3854,"nodes":3014948,"eval":null,"depth":null}
+{"type":"thinking","seq":293,"ts":106530,"seat":"B_white","phase":"end","think_ms":2357,"nodes":1665113,"eval":-0.7,"depth":9}
+{"type":"move","seq":294,"ts":106530,"board":"B","seat":"B_white","uci":"B@a1","san":"B@a1","isDrop":true,"capture":null,"fen":"r1br3k/pppnqpp1/5q1n/3p4/P2P3p/3BP2P/2PB1PPN/B2QNRK1[] b - - 0 24","clocks":{"A_white":69453,"A_black":64017,"B_white":62846,"B_black":70624}}
+{"type":"thinking","seq":295,"ts":106617,"seat":"B_black","phase":"start","think_ms":6764,"nodes":3720221,"eval":null,"depth":null}
+{"type":"thinking","seq":296,"ts":109480,"seat":"A_white","phase":"end","think_ms":3854,"nodes":3014948,"eval":0.69,"depth":10}
+{"type":"move","seq":297,"ts":109480,"board":"A","seat":"A_white","uci":"f3h4","san":"Nh4","isDrop":false,"capture":null,"fen":"r3kb1r/pppn1bpp/n1ppp3/P2p4/3P2bN/P2P4/RPPNBPPP/R2QK1R1[] b k - 2 19","clocks":{"A_white":66503,"A_black":64017,"B_white":62846,"B_black":67674}}
+{"type":"thinking","seq":298,"ts":109654,"seat":"A_black","phase":"start","think_ms":4050,"nodes":2735874,"eval":null,"depth":null}
+{"type":"thinking","seq":299,"ts":113381,"seat":"B_black","phase":"end","think_ms":6764,"nodes":3720221,"eval":0.78,"depth":10}
+{"type":"move","seq":300,"ts":113381,"board":"B","seat":"B_black","uci":"d7b6","san":"Nb6","isDrop":false,"capture":null,"fen":"r1br3k/ppp1qpp1/1n3q1n/3p4/P2P3p/3BP2P/2PB1PPN/B2QNRK1[] w - - 1 25","clocks":{"A_white":66503,"A_black":60116,"B_white":62846,"B_black":63773}}
+{"type":"message","seq":301,"ts":113381,"deliverTs":113381,"fromSeat":"B_white","toSeat":"A_black","token":"need_Q","text":"need a queen, mate on h7","payload":{"piece":"Q","deadlineTs":119381,"value":0.9}}
+{"type":"message","seq":302,"ts":113381,"deliverTs":113381,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting until the queen comes","payload":{}}
+{"type":"stall","seq":303,"ts":113381,"seat":"B_white","active":true,"reason":"need_piece"}
+{"type":"thinking","seq":304,"ts":113704,"seat":"A_black","phase":"end","think_ms":4050,"nodes":2735874,"eval":-0.77,"depth":10}
+{"type":"move","seq":305,"ts":113704,"board":"A","seat":"A_black","uci":"g4e2","san":"Bxe2","isDrop":false,"capture":"B","fen":"r3kb1r/pppn1bpp/n1ppp3/P2p4/3P3N/P2P4/RPPNbPPP/R2QK1R1[] w k - 0 20","clocks":{"A_white":66503,"A_black":59793,"B_white":62523,"B_black":63773}}
+{"type":"pass","seq":306,"ts":113704,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"B"}
+{"type":"thinking","seq":307,"ts":113876,"seat":"A_white","phase":"start","think_ms":1998,"nodes":1331146,"eval":null,"depth":null}
+{"type":"message","seq":308,"ts":113918,"deliverTs":113918,"fromSeat":"A_black","toSeat":"B_white","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"stall","seq":309,"ts":114563,"seat":"B_white","active":false,"reason":"need_piece"}
+{"type":"thinking","seq":310,"ts":114720,"seat":"B_white","phase":"start","think_ms":5795,"nodes":3221931,"eval":null,"depth":null}
+{"type":"thinking","seq":311,"ts":115874,"seat":"A_white","phase":"end","think_ms":1998,"nodes":1331146,"eval":0.5,"depth":9}
+{"type":"move","seq":312,"ts":115874,"board":"A","seat":"A_white","uci":"d1e2","san":"Qxe2","isDrop":false,"capture":"b","fen":"r3kb1r/pppn1bpp/n1ppp3/P2p4/3P3N/P2P4/RPPNQPPP/R3K1R1[] b k - 0 20","clocks":{"A_white":64333,"A_black":59793,"B_white":60353,"B_black":63773}}
+{"type":"pass","seq":313,"ts":115874,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"b"}
+{"type":"message","seq":314,"ts":115874,"deliverTs":115874,"fromSeat":"A_white","toSeat":"B_black","token":"have_B","text":"bishop coming your way","payload":{"piece":"B"}}
+{"type":"thinking","seq":315,"ts":116032,"seat":"A_black","phase":"start","think_ms":763,"nodes":463193,"eval":null,"depth":null}
+{"type":"thinking","seq":316,"ts":116795,"seat":"A_black","phase":"end","think_ms":763,"nodes":463193,"eval":-0.79,"depth":9}
+{"type":"move","seq":317,"ts":116795,"board":"A","seat":"A_black","uci":"d7f6","san":"Nf6","isDrop":false,"capture":null,"fen":"r3kb1r/ppp2bpp/n1pppn2/P2p4/3P3N/P2P4/RPPNQPPP/R3K1R1[] w k - 1 21","clocks":{"A_white":64333,"A_black":58872,"B_white":59432,"B_black":63773}}
+{"type":"thinking","seq":318,"ts":116916,"seat":"A_white","phase":"start","think_ms":3178,"nodes":1984840,"eval":null,"depth":null}
+{"type":"thinking","seq":319,"ts":120094,"seat":"A_white","phase":"end","think_ms":3178,"nodes":1984840,"eval":0.83,"depth":10}
+{"type":"move","seq":320,"ts":120094,"board":"A","seat":"A_white","uci":"h2h3","san":"h3","isDrop":false,"capture":null,"fen":"r3kb1r/ppp2bpp/n1pppn2/P2p4/3P3N/P2P3P/RPPNQPP1/R3K1R1[] b k - 0 21","clocks":{"A_white":61034,"A_black":58872,"B_white":56133,"B_black":63773}}
+{"type":"thinking","seq":321,"ts":120333,"seat":"A_black","phase":"start","think_ms":1295,"nodes":473688,"eval":null,"depth":null}
+{"type":"thinking","seq":322,"ts":120515,"seat":"B_white","phase":"end","think_ms":5795,"nodes":3221931,"eval":-0.72,"depth":10}
+{"type":"move","seq":323,"ts":120515,"board":"B","seat":"B_white","uci":"a4a5","san":"a5","isDrop":false,"capture":null,"fen":"r1br3k/ppp1qpp1/1n3q1n/P2p4/3P3p/3BP2P/2PB1PPN/B2QNRK1[Bb] b - - 0 25","clocks":{"A_white":61034,"A_black":58451,"B_white":55712,"B_black":63773}}
+{"type":"thinking","seq":324,"ts":120707,"seat":"B_black","phase":"start","think_ms":754,"nodes":563204,"eval":null,"depth":null}
+{"type":"thinking","seq":325,"ts":121461,"seat":"B_black","phase":"end","think_ms":754,"nodes":563204,"eval":0.81,"depth":9}
+{"type":"move","seq":326,"ts":121461,"board":"B","seat":"B_black","uci":"b6d7","san":"Nd7","isDrop":false,"capture":null,"fen":"r1br3k/pppnqpp1/5q1n/P2p4/3P3p/3BP2P/2PB1PPN/B2QNRK1[Bb] w - - 1 26","clocks":{"A_white":61034,"A_black":57505,"B_white":55712,"B_black":62827}}
+{"type":"message","seq":327,"ts":121461,"deliverTs":121461,"fromSeat":"B_white","toSeat":"A_black","token":"need_Q","text":"need a queen, mate on h7","payload":{"piece":"Q","deadlineTs":127461,"value":0.9}}
+{"type":"thinking","seq":328,"ts":121593,"seat":"B_white","phase":"start","think_ms":555,"nodes":203808,"eval":null,"depth":null}
+{"type":"thinking","seq":329,"ts":121628,"seat":"A_black","phase":"end","think_ms":1295,"nodes":473688,"eval":-0.8,"depth":9}
+{"type":"move","seq":330,"ts":121628,"board":"A","seat":"A_black","uci":"a8b8","san":"Rb8","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1pppn2/P2p4/3P3N/P2P3P/RPPNQPP1/R3K1R1[] w k - 1 22","clocks":{"A_white":61034,"A_black":57338,"B_white":55545,"B_black":62827}}
+{"type":"thinking","seq":331,"ts":121888,"seat":"A_white","phase":"start","think_ms":1351,"nodes":711546,"eval":null,"depth":null}
+{"type":"message","seq":332,"ts":122134,"deliverTs":122134,"fromSeat":"A_black","toSeat":"B_white","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"thinking","seq":333,"ts":122148,"seat":"B_white","phase":"end","think_ms":555,"nodes":203808,"eval":-0.83,"depth":8}
+{"type":"move","seq":334,"ts":122148,"board":"B","seat":"B_white","uci":"B@c1","san":"B@c1","isDrop":true,"capture":null,"fen":"r1br3k/pppnqpp1/5q1n/P2p4/3P3p/3BP2P/2PB1PPN/B1BQNRK1[b] b - - 0 26","clocks":{"A_white":60514,"A_black":57338,"B_white":55025,"B_black":62827}}
+{"type":"thinking","seq":335,"ts":122253,"seat":"B_black","phase":"start","think_ms":2890,"nodes":944231,"eval":null,"depth":null}
+{"type":"message","seq":336,"ts":122976,"deliverTs":122976,"fromSeat":"A_white","toSeat":"B_black","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":127976,"value":0.59}}
+{"type":"thinking","seq":337,"ts":123239,"seat":"A_white","phase":"end","think_ms":1351,"nodes":711546,"eval":0.78,"depth":9}
+{"type":"move","seq":338,"ts":123239,"board":"A","seat":"A_white","uci":"f2f3","san":"f3","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1pppn2/P2p4/3P3N/P2P1P1P/RPPNQ1P1/R3K1R1[] b k - 0 22","clocks":{"A_white":59423,"A_black":57338,"B_white":55025,"B_black":61736}}
+{"type":"thinking","seq":339,"ts":123455,"seat":"A_black","phase":"start","think_ms":3221,"nodes":2109999,"eval":null,"depth":null}
+{"type":"message","seq":340,"ts":123987,"deliverTs":123987,"fromSeat":"B_black","toSeat":"A_white","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":341,"ts":125143,"seat":"B_black","phase":"end","think_ms":2890,"nodes":944231,"eval":0.76,"depth":9}
+{"type":"move","seq":342,"ts":125143,"board":"B","seat":"B_black","uci":"d8e8","san":"Re8","isDrop":false,"capture":null,"fen":"r1b1r2k/pppnqpp1/5q1n/P2p4/3P3p/3BP2P/2PB1PPN/B1BQNRK1[b] w - - 1 27","clocks":{"A_white":59423,"A_black":55434,"B_white":55025,"B_black":59832}}
+{"type":"thinking","seq":343,"ts":125220,"seat":"B_white","phase":"start","think_ms":424,"nodes":156225,"eval":null,"depth":null}
+{"type":"thinking","seq":344,"ts":125644,"seat":"B_white","phase":"end","think_ms":424,"nodes":156225,"eval":-0.79,"depth":8}
+{"type":"move","seq":345,"ts":125644,"board":"B","seat":"B_white","uci":"d1h5","san":"Qh5","isDrop":false,"capture":null,"fen":"r1b1r2k/pppnqpp1/5q1n/P2p3Q/3P3p/3BP2P/2PB1PPN/B1B1NRK1[b] b - - 2 27","clocks":{"A_white":59423,"A_black":54933,"B_white":54524,"B_black":59832}}
+{"type":"thinking","seq":346,"ts":125778,"seat":"B_black","phase":"start","think_ms":7164,"nodes":2181258,"eval":null,"depth":null}
+{"type":"thinking","seq":347,"ts":126676,"seat":"A_black","phase":"end","think_ms":3221,"nodes":2109999,"eval":-0.71,"depth":10}
+{"type":"move","seq":348,"ts":126676,"board":"A","seat":"A_black","uci":"f6g8","san":"Ng8","isDrop":false,"capture":null,"fen":"1r2kbnr/ppp2bpp/n1ppp3/P2p4/3P3N/P2P1P1P/RPPNQ1P1/R3K1R1[] w k - 1 23","clocks":{"A_white":59423,"A_black":53901,"B_white":54524,"B_black":58800}}
+{"type":"thinking","seq":349,"ts":126904,"seat":"A_white","phase":"start","think_ms":1744,"nodes":766210,"eval":null,"depth":null}
+{"type":"thinking","seq":350,"ts":128648,"seat":"A_white","phase":"end","think_ms":1744,"nodes":766210,"eval":0.72,"depth":9}
+{"type":"move","seq":351,"ts":128648,"board":"A","seat":"A_white","uci":"g2g4","san":"g4","isDrop":false,"capture":null,"fen":"1r2kbnr/ppp2bpp/n1ppp3/P2p4/3P2PN/P2P1P1P/RPPNQ3/R3K1R1[] b k - 0 23","clocks":{"A_white":57451,"A_black":53901,"B_white":54524,"B_black":56828}}
+{"type":"thinking","seq":352,"ts":128786,"seat":"A_black","phase":"start","think_ms":2724,"nodes":1272717,"eval":null,"depth":null}
+{"type":"thinking","seq":353,"ts":131510,"seat":"A_black","phase":"end","think_ms":2724,"nodes":1272717,"eval":-0.74,"depth":9}
+{"type":"move","seq":354,"ts":131510,"board":"A","seat":"A_black","uci":"g8h6","san":"Nh6","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp2n/P2p4/3P2PN/P2P1P1P/RPPNQ3/R3K1R1[] w k - 1 24","clocks":{"A_white":57451,"A_black":51039,"B_white":54524,"B_black":53966}}
+{"type":"thinking","seq":355,"ts":131633,"seat":"A_white","phase":"start","think_ms":550,"nodes":412143,"eval":null,"depth":null}
+{"type":"thinking","seq":356,"ts":132183,"seat":"A_white","phase":"end","think_ms":550,"nodes":412143,"eval":0.72,"depth":8}
+{"type":"move","seq":357,"ts":132183,"board":"A","seat":"A_white","uci":"e2h2","san":"Qh2","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp2n/P2p4/3P2PN/P2P1P1P/RPPN3Q/R3K1R1[] b k - 2 24","clocks":{"A_white":56778,"A_black":51039,"B_white":54524,"B_black":53293}}
+{"type":"thinking","seq":358,"ts":132415,"seat":"A_black","phase":"start","think_ms":1879,"nodes":1445938,"eval":null,"depth":null}
+{"type":"message","seq":359,"ts":132885,"deliverTs":132885,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":137885,"value":0.59}}
+{"type":"thinking","seq":360,"ts":132942,"seat":"B_black","phase":"end","think_ms":7164,"nodes":2181258,"eval":0.8,"depth":10}
+{"type":"move","seq":361,"ts":132942,"board":"B","seat":"B_black","uci":"d7f8","san":"Nf8","isDrop":false,"capture":null,"fen":"r1b1rn1k/ppp1qpp1/5q1n/P2p3Q/3P3p/3BP2P/2PB1PPN/B1B1NRK1[b] w - - 3 28","clocks":{"A_white":56778,"A_black":50280,"B_white":54524,"B_black":52534}}
+{"type":"thinking","seq":362,"ts":133186,"seat":"B_white","phase":"start","think_ms":622,"nodes":350963,"eval":null,"depth":null}
+{"type":"message","seq":363,"ts":133542,"deliverTs":133542,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":364,"ts":133808,"seat":"B_white","phase":"end","think_ms":622,"nodes":350963,"eval":-0.74,"depth":8}
+{"type":"move","seq":365,"ts":133808,"board":"B","seat":"B_white","uci":"h5d5","san":"Qxd5","isDrop":false,"capture":"p","fen":"r1b1rn1k/ppp1qpp1/5q1n/P2Q4/3P3p/3BP2P/2PB1PPN/B1B1NRK1[b] b - - 0 28","clocks":{"A_white":56778,"A_black":49414,"B_white":53658,"B_black":52534}}
+{"type":"pass","seq":366,"ts":133808,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"thinking","seq":367,"ts":133892,"seat":"B_black","phase":"start","think_ms":3063,"nodes":2122413,"eval":null,"depth":null}
+{"type":"thinking","seq":368,"ts":134294,"seat":"A_black","phase":"end","think_ms":1879,"nodes":1445938,"eval":-0.67,"depth":9}
+{"type":"move","seq":369,"ts":134294,"board":"A","seat":"A_black","uci":"h6g4","san":"Nxg4","isDrop":false,"capture":"P","fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P2nN/P2P1P1P/RPPN3Q/R3K1R1[p] w k - 0 25","clocks":{"A_white":56778,"A_black":48928,"B_white":53658,"B_black":52048}}
+{"type":"pass","seq":370,"ts":134294,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"thinking","seq":371,"ts":134437,"seat":"A_white","phase":"start","think_ms":5170,"nodes":2184227,"eval":null,"depth":null}
+{"type":"thinking","seq":372,"ts":136955,"seat":"B_black","phase":"end","think_ms":3063,"nodes":2122413,"eval":0.56,"depth":10}
+{"type":"move","seq":373,"ts":136955,"board":"B","seat":"B_black","uci":"B@a4","san":"B@a4","isDrop":true,"capture":null,"fen":"r1b1rn1k/ppp1qpp1/5q1n/P2Q4/b2P3p/3BP2P/2PB1PPN/B1B1NRK1[P] w - - 0 29","clocks":{"A_white":54117,"A_black":48928,"B_white":53658,"B_black":49387}}
+{"type":"thinking","seq":374,"ts":137181,"seat":"B_white","phase":"start","think_ms":1194,"nodes":424509,"eval":null,"depth":null}
+{"type":"message","seq":375,"ts":137480,"deliverTs":137480,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":142480,"value":0.61}}
+{"type":"message","seq":376,"ts":137897,"deliverTs":137897,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":377,"ts":138375,"seat":"B_white","phase":"end","think_ms":1194,"nodes":424509,"eval":-0.72,"depth":8}
+{"type":"move","seq":378,"ts":138375,"board":"B","seat":"B_white","uci":"P@g6","san":"P@g6","isDrop":true,"capture":null,"fen":"r1b1rn1k/ppp1qpp1/5qPn/P2Q4/b2P3p/3BP2P/2PB1PPN/B1B1NRK1[] b - - 0 29","clocks":{"A_white":52697,"A_black":48928,"B_white":52238,"B_black":49387}}
+{"type":"thinking","seq":379,"ts":138635,"seat":"B_black","phase":"start","think_ms":1401,"nodes":814928,"eval":null,"depth":null}
+{"type":"thinking","seq":380,"ts":139607,"seat":"A_white","phase":"end","think_ms":5170,"nodes":2184227,"eval":0.59,"depth":10}
+{"type":"move","seq":381,"ts":139607,"board":"A","seat":"A_white","uci":"h2f4","san":"Qf4","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPN4/R3K1R1[p] b k - 1 25","clocks":{"A_white":51465,"A_black":48928,"B_white":52238,"B_black":48155}}
+{"type":"thinking","seq":382,"ts":139762,"seat":"A_black","phase":"start","think_ms":2115,"nodes":825252,"eval":null,"depth":null}
+{"type":"thinking","seq":383,"ts":140036,"seat":"B_black","phase":"end","think_ms":1401,"nodes":814928,"eval":0.68,"depth":9}
+{"type":"move","seq":384,"ts":140036,"board":"B","seat":"B_black","uci":"f7g6","san":"fxg6","isDrop":false,"capture":"P","fen":"r1b1rn1k/ppp1q1p1/5qpn/P2Q4/b2P3p/3BP2P/2PB1PPN/B1B1NRK1[] w - - 0 30","clocks":{"A_white":51465,"A_black":48499,"B_white":52238,"B_black":47726}}
+{"type":"pass","seq":385,"ts":140036,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":386,"ts":140186,"seat":"B_white","phase":"start","think_ms":2020,"nodes":1459804,"eval":null,"depth":null}
+{"type":"thinking","seq":387,"ts":141877,"seat":"A_black","phase":"end","think_ms":2115,"nodes":825252,"eval":-0.73,"depth":9}
+{"type":"move","seq":388,"ts":141877,"board":"A","seat":"A_black","uci":"P@f2","san":"P@f2+","isDrop":true,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPN1p2/R3K1R1[P] w k - 0 26","clocks":{"A_white":51465,"A_black":46658,"B_white":50397,"B_black":47726}}
+{"type":"thinking","seq":389,"ts":141999,"seat":"A_white","phase":"start","think_ms":2748,"nodes":968477,"eval":null,"depth":null}
+{"type":"thinking","seq":390,"ts":142206,"seat":"B_white","phase":"end","think_ms":2020,"nodes":1459804,"eval":-0.77,"depth":9}
+{"type":"move","seq":391,"ts":142206,"board":"B","seat":"B_white","uci":"d3g6","san":"Bxg6","isDrop":false,"capture":"p","fen":"r1b1rn1k/ppp1q1p1/5qBn/P2Q4/b2P3p/4P2P/2PB1PPN/B1B1NRK1[] b - - 0 30","clocks":{"A_white":51136,"A_black":46658,"B_white":50068,"B_black":47726}}
+{"type":"pass","seq":392,"ts":142206,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"message","seq":393,"ts":142206,"deliverTs":142206,"fromSeat":"A_white","toSeat":"B_black","token":"sit","text":"sit! I'm in check, don't trade","payload":{}}
+{"type":"stall","seq":394,"ts":142206,"seat":"B_black","active":true,"reason":"partner_sit"}
+{"type":"thinking","seq":395,"ts":144747,"seat":"A_white","phase":"end","think_ms":2748,"nodes":968477,"eval":0.66,"depth":9}
+{"type":"move","seq":396,"ts":144747,"board":"A","seat":"A_white","uci":"e1d1","san":"Kd1","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPN1p2/R2K2R1[Pp] b k - 1 26","clocks":{"A_white":48595,"A_black":46658,"B_white":50068,"B_black":45185}}
+{"type":"message","seq":397,"ts":144754,"deliverTs":144754,"fromSeat":"A_white","toSeat":"B_black","token":"go","text":"go go go, clock!","payload":{}}
+{"type":"stall","seq":398,"ts":144754,"seat":"B_black","active":false,"reason":"partner_sit"}
+{"type":"thinking","seq":399,"ts":144873,"seat":"A_black","phase":"start","think_ms":2866,"nodes":2223856,"eval":null,"depth":null}
+{"type":"thinking","seq":400,"ts":144899,"seat":"B_black","phase":"start","think_ms":1646,"nodes":536605,"eval":null,"depth":null}
+{"type":"thinking","seq":401,"ts":146545,"seat":"B_black","phase":"end","think_ms":1646,"nodes":536605,"eval":0.64,"depth":9}
+{"type":"move","seq":402,"ts":146545,"board":"B","seat":"B_black","uci":"f8g6","san":"Nxg6","isDrop":false,"capture":"B","fen":"r1b1r2k/ppp1q1p1/5qnn/P2Q4/b2P3p/4P2P/2PB1PPN/B1B1NRK1[] w - - 0 31","clocks":{"A_white":48595,"A_black":44860,"B_white":50068,"B_black":43387}}
+{"type":"pass","seq":403,"ts":146545,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"B"}
+{"type":"thinking","seq":404,"ts":146710,"seat":"B_white","phase":"start","think_ms":1420,"nodes":440242,"eval":null,"depth":null}
+{"type":"message","seq":405,"ts":147065,"deliverTs":147065,"fromSeat":"A_black","toSeat":"B_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":152065,"value":0.33}}
+{"type":"message","seq":406,"ts":147562,"deliverTs":147562,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":407,"ts":147739,"seat":"A_black","phase":"end","think_ms":2866,"nodes":2223856,"eval":-0.85,"depth":10}
+{"type":"move","seq":408,"ts":147739,"board":"A","seat":"A_black","uci":"f2g1q","san":"fxg1=Q+","isDrop":false,"capture":"R","fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPN4/R2K2q~1[BPp] w k - 0 27","clocks":{"A_white":48595,"A_black":43666,"B_white":48874,"B_black":43387}}
+{"type":"pass","seq":409,"ts":147739,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"R"}
+{"type":"thinking","seq":410,"ts":147975,"seat":"A_white","phase":"start","think_ms":844,"nodes":596884,"eval":null,"depth":null}
+{"type":"thinking","seq":411,"ts":148130,"seat":"B_white","phase":"end","think_ms":1420,"nodes":440242,"eval":-0.5,"depth":9}
+{"type":"move","seq":412,"ts":148130,"board":"B","seat":"B_white","uci":"R@g8","san":"R@g8+","isDrop":true,"capture":null,"fen":"r1b1r1Rk/ppp1q1p1/5qnn/P2Q4/b2P3p/4P2P/2PB1PPN/B1B1NRK1[] b - - 0 31","clocks":{"A_white":48204,"A_black":43666,"B_white":48483,"B_black":43387}}
+{"type":"message","seq":413,"ts":148130,"deliverTs":148130,"fromSeat":"A_white","toSeat":"B_black","token":"sit","text":"sit! I'm in check, don't trade","payload":{}}
+{"type":"stall","seq":414,"ts":148130,"seat":"B_black","active":true,"reason":"partner_sit"}
+{"type":"thinking","seq":415,"ts":148819,"seat":"A_white","phase":"end","think_ms":844,"nodes":596884,"eval":-0.56,"depth":9}
+{"type":"move","seq":416,"ts":148819,"board":"A","seat":"A_white","uci":"d1e2","san":"Ke2","isDrop":false,"capture":null,"fen":"1r2kb1r/ppp2bpp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPNK3/R5q~1[BPp] b k - 1 27","clocks":{"A_white":47515,"A_black":43666,"B_white":48483,"B_black":42698}}
+{"type":"message","seq":417,"ts":148969,"deliverTs":148969,"fromSeat":"A_white","toSeat":"B_black","token":"go","text":"ok go!","payload":{}}
+{"type":"thinking","seq":418,"ts":148985,"seat":"A_black","phase":"start","think_ms":3022,"nodes":1995677,"eval":null,"depth":null}
+{"type":"stall","seq":419,"ts":149119,"seat":"B_black","active":false,"reason":"partner_sit"}
+{"type":"thinking","seq":420,"ts":149274,"seat":"B_black","phase":"start","think_ms":3313,"nodes":1573198,"eval":null,"depth":null}
+{"type":"message","seq":421,"ts":150102,"deliverTs":150102,"fromSeat":"A_white","toSeat":"B_black","token":"need_R","text":"need a rook in 5s","payload":{"piece":"R","deadlineTs":155102,"value":0.33}}
+{"type":"message","seq":422,"ts":151262,"deliverTs":151262,"fromSeat":"B_black","toSeat":"A_white","token":"ok","text":"ok, taking a rook","payload":{}}
+{"type":"thinking","seq":423,"ts":152007,"seat":"A_black","phase":"end","think_ms":3022,"nodes":1995677,"eval":0.55,"depth":10}
+{"type":"move","seq":424,"ts":152007,"board":"A","seat":"A_black","uci":"f7g8","san":"Bg8","isDrop":false,"capture":null,"fen":"1r2kbbr/ppp3pp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPNK3/R5q~1[BPp] w k - 2 28","clocks":{"A_white":47515,"A_black":40478,"B_white":48483,"B_black":39510}}
+{"type":"thinking","seq":425,"ts":152199,"seat":"A_white","phase":"start","think_ms":3496,"nodes":2155127,"eval":null,"depth":null}
+{"type":"thinking","seq":426,"ts":152587,"seat":"B_black","phase":"end","think_ms":3313,"nodes":1573198,"eval":0.43,"depth":9}
+{"type":"move","seq":427,"ts":152587,"board":"B","seat":"B_black","uci":"h6g8","san":"Nxg8","isDrop":false,"capture":"R","fen":"r1b1r1nk/ppp1q1p1/5qn1/P2Q4/b2P3p/4P2P/2PB1PPN/B1B1NRK1[] w - - 0 32","clocks":{"A_white":46935,"A_black":40478,"B_white":48483,"B_black":38930}}
+{"type":"pass","seq":428,"ts":152587,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"R"}
+{"type":"thinking","seq":429,"ts":152819,"seat":"B_white","phase":"start","think_ms":4101,"nodes":1859289,"eval":null,"depth":null}
+{"type":"message","seq":430,"ts":153073,"deliverTs":153073,"fromSeat":"B_black","toSeat":"A_white","token":"need_Q","text":"need a queen in 5s","payload":{"piece":"Q","deadlineTs":158073,"value":0.68}}
+{"type":"message","seq":431,"ts":154297,"deliverTs":154297,"fromSeat":"A_white","toSeat":"B_black","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"thinking","seq":432,"ts":155695,"seat":"A_white","phase":"end","think_ms":3496,"nodes":2155127,"eval":0.03,"depth":10}
+{"type":"move","seq":433,"ts":155695,"board":"A","seat":"A_white","uci":"a1g1","san":"Rxg1","isDrop":false,"capture":"p","fen":"1r2kbbr/ppp3pp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPNK3/6R1[RBPp] b k - 0 28","clocks":{"A_white":43827,"A_black":40478,"B_white":45375,"B_black":38930}}
+{"type":"pass","seq":434,"ts":155695,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":435,"ts":155913,"seat":"A_black","phase":"start","think_ms":3648,"nodes":1574787,"eval":null,"depth":null}
+{"type":"thinking","seq":436,"ts":156920,"seat":"B_white","phase":"end","think_ms":4101,"nodes":1859289,"eval":-0.83,"depth":9}
+{"type":"move","seq":437,"ts":156920,"board":"B","seat":"B_white","uci":"d5h5","san":"Qh5+","isDrop":false,"capture":null,"fen":"r1b1r1nk/ppp1q1p1/5qn1/P6Q/b2P3p/4P2P/2PB1PPN/B1B1NRK1[p] b - - 1 32","clocks":{"A_white":43827,"A_black":39253,"B_white":44150,"B_black":38930}}
+{"type":"thinking","seq":438,"ts":157140,"seat":"B_black","phase":"start","think_ms":4645,"nodes":3308822,"eval":null,"depth":null}
+{"type":"thinking","seq":439,"ts":159561,"seat":"A_black","phase":"end","think_ms":3648,"nodes":1574787,"eval":-0.87,"depth":9}
+{"type":"move","seq":440,"ts":159561,"board":"A","seat":"A_black","uci":"f8e7","san":"Be7","isDrop":false,"capture":null,"fen":"1r2k1br/ppp1b1pp/n1ppp3/P2p4/3P1QnN/P2P1P1P/RPPNK3/6R1[RBPp] w k - 1 29","clocks":{"A_white":43827,"A_black":36612,"B_white":44150,"B_black":36289}}
+{"type":"message","seq":441,"ts":159561,"deliverTs":159561,"fromSeat":"B_black","toSeat":"A_white","token":"sit","text":"sit! I'm in check, don't trade","payload":{}}
+{"type":"stall","seq":442,"ts":159561,"seat":"A_white","active":true,"reason":"partner_sit"}
+{"type":"stall","seq":443,"ts":161279,"seat":"A_white","active":false,"reason":"partner_sit"}
+{"type":"thinking","seq":444,"ts":161457,"seat":"A_white","phase":"start","think_ms":2587,"nodes":1568247,"eval":null,"depth":null}
+{"type":"thinking","seq":445,"ts":161785,"seat":"B_black","phase":"end","think_ms":4645,"nodes":3308822,"eval":0.87,"depth":10}
+{"type":"move","seq":446,"ts":161785,"board":"B","seat":"B_black","uci":"P@h6","san":"P@h6","isDrop":true,"capture":null,"fen":"r1b1r1nk/ppp1q1p1/5qnp/P6Q/b2P3p/4P2P/2PB1PPN/B1B1NRK1[] w - - 0 33","clocks":{"A_white":41603,"A_black":36612,"B_white":44150,"B_black":34065}}
+{"type":"thinking","seq":447,"ts":161899,"seat":"B_white","phase":"start","think_ms":1342,"nodes":997227,"eval":null,"depth":null}
+{"type":"message","seq":448,"ts":162235,"deliverTs":162235,"fromSeat":"A_black","toSeat":"B_white","token":"need_N","text":"need a knight in 5s","payload":{"piece":"N","deadlineTs":167235,"value":0.37}}
+{"type":"message","seq":449,"ts":162704,"deliverTs":162704,"fromSeat":"B_white","toSeat":"A_black","token":"no","text":"can't get a knight now","payload":{}}
+{"type":"thinking","seq":450,"ts":163241,"seat":"B_white","phase":"end","think_ms":1342,"nodes":997227,"eval":-0.87,"depth":9}
+{"type":"move","seq":451,"ts":163241,"board":"B","seat":"B_white","uci":"c1b2","san":"Bcb2","isDrop":false,"capture":null,"fen":"r1b1r1nk/ppp1q1p1/5qnp/P6Q/b2P3p/4P2P/1BPB1PPN/B3NRK1[] b - - 1 33","clocks":{"A_white":40147,"A_black":36612,"B_white":42694,"B_black":34065}}
+{"type":"thinking","seq":452,"ts":163473,"seat":"B_black","phase":"start","think_ms":4060,"nodes":2988327,"eval":null,"depth":null}
+{"type":"thinking","seq":453,"ts":164044,"seat":"A_white","phase":"end","think_ms":2587,"nodes":1568247,"eval":0.76,"depth":9}
+{"type":"move","seq":454,"ts":164044,"board":"A","seat":"A_white","uci":"f4g4","san":"Qxg4","isDrop":false,"capture":"n","fen":"1r2k1br/ppp1b1pp/n1ppp3/P2p4/3P2QN/P2P1P1P/RPPNK3/6R1[RBPp] b k - 0 29","clocks":{"A_white":39344,"A_black":36612,"B_white":42694,"B_black":33262}}
+{"type":"pass","seq":455,"ts":164044,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"thinking","seq":456,"ts":164285,"seat":"A_black","phase":"start","think_ms":672,"nodes":238101,"eval":null,"depth":null}
+{"type":"message","seq":457,"ts":164488,"deliverTs":164488,"fromSeat":"A_white","toSeat":"B_black","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":169488,"value":0.4}}
+{"type":"thinking","seq":458,"ts":164957,"seat":"A_black","phase":"end","think_ms":672,"nodes":238101,"eval":-0.93,"depth":8}
+{"type":"move","seq":459,"ts":164957,"board":"A","seat":"A_black","uci":"P@f6","san":"P@f6","isDrop":true,"capture":null,"fen":"1r2k1br/ppp1b1pp/n1pppp2/P2p4/3P2QN/P2P1P1P/RPPNK3/6R1[RBP] w k - 0 30","clocks":{"A_white":39344,"A_black":35699,"B_white":42694,"B_black":32349}}
+{"type":"thinking","seq":460,"ts":165178,"seat":"A_white","phase":"start","think_ms":616,"nodes":190733,"eval":null,"depth":null}
+{"type":"thinking","seq":461,"ts":165794,"seat":"A_white","phase":"end","think_ms":616,"nodes":190733,"eval":0.95,"depth":8}
+{"type":"move","seq":462,"ts":165794,"board":"A","seat":"A_white","uci":"g4h5","san":"Qh5+","isDrop":false,"capture":null,"fen":"1r2k1br/ppp1b1pp/n1pppp2/P2p3Q/3P3N/P2P1P1P/RPPNK3/6R1[RBP] b k - 1 30","clocks":{"A_white":38507,"A_black":35699,"B_white":42694,"B_black":31512}}
+{"type":"thinking","seq":463,"ts":165902,"seat":"A_black","phase":"start","think_ms":2622,"nodes":1764611,"eval":null,"depth":null}
+{"type":"message","seq":464,"ts":165909,"deliverTs":165909,"fromSeat":"B_black","toSeat":"A_white","token":"no","text":"can't get a pawn now","payload":{}}
+{"type":"thinking","seq":465,"ts":167533,"seat":"B_black","phase":"end","think_ms":4060,"nodes":2988327,"eval":0.98,"depth":10}
+{"type":"move","seq":466,"ts":167533,"board":"B","seat":"B_black","uci":"N@f3","san":"N@f3+","isDrop":true,"capture":null,"fen":"r1b1r1nk/ppp1q1p1/5qnp/P6Q/b2P3p/4Pn1P/1BPB1PPN/B3NRK1[] w - - 0 34","clocks":{"A_white":38507,"A_black":33960,"B_white":42694,"B_black":29773}}
+{"type":"message","seq":467,"ts":167533,"deliverTs":167533,"fromSeat":"A_black","toSeat":"B_white","token":"sit","text":"sit! I'm in check, don't trade","payload":{}}
+{"type":"stall","seq":468,"ts":167533,"seat":"B_white","active":true,"reason":"partner_sit"}
+{"type":"thinking","seq":469,"ts":168524,"seat":"A_black","phase":"end","think_ms":2622,"nodes":1764611,"eval":-0.85,"depth":9}
+{"type":"move","seq":470,"ts":168524,"board":"A","seat":"A_black","uci":"g7g6","san":"g6","isDrop":false,"capture":null,"fen":"1r2k1br/ppp1b2p/n1ppppp1/P2p3Q/3P3N/P2P1P1P/RPPNK3/6R1[RBP] w k - 0 31","clocks":{"A_white":38507,"A_black":32969,"B_white":41703,"B_black":29773}}
+{"type":"thinking","seq":471,"ts":168599,"seat":"A_white","phase":"start","think_ms":4612,"nodes":1921481,"eval":null,"depth":null}
+{"type":"message","seq":472,"ts":168674,"deliverTs":168674,"fromSeat":"A_black","toSeat":"B_white","token":"go","text":"ok go!","payload":{}}
+{"type":"stall","seq":473,"ts":168824,"seat":"B_white","active":false,"reason":"partner_sit"}
+{"type":"thinking","seq":474,"ts":168905,"seat":"B_white","phase":"start","think_ms":2662,"nodes":1468781,"eval":null,"depth":null}
+{"type":"thinking","seq":475,"ts":171567,"seat":"B_white","phase":"end","think_ms":2662,"nodes":1468781,"eval":-0.96,"depth":9}
+{"type":"move","seq":476,"ts":171567,"board":"B","seat":"B_white","uci":"e1f3","san":"Nexf3","isDrop":false,"capture":"n","fen":"r1b1r1nk/ppp1q1p1/5qnp/P6Q/b2P3p/4PN1P/1BPB1PPN/B4RK1[] b - - 0 34","clocks":{"A_white":35464,"A_black":32969,"B_white":38660,"B_black":29773}}
+{"type":"pass","seq":477,"ts":171567,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"n"}
+{"type":"thinking","seq":478,"ts":171640,"seat":"B_black","phase":"start","think_ms":782,"nodes":499947,"eval":null,"depth":null}
+{"type":"thinking","seq":479,"ts":172422,"seat":"B_black","phase":"end","think_ms":782,"nodes":499947,"eval":0.87,"depth":9}
+{"type":"move","seq":480,"ts":172422,"board":"B","seat":"B_black","uci":"g6f8","san":"Nf8","isDrop":false,"capture":null,"fen":"r1b1rnnk/ppp1q1p1/5q1p/P6Q/b2P3p/4PN1P/1BPB1PPN/B4RK1[] w - - 1 35","clocks":{"A_white":34609,"A_black":32969,"B_white":38660,"B_black":28918}}
+{"type":"thinking","seq":481,"ts":172640,"seat":"B_white","phase":"start","think_ms":1380,"nodes":548688,"eval":null,"depth":null}
+{"type":"thinking","seq":482,"ts":173211,"seat":"A_white","phase":"end","think_ms":4612,"nodes":1921481,"eval":0.84,"depth":9}
+{"type":"move","seq":483,"ts":173211,"board":"A","seat":"A_white","uci":"h5h6","san":"Qh6","isDrop":false,"capture":null,"fen":"1r2k1br/ppp1b2p/n1pppppQ/P2p4/3P3N/P2P1P1P/RPPNK3/6R1[RBPn] b k - 1 31","clocks":{"A_white":33820,"A_black":32969,"B_white":37871,"B_black":28918}}
+{"type":"thinking","seq":484,"ts":173412,"seat":"A_black","phase":"start","think_ms":3932,"nodes":2989310,"eval":null,"depth":null}
+{"type":"thinking","seq":485,"ts":174020,"seat":"B_white","phase":"end","think_ms":1380,"nodes":548688,"eval":-0.91,"depth":9}
+{"type":"move","seq":486,"ts":174020,"board":"B","seat":"B_white","uci":"f3e1","san":"Ne1","isDrop":false,"capture":null,"fen":"r1b1rnnk/ppp1q1p1/5q1p/P6Q/b2P3p/4P2P/1BPB1PPN/B3NRK1[] b - - 2 35","clocks":{"A_white":33820,"A_black":32160,"B_white":37062,"B_black":28918}}
+{"type":"thinking","seq":487,"ts":174250,"seat":"B_black","phase":"start","think_ms":3443,"nodes":2662772,"eval":null,"depth":null}
+{"type":"message","seq":488,"ts":175111,"deliverTs":175111,"fromSeat":"A_white","toSeat":"B_black","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":180111,"value":0.36}}
+{"type":"message","seq":489,"ts":176316,"deliverTs":176316,"fromSeat":"B_black","toSeat":"A_white","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":490,"ts":177344,"seat":"A_black","phase":"end","think_ms":3932,"nodes":2989310,"eval":-0.86,"depth":10}
+{"type":"move","seq":491,"ts":177344,"board":"A","seat":"A_black","uci":"N@a4","san":"N@a4","isDrop":true,"capture":null,"fen":"1r2k1br/ppp1b2p/n1pppppQ/P2p4/n2P3N/P2P1P1P/RPPNK3/6R1[RBP] w k - 0 32","clocks":{"A_white":33820,"A_black":28836,"B_white":37062,"B_black":25594}}
+{"type":"thinking","seq":492,"ts":177507,"seat":"A_white","phase":"start","think_ms":1045,"nodes":680461,"eval":null,"depth":null}
+{"type":"thinking","seq":493,"ts":177693,"seat":"B_black","phase":"end","think_ms":3443,"nodes":2662772,"eval":0.84,"depth":10}
+{"type":"move","seq":494,"ts":177693,"board":"B","seat":"B_black","uci":"c8h3","san":"Bxh3","isDrop":false,"capture":"P","fen":"r3rnnk/ppp1q1p1/5q1p/P6Q/b2P3p/4P2b/1BPB1PPN/B3NRK1[] w - - 0 36","clocks":{"A_white":33471,"A_black":28836,"B_white":37062,"B_black":25245}}
+{"type":"pass","seq":495,"ts":177693,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":496,"ts":177813,"seat":"B_white","phase":"start","think_ms":1399,"nodes":725424,"eval":null,"depth":null}
+{"type":"thinking","seq":497,"ts":178552,"seat":"A_white","phase":"end","think_ms":1045,"nodes":680461,"eval":0.82,"depth":9}
+{"type":"move","seq":498,"ts":178552,"board":"A","seat":"A_white","uci":"P@f7","san":"P@f7+","isDrop":true,"capture":null,"fen":"1r2k1br/ppp1bP1p/n1pppppQ/P2p4/n2P3N/P2P1P1P/RPPNK3/6R1[RBP] b k - 0 32","clocks":{"A_white":32612,"A_black":28836,"B_white":36203,"B_black":25245}}
+{"type":"thinking","seq":499,"ts":178801,"seat":"A_black","phase":"start","think_ms":958,"nodes":670485,"eval":null,"depth":null}
+{"type":"thinking","seq":500,"ts":179212,"seat":"B_white","phase":"end","think_ms":1399,"nodes":725424,"eval":-0.94,"depth":9}
+{"type":"move","seq":501,"ts":179212,"board":"B","seat":"B_white","uci":"g2h3","san":"gxh3","isDrop":false,"capture":"b","fen":"r3rnnk/ppp1q1p1/5q1p/P6Q/b2P3p/4P2P/1BPB1P1N/B3NRK1[] b - - 0 36","clocks":{"A_white":32612,"A_black":28176,"B_white":35543,"B_black":25245}}
+{"type":"pass","seq":502,"ts":179212,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"b"}
+{"type":"thinking","seq":503,"ts":179388,"seat":"B_black","phase":"start","think_ms":2503,"nodes":886996,"eval":null,"depth":null}
+{"type":"thinking","seq":504,"ts":179759,"seat":"A_black","phase":"end","think_ms":958,"nodes":670485,"eval":-0.78,"depth":9}
+{"type":"move","seq":505,"ts":179759,"board":"A","seat":"A_black","uci":"g8f7","san":"Bxf7","isDrop":false,"capture":"P","fen":"1r2k2r/ppp1bb1p/n1pppppQ/P2p4/n2P3N/P2P1P1P/RPPNK3/6R1[RBPb] w k - 0 33","clocks":{"A_white":32612,"A_black":27629,"B_white":35543,"B_black":24698}}
+{"type":"pass","seq":506,"ts":179759,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"thinking","seq":507,"ts":179861,"seat":"A_white","phase":"start","think_ms":1127,"nodes":454535,"eval":null,"depth":null}
+{"type":"message","seq":508,"ts":180143,"deliverTs":180143,"fromSeat":"B_black","toSeat":"A_white","token":"need_P","text":"need a pawn in 5s","payload":{"piece":"P","deadlineTs":185143,"value":0.42}}
+{"type":"message","seq":509,"ts":180537,"deliverTs":180537,"fromSeat":"A_white","toSeat":"B_black","token":"ok","text":"ok, taking a pawn","payload":{}}
+{"type":"thinking","seq":510,"ts":180988,"seat":"A_white","phase":"end","think_ms":1127,"nodes":454535,"eval":0.67,"depth":9}
+{"type":"move","seq":511,"ts":180988,"board":"A","seat":"A_white","uci":"h4g6","san":"Nxg6","isDrop":false,"capture":"p","fen":"1r2k2r/ppp1bb1p/n1ppppNQ/P2p4/n2P4/P2P1P1P/RPPNK3/6R1[RBPb] b k - 0 33","clocks":{"A_white":31383,"A_black":27629,"B_white":35543,"B_black":23469}}
+{"type":"pass","seq":512,"ts":180988,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":513,"ts":181156,"seat":"A_black","phase":"start","think_ms":1446,"nodes":1022196,"eval":null,"depth":null}
+{"type":"thinking","seq":514,"ts":181891,"seat":"B_black","phase":"end","think_ms":2503,"nodes":886996,"eval":0.78,"depth":9}
+{"type":"move","seq":515,"ts":181891,"board":"B","seat":"B_black","uci":"e8b8","san":"Reb8","isDrop":false,"capture":null,"fen":"rr3nnk/ppp1q1p1/5q1p/P6Q/b2P3p/4P2P/1BPB1P1N/B3NRK1[Pp] w - - 1 37","clocks":{"A_white":31383,"A_black":26726,"B_white":35543,"B_black":22566}}
+{"type":"thinking","seq":516,"ts":181979,"seat":"B_white","phase":"start","think_ms":4004,"nodes":2455770,"eval":null,"depth":null}
+{"type":"thinking","seq":517,"ts":182602,"seat":"A_black","phase":"end","think_ms":1446,"nodes":1022196,"eval":-0.7,"depth":9}
+{"type":"move","seq":518,"ts":182602,"board":"A","seat":"A_black","uci":"f7g6","san":"Bxg6","isDrop":false,"capture":"N","fen":"1r2k2r/ppp1b2p/n1ppppbQ/P2p4/n2P4/P2P1P1P/RPPNK3/6R1[RBPb] w k - 0 34","clocks":{"A_white":31383,"A_black":26015,"B_white":34832,"B_black":22566}}
+{"type":"pass","seq":519,"ts":182602,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"thinking","seq":520,"ts":182672,"seat":"A_white","phase":"start","think_ms":505,"nodes":352384,"eval":null,"depth":null}
+{"type":"thinking","seq":521,"ts":183177,"seat":"A_white","phase":"end","think_ms":505,"nodes":352384,"eval":0.51,"depth":8}
+{"type":"move","seq":522,"ts":183177,"board":"A","seat":"A_white","uci":"g1g6","san":"Rxg6","isDrop":false,"capture":"b","fen":"1r2k2r/ppp1b2p/n1ppppRQ/P2p4/n2P4/P2P1P1P/RPPNK3/8[RBPb] b k - 0 34","clocks":{"A_white":30808,"A_black":26015,"B_white":34257,"B_black":22566}}
+{"type":"pass","seq":523,"ts":183177,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"b"}
+{"type":"message","seq":524,"ts":183177,"deliverTs":183177,"fromSeat":"A_white","toSeat":"B_black","token":"have_B","text":"bishop coming your way","payload":{"piece":"B"}}
+{"type":"thinking","seq":525,"ts":183376,"seat":"A_black","phase":"start","think_ms":3098,"nodes":2133110,"eval":null,"depth":null}
+{"type":"message","seq":526,"ts":184151,"deliverTs":184151,"fromSeat":"B_white","toSeat":"A_black","token":"need_R","text":"need a rook in 5s","payload":{"piece":"R","deadlineTs":189151,"value":0.61}}
+{"type":"message","seq":527,"ts":185235,"deliverTs":185235,"fromSeat":"A_black","toSeat":"B_white","token":"no","text":"can't get a rook now","payload":{}}
+{"type":"thinking","seq":528,"ts":185983,"seat":"B_white","phase":"end","think_ms":4004,"nodes":2455770,"eval":-0.83,"depth":10}
+{"type":"move","seq":529,"ts":185983,"board":"B","seat":"B_white","uci":"N@g6","san":"N@g6+","isDrop":true,"capture":null,"fen":"rr3nnk/ppp1q1p1/5qNp/P6Q/b2P3p/4P2P/1BPB1P1N/B3NRK1[Pbp] b - - 0 37","clocks":{"A_white":30808,"A_black":23209,"B_white":31451,"B_black":22566}}
+{"type":"thinking","seq":530,"ts":186215,"seat":"B_black","phase":"start","think_ms":2680,"nodes":1867205,"eval":null,"depth":null}
+{"type":"thinking","seq":531,"ts":186474,"seat":"A_black","phase":"end","think_ms":3098,"nodes":2133110,"eval":-0.73,"depth":10}
+{"type":"move","seq":532,"ts":186474,"board":"A","seat":"A_black","uci":"h7g6","san":"hxg6","isDrop":false,"capture":"R","fen":"1r2k2r/ppp1b3/n1pppppQ/P2p4/n2P4/P2P1P1P/RPPNK3/8[RBPb] w k - 0 35","clocks":{"A_white":30808,"A_black":22718,"B_white":31451,"B_black":22075}}
+{"type":"pass","seq":533,"ts":186474,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"R"}
+{"type":"message","seq":534,"ts":186474,"deliverTs":186474,"fromSeat":"B_black","toSeat":"A_white","token":"sit","text":"sit! I'm in check, don't trade","payload":{}}
+{"type":"stall","seq":535,"ts":186474,"seat":"A_white","active":true,"reason":"partner_sit"}
+{"type":"thinking","seq":536,"ts":188895,"seat":"B_black","phase":"end","think_ms":2680,"nodes":1867205,"eval":0.37,"depth":9}
+{"type":"move","seq":537,"ts":188895,"board":"B","seat":"B_black","uci":"f8g6","san":"Nxg6","isDrop":false,"capture":"N","fen":"rr4nk/ppp1q1p1/5qnp/P6Q/b2P3p/4P2P/1BPB1P1N/B3NRK1[RPbp] w - - 0 38","clocks":{"A_white":28387,"A_black":22718,"B_white":31451,"B_black":19654}}
+{"type":"pass","seq":538,"ts":188895,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"thinking","seq":539,"ts":189038,"seat":"B_white","phase":"start","think_ms":3757,"nodes":2822104,"eval":null,"depth":null}
+{"type":"message","seq":540,"ts":189045,"deliverTs":189045,"fromSeat":"B_black","toSeat":"A_white","token":"go","text":"ok go!","payload":{}}
+{"type":"stall","seq":541,"ts":189195,"seat":"A_white","active":false,"reason":"partner_sit"}
+{"type":"thinking","seq":542,"ts":189289,"seat":"A_white","phase":"start","think_ms":3359,"nodes":1803648,"eval":null,"depth":null}
+{"type":"thinking","seq":543,"ts":192648,"seat":"A_white","phase":"end","think_ms":3359,"nodes":1803648,"eval":0.63,"depth":9}
+{"type":"move","seq":544,"ts":192648,"board":"A","seat":"A_white","uci":"h6h8","san":"Qxh8+","isDrop":false,"capture":"r","fen":"1r2k2Q/ppp1b3/n1ppppp1/P2p4/n2P4/P2P1P1P/RPPNK3/8[RBNPb] b - - 0 35","clocks":{"A_white":24634,"A_black":22718,"B_white":27698,"B_black":19654}}
+{"type":"pass","seq":545,"ts":192648,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"r"}
+{"type":"message","seq":546,"ts":192648,"deliverTs":192648,"fromSeat":"A_white","toSeat":"B_black","token":"have_R","text":"rook coming your way","payload":{"piece":"R"}}
+{"type":"thinking","seq":547,"ts":192795,"seat":"B_white","phase":"end","think_ms":3757,"nodes":2822104,"eval":-0.86,"depth":10}
+{"type":"move","seq":548,"ts":192795,"board":"B","seat":"B_white","uci":"d4d5","san":"d5","isDrop":false,"capture":null,"fen":"rr4nk/ppp1q1p1/5qnp/P2P3Q/b6p/4P2P/1BPB1P1N/B3NRK1[RPrbp] b - - 0 38","clocks":{"A_white":24634,"A_black":22571,"B_white":27551,"B_black":19654}}
+{"type":"thinking","seq":549,"ts":192873,"seat":"A_black","phase":"start","think_ms":1123,"nodes":790883,"eval":null,"depth":null}
+{"type":"thinking","seq":550,"ts":192941,"seat":"B_black","phase":"start","think_ms":2341,"nodes":1473576,"eval":null,"depth":null}
+{"type":"thinking","seq":551,"ts":193996,"seat":"A_black","phase":"end","think_ms":1123,"nodes":790883,"eval":-0.85,"depth":9}
+{"type":"move","seq":552,"ts":193996,"board":"A","seat":"A_black","uci":"e8f7","san":"Kf7","isDrop":false,"capture":null,"fen":"1r5Q/ppp1bk2/n1ppppp1/P2p4/n2P4/P2P1P1P/RPPNK3/8[RBNPb] w - - 1 36","clocks":{"A_white":24634,"A_black":21370,"B_white":27551,"B_black":18453}}
+{"type":"message","seq":553,"ts":193996,"deliverTs":193996,"fromSeat":"A_white","toSeat":"B_black","token":"need_Q","text":"need a queen, mate on g7","payload":{"piece":"Q","deadlineTs":199996,"value":0.9}}
+{"type":"message","seq":554,"ts":193996,"deliverTs":193996,"fromSeat":"A_white","toSeat":"B_black","token":"stall","text":"sitting until the queen comes","payload":{}}
+{"type":"stall","seq":555,"ts":193996,"seat":"A_white","active":true,"reason":"need_piece"}
+{"type":"message","seq":556,"ts":194389,"deliverTs":194389,"fromSeat":"B_black","toSeat":"A_white","token":"no","text":"can't get a queen now","payload":{}}
+{"type":"stall","seq":557,"ts":194736,"seat":"A_white","active":false,"reason":"need_piece"}
+{"type":"thinking","seq":558,"ts":194840,"seat":"A_white","phase":"start","think_ms":2226,"nodes":965244,"eval":null,"depth":null}
+{"type":"thinking","seq":559,"ts":195282,"seat":"B_black","phase":"end","think_ms":2341,"nodes":1473576,"eval":0.92,"depth":9}
+{"type":"move","seq":560,"ts":195282,"board":"B","seat":"B_black","uci":"f6d6","san":"Qfd6","isDrop":false,"capture":null,"fen":"rr4nk/ppp1q1p1/3q2np/P2P3Q/b6p/4P2P/1BPB1P1N/B3NRK1[RPrbp] w - - 1 39","clocks":{"A_white":23348,"A_black":21370,"B_white":27551,"B_black":17167}}
+{"type":"message","seq":561,"ts":195397,"deliverTs":195397,"fromSeat":"B_black","toSeat":"A_white","token":"need_R","text":"need a rook in 5s","payload":{"piece":"R","deadlineTs":200397,"value":0.4}}
+{"type":"thinking","seq":562,"ts":195500,"seat":"B_white","phase":"start","think_ms":642,"nodes":309067,"eval":null,"depth":null}
+{"type":"thinking","seq":563,"ts":196142,"seat":"B_white","phase":"end","think_ms":642,"nodes":309067,"eval":-0.89,"depth":8}
+{"type":"move","seq":564,"ts":196142,"board":"B","seat":"B_white","uci":"h2f3","san":"Nhf3","isDrop":false,"capture":null,"fen":"rr4nk/ppp1q1p1/3q2np/P2P3Q/b6p/4PN1P/1BPB1P2/B3NRK1[RPrbp] b - - 2 39","clocks":{"A_white":22488,"A_black":21370,"B_white":26691,"B_black":17167}}
+{"type":"message","seq":565,"ts":196176,"deliverTs":196176,"fromSeat":"A_white","toSeat":"B_black","token":"ok","text":"ok, taking a rook","payload":{}}
+{"type":"thinking","seq":566,"ts":196365,"seat":"B_black","phase":"start","think_ms":1759,"nodes":644143,"eval":null,"depth":null}
+{"type":"thinking","seq":567,"ts":197066,"seat":"A_white","phase":"end","think_ms":2226,"nodes":965244,"eval":0.85,"depth":9}
+{"type":"move","seq":568,"ts":197066,"board":"A","seat":"A_white","uci":"N@h6","san":"N@h6#","isDrop":true,"capture":null,"fen":"1r5Q/ppp1bk2/n1pppppN/P2p4/n2P4/P2P1P1P/RPPNK3/8[RBPb] b - - 0 36","clocks":{"A_white":21564,"A_black":21370,"B_white":26691,"B_black":16243}}
+{"type":"game_end","seq":569,"ts":197066,"result":"T1","reason":"checkmate","board":"A","loserSeat":"A_black"}

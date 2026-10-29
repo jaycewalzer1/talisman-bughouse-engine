@@ -1,0 +1,101 @@
+/* Global styles + the app shell (sticker/tape control bar). 2D-view styles live in views/two/two.css. */
+
+@import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Space+Mono:wght@400;700&family=Noto+Sans+Symbols+2&display=swap');
+
+:root {
+  --t1: #ff8a1f;            /* team T1 (A_white + B_black): same as the 3D scene */
+  --t2: #27d8e6;            /* team T2 (A_black + B_white) */
+  --paper: #f4f1e8;
+  --ink: #0b0b0f;
+  --font-marker: 'Permanent Marker', 'Marker Felt', 'Comic Sans MS', cursive;
+  --font-mono: 'Space Mono', ui-monospace, Menlo, monospace;
+  --font-pieces: 'Noto Sans Symbols 2', 'DejaVu Sans', 'Segoe UI Symbol', sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  overflow: hidden;
+}
+
+/* the active view fills the window; the shell floats above it */
+.view { position: fixed; inset: 0; }
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-marker);
+  font-size: 28px;
+  color: var(--paper);
+}
+
+.shell {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;      /* clicks pass through to the 3D canvas ... */
+}
+.shell > * { pointer-events: auto; }   /* ... except on the stickers themselves */
+
+.sticker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--paper);
+  color: #111;
+  border: 2px solid #000;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 #000;
+  transform: rotate(-1.2deg);
+}
+.sticker.tilt { transform: rotate(1deg); }
+.sticker button, .sticker .btn {
+  font-family: var(--font-marker);
+  font-size: 14px;
+  color: #111;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.sticker button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.08); }
+.sticker button:disabled { opacity: 0.4; cursor: default; }
+.sticker.seg button.on { background: #111; color: var(--t1); }
+.sticker.seg.tilt button.on { color: var(--t2); }
+.sticker select.btn { border: 1.5px solid #111; padding: 2px 4px; }
+.sticker .scrub { width: 180px; accent-color: #111; }
+.sticker .time { font-family: var(--font-mono); font-size: 12px; padding: 0 4px; white-space: nowrap; }
+.sticker .url { font-family: var(--font-mono); font-size: 12px; width: 190px; padding: 3px 6px; border: 1.5px solid #111; border-radius: 4px; background: #fff; color: #111; }
+.sticker.replay button:first-child { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.status-tape {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #111;
+  background: rgba(232, 222, 190, 0.9);
+  padding: 3px 12px;
+  transform: rotate(0.8deg);
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.7);
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .sticker .scrub { width: 110px; }
+  .status-tape { display: none; }
+}

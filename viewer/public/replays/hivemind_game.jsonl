@@ -1,0 +1,670 @@
+{"type":"game_start","seq":0,"ts":0,"game_id":"g0002","setup":"T1=centralized,T2=sharing","seats":{"A_white":{"name":"Hivemind-A_white-central-200n","team":"T1","kind":"hivemind"},"A_black":{"name":"Hivemind-A_black-share-100n","team":"T2","kind":"hivemind"},"B_white":{"name":"Hivemind-B_white-share-100n","team":"T2","kind":"hivemind"},"B_black":{"name":"Hivemind-B_black-central-200n","team":"T1","kind":"hivemind"}},"fens":{"A":"rnbqkb1r/ppp1pppp/3p4/3nP3/3P4/8/PPP2PPP/RNBQKBNR[] w KQkq - 0 4","B":"rnbqk2r/pppp1ppp/4pn2/8/1bPP4/2N5/PP2PPPP/R1BQKBNR[] w KQkq - 2 4"},"clocks":{"A_white":120000,"A_black":120000,"B_white":120000,"B_black":120000},"base_ms":120000,"increment_ms":0,"channel_delay_ms":0}
+{"type":"thinking","seq":1,"ts":0,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":2,"ts":0,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":3,"ts":550,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.6723730916480477,"depth":null}
+{"type":"move","seq":4,"ts":550,"board":"B","seat":"B_white","uci":"g1f3","san":"Nf3","isDrop":false,"capture":null,"fen":"rnbqk2r/pppp1ppp/4pn2/8/1bPP4/2N2N2/PP2PPPP/R1BQKB1R[] b KQkq - 3 4","clocks":{"A_white":119450,"A_black":120000,"B_white":119450,"B_black":120000}}
+{"type":"message","seq":5,"ts":550,"deliverTs":550,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan g1f3 (-0.67)","payload":{"kind":"status","best":"g1f3","eval":-0.6723730916480477,"pv":["(pass,g1f3)","(b1c3,f6e4)","(d5c3,c1d2)","(b2c3,b4c3)"],"needs":[]}}
+{"type":"thinking","seq":6,"ts":550,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":7,"ts":1100,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.563031224185491,"depth":null}
+{"type":"move","seq":8,"ts":1100,"board":"A","seat":"A_white","uci":"b1c3","san":"Nc3","isDrop":false,"capture":null,"fen":"rnbqkb1r/ppp1pppp/3p4/3nP3/3P4/2N5/PPP2PPP/R1BQKBNR[] b KQkq - 1 4","clocks":{"A_white":118900,"A_black":120000,"B_white":119450,"B_black":119450}}
+{"type":"stall","seq":9,"ts":1100,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":10,"ts":1100,"deliverTs":1100,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":2650}}
+{"type":"message","seq":11,"ts":1100,"deliverTs":1100,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.60)","payload":{"kind":"status","best":null,"eval":0.6032293642931525,"pv":["(pass,pass)","(pass,f6e4)","(d5c3,c1d2)","(b2c3,b4c3)"],"needs":[]}}
+{"type":"thinking","seq":12,"ts":1650,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.5496398902463309,"depth":null}
+{"type":"move","seq":13,"ts":1650,"board":"B","seat":"B_black","uci":"d7d5","san":"d5","isDrop":false,"capture":null,"fen":"rnbqk2r/ppp2ppp/4pn2/3p4/1bPP4/2N2N2/PP2PPPP/R1BQKB1R[] w KQkq - 0 5","clocks":{"A_white":118900,"A_black":119450,"B_white":119450,"B_black":118900}}
+{"type":"thinking","seq":14,"ts":1650,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":15,"ts":1650,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":16,"ts":2200,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":17,"ts":2200,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.6732560330050472,"depth":null}
+{"type":"move","seq":18,"ts":2200,"board":"A","seat":"A_black","uci":"d5c3","san":"Nxc3","isDrop":false,"capture":"N","fen":"rnbqkb1r/ppp1pppp/3p4/4P3/3P4/2n5/PPP2PPP/R1BQKBNR[] w KQkq - 0 5","clocks":{"A_white":118900,"A_black":118900,"B_white":118900,"B_black":118900}}
+{"type":"pass","seq":19,"ts":2200,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"message","seq":20,"ts":2200,"deliverTs":2200,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan d5c3 (+0.67)","payload":{"kind":"status","best":"d5c3","eval":0.6732560330050472,"pv":["(d5c3,pass)","(b2c3,pass)","(b8c6,c1d2)","(g1f3,d5c4)"],"needs":[]}}
+{"type":"thinking","seq":21,"ts":2200,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6199019188445258,"depth":null}
+{"type":"move","seq":22,"ts":2200,"board":"B","seat":"B_white","uci":"c1d2","san":"Bd2","isDrop":false,"capture":null,"fen":"rnbqk2r/ppp2ppp/4pn2/3p4/1bPP4/2N2N2/PP1BPPPP/R2QKB1R[N] b KQkq - 1 5","clocks":{"A_white":118900,"A_black":118900,"B_white":118900,"B_black":118900}}
+{"type":"message","seq":23,"ts":2200,"deliverTs":2200,"fromSeat":"B_white","toSeat":"A_black","token":"need_N","text":"need N","payload":{"piece":"N","deadlineTs":5200,"value":0.62}}
+{"type":"message","seq":24,"ts":2200,"deliverTs":2200,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan c1d2 (+0.62)","payload":{"kind":"status","best":"c1d2","eval":0.6199019188445258,"pv":["(d5c3,c1d2)","(b2c3,d5c4)","(b8c6,N@e5)","(g1f3,b4c3)"],"needs":["N"]}}
+{"type":"thinking","seq":25,"ts":2200,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":26,"ts":2200,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":27,"ts":3300,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.612906009533802,"depth":null}
+{"type":"move","seq":28,"ts":3300,"board":"A","seat":"A_white","uci":"b2c3","san":"bxc3","isDrop":false,"capture":"n","fen":"rnbqkb1r/ppp1pppp/3p4/4P3/3P4/2P5/P1P2PPP/R1BQKBNR[] b KQkq - 0 5","clocks":{"A_white":117800,"A_black":118900,"B_white":118900,"B_black":117800}}
+{"type":"pass","seq":29,"ts":3300,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"thinking","seq":30,"ts":3300,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.612906009533802,"depth":null}
+{"type":"move","seq":31,"ts":3300,"board":"B","seat":"B_black","uci":"d5c4","san":"dxc4","isDrop":false,"capture":"P","fen":"rnbqk2r/ppp2ppp/4pn2/8/1bpP4/2N2N2/PP1BPPPP/R2QKB1R[Nn] w KQkq - 0 6","clocks":{"A_white":117800,"A_black":118900,"B_white":118900,"B_black":117800}}
+{"type":"pass","seq":32,"ts":3300,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":33,"ts":3300,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":34,"ts":3300,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":35,"ts":3850,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.622185780708569,"depth":null}
+{"type":"move","seq":36,"ts":3850,"board":"A","seat":"A_black","uci":"b8c6","san":"Nc6","isDrop":false,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/4P3/3P4/2P5/P1P2PPP/R1BQKBNR[P] w KQkq - 1 6","clocks":{"A_white":117800,"A_black":118350,"B_white":118350,"B_black":117800}}
+{"type":"message","seq":37,"ts":3850,"deliverTs":3850,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan b8c6 (+0.62)","payload":{"kind":"status","best":"b8c6","eval":0.622185780708569,"pv":["(b8c6,e2e3)","(g1f3,N@d3)","(d6e5,f1d3)","(f1b5,c4d3)"],"needs":[]}}
+{"type":"thinking","seq":38,"ts":3850,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6187510661473888,"depth":null}
+{"type":"move","seq":39,"ts":3850,"board":"B","seat":"B_white","uci":"e2e3","san":"e3","isDrop":false,"capture":null,"fen":"rnbqk2r/ppp2ppp/4pn2/8/1bpP4/2N1PN2/PP1B1PPP/R2QKB1R[Nn] b KQkq - 0 6","clocks":{"A_white":117800,"A_black":118350,"B_white":118350,"B_black":117800}}
+{"type":"message","seq":40,"ts":3850,"deliverTs":3850,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan e2e3 (+0.62)","payload":{"kind":"status","best":"e2e3","eval":0.6187510661473888,"pv":["(b8c6,e2e3)","(g1f3,N@d3)","(d6e5,f1d3)","(f1b5,c4d3)"],"needs":[]}}
+{"type":"thinking","seq":41,"ts":3850,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":42,"ts":3850,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":43,"ts":4950,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.5918421743324118,"depth":null}
+{"type":"move","seq":44,"ts":4950,"board":"A","seat":"A_white","uci":"g1f3","san":"Nf3","isDrop":false,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/4P3/3P4/2P2N2/P1P2PPP/R1BQKB1R[P] b KQkq - 2 6","clocks":{"A_white":116700,"A_black":118350,"B_white":118350,"B_black":116700}}
+{"type":"thinking","seq":45,"ts":4950,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.5918421743324118,"depth":null}
+{"type":"move","seq":46,"ts":4950,"board":"B","seat":"B_black","uci":"N@d3","san":"N@d3+","isDrop":true,"capture":null,"fen":"rnbqk2r/ppp2ppp/4pn2/8/1bpP4/2NnPN2/PP1B1PPP/R2QKB1R[N] w KQkq - 1 7","clocks":{"A_white":116700,"A_black":118350,"B_white":118350,"B_black":116700}}
+{"type":"stall","seq":47,"ts":4950,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":48,"ts":4950,"deliverTs":4950,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":6500}}
+{"type":"message","seq":49,"ts":4950,"deliverTs":4950,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.69)","payload":{"kind":"status","best":null,"eval":0.6860081656346775,"pv":["(pass,f1d3)","(pass,c4d3)","(pass,f3e5)","(pass,b8c6)"],"needs":[]}}
+{"type":"thinking","seq":50,"ts":4950,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":51,"ts":5500,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6604979657207132,"depth":null}
+{"type":"move","seq":52,"ts":5500,"board":"B","seat":"B_white","uci":"f1d3","san":"Bxd3","isDrop":false,"capture":"n","fen":"rnbqk2r/ppp2ppp/4pn2/8/1bpP4/2NBPN2/PP1B1PPP/R2QK2R[N] b KQkq - 0 7","clocks":{"A_white":116700,"A_black":117800,"B_white":117800,"B_black":116700}}
+{"type":"pass","seq":53,"ts":5500,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"n"}
+{"type":"message","seq":54,"ts":5500,"deliverTs":5500,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan f1d3 (+0.66)","payload":{"kind":"status","best":"f1d3","eval":0.6604979657207132,"pv":["(d6e5,f1d3)","(f1b5,c4d3)","(pass,N@e5)","(pass,b8c6)"],"needs":[]}}
+{"type":"message","seq":55,"ts":5500,"deliverTs":5500,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":7050}}
+{"type":"message","seq":56,"ts":5500,"deliverTs":5500,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.69)","payload":{"kind":"status","best":null,"eval":0.6851858229121175,"pv":["(pass,pass)","(pass,c4d3)","(pass,f3e5)","(pass,b8c6)"],"needs":[]}}
+{"type":"thinking","seq":57,"ts":5500,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":58,"ts":6600,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.6375307754848276,"depth":null}
+{"type":"move","seq":59,"ts":6600,"board":"B","seat":"B_black","uci":"c4d3","san":"cxd3","isDrop":false,"capture":"B","fen":"rnbqk2r/ppp2ppp/4pn2/8/1b1P4/2NpPN2/PP1B1PPP/R2QK2R[N] w KQkq - 0 8","clocks":{"A_white":116700,"A_black":116700,"B_white":117800,"B_black":115600}}
+{"type":"pass","seq":60,"ts":6600,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"B"}
+{"type":"thinking","seq":61,"ts":6600,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":62,"ts":6600,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":63,"ts":7150,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":64,"ts":7150,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.6385854206713395,"depth":null}
+{"type":"move","seq":65,"ts":7150,"board":"A","seat":"A_black","uci":"N@e4","san":"N@e4","isDrop":true,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/4P3/3Pn3/2P2N2/P1P2PPP/R1BQKB1R[BP] w KQkq - 3 7","clocks":{"A_white":116700,"A_black":116150,"B_white":117250,"B_black":115600}}
+{"type":"message","seq":66,"ts":7150,"deliverTs":7150,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan N@e4 (+0.64)","payload":{"kind":"status","best":"N@e4","eval":0.6385854206713395,"pv":["(N@e4,N@e5)","(B@d5,b8c6)","(e4c3,e5d3)","(d5f7,b4c3)"],"needs":[]}}
+{"type":"thinking","seq":67,"ts":7150,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6518229603550441,"depth":null}
+{"type":"move","seq":68,"ts":7150,"board":"B","seat":"B_white","uci":"N@e5","san":"N@e5","isDrop":true,"capture":null,"fen":"rnbqk2r/ppp2ppp/4pn2/4N3/1b1P4/2NpPN2/PP1B1PPP/R2QK2R[] b KQkq - 1 8","clocks":{"A_white":116700,"A_black":116150,"B_white":117250,"B_black":115600}}
+{"type":"message","seq":69,"ts":7150,"deliverTs":7150,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan N@e5 (+0.65)","payload":{"kind":"status","best":"N@e5","eval":0.6518229603550441,"pv":["(pass,N@e5)","(pass,b8c6)","(N@e4,e5d3)","(B@d5,b4c3)"],"needs":[]}}
+{"type":"thinking","seq":70,"ts":7150,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":71,"ts":7150,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":72,"ts":8250,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.5556732100662303,"depth":null}
+{"type":"move","seq":73,"ts":8250,"board":"A","seat":"A_white","uci":"B@d5","san":"B@d5","isDrop":true,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/3BP3/3Pn3/2P2N2/P1P2PPP/R1BQKB1R[P] b KQkq - 4 7","clocks":{"A_white":115600,"A_black":116150,"B_white":117250,"B_black":114500}}
+{"type":"thinking","seq":74,"ts":8250,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.5556732100662303,"depth":null}
+{"type":"move","seq":75,"ts":8250,"board":"B","seat":"B_black","uci":"b4c3","san":"Bxc3","isDrop":false,"capture":"N","fen":"rnbqk2r/ppp2ppp/4pn2/4N3/3P4/2bpPN2/PP1B1PPP/R2QK2R[] w KQkq - 0 9","clocks":{"A_white":115600,"A_black":116150,"B_white":117250,"B_black":114500}}
+{"type":"pass","seq":76,"ts":8250,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"stall","seq":77,"ts":8250,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":78,"ts":8250,"deliverTs":8250,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":9800}}
+{"type":"message","seq":79,"ts":8250,"deliverTs":8250,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.55)","payload":{"kind":"status","best":null,"eval":0.5450270454811891,"pv":["(pass,b2c3)","(pass,b8c6)","(pass,e5c6)","(pass,b7c6)"],"needs":[]}}
+{"type":"thinking","seq":80,"ts":8250,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":81,"ts":8800,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.599493987160478,"depth":null}
+{"type":"move","seq":82,"ts":8800,"board":"B","seat":"B_white","uci":"d2c3","san":"Bxc3","isDrop":false,"capture":"b","fen":"rnbqk2r/ppp2ppp/4pn2/4N3/3P4/2BpPN2/PP3PPP/R2QK2R[] b KQkq - 0 9","clocks":{"A_white":115600,"A_black":115600,"B_white":116700,"B_black":114500}}
+{"type":"pass","seq":83,"ts":8800,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"b"}
+{"type":"message","seq":84,"ts":8800,"deliverTs":8800,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan d2c3 (+0.60)","payload":{"kind":"status","best":"d2c3","eval":0.599493987160478,"pv":["(e4c3,d2c3)","(d5f7,pass)","(e8f7,pass)","(f3g5,b8c6)"],"needs":[]}}
+{"type":"message","seq":85,"ts":8800,"deliverTs":8800,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":10350}}
+{"type":"message","seq":86,"ts":8800,"deliverTs":8800,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.62)","payload":{"kind":"status","best":null,"eval":0.622185780708569,"pv":["(pass,pass)","(pass,b8c6)","(pass,e5c6)","(pass,b7c6)"],"needs":[]}}
+{"type":"thinking","seq":87,"ts":8800,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":88,"ts":9900,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.6164313212398231,"depth":null}
+{"type":"move","seq":89,"ts":9900,"board":"B","seat":"B_black","uci":"b8c6","san":"Nc6","isDrop":false,"capture":null,"fen":"r1bqk2r/ppp2ppp/2n1pn2/4N3/3P4/2BpPN2/PP3PPP/R2QK2R[] w KQkq - 1 10","clocks":{"A_white":115600,"A_black":114500,"B_white":116700,"B_black":113400}}
+{"type":"thinking","seq":90,"ts":9900,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":91,"ts":9900,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":92,"ts":10450,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":93,"ts":10450,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.7417353291769444,"depth":null}
+{"type":"move","seq":94,"ts":10450,"board":"A","seat":"A_black","uci":"B@g6","san":"B@g6","isDrop":true,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np2b1/3BP3/3Pn3/2P2N2/P1P2PPP/R1BQKB1R[NP] w KQkq - 5 8","clocks":{"A_white":115600,"A_black":113950,"B_white":116150,"B_black":113400}}
+{"type":"message","seq":95,"ts":10450,"deliverTs":10450,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan B@g6 (+0.74)","payload":{"kind":"status","best":"B@g6","eval":0.7417353291769444,"pv":["(B@g6,e5c6)","(N@f4,b7c6)","(e4c3,d1d3)","(f4g6,pass)"],"needs":[]}}
+{"type":"thinking","seq":96,"ts":10450,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.73465608235128,"depth":null}
+{"type":"move","seq":97,"ts":10450,"board":"B","seat":"B_white","uci":"e5c6","san":"Nxc6","isDrop":false,"capture":"n","fen":"r1bqk2r/ppp2ppp/2N1pn2/8/3P4/2BpPN2/PP3PPP/R2QK2R[] b KQkq - 0 10","clocks":{"A_white":115600,"A_black":113950,"B_white":116150,"B_black":113400}}
+{"type":"pass","seq":98,"ts":10450,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"n"}
+{"type":"message","seq":99,"ts":10450,"deliverTs":10450,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan e5c6 (+0.73)","payload":{"kind":"status","best":"e5c6","eval":0.73465608235128,"pv":["(B@g6,e5c6)","(pass,b7c6)","(pass,f3e5)","(N@f4,c8a6)"],"needs":[]}}
+{"type":"thinking","seq":100,"ts":10450,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":101,"ts":10450,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":102,"ts":11550,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.6210468107170409,"depth":null}
+{"type":"move","seq":103,"ts":11550,"board":"A","seat":"A_white","uci":"d5e4","san":"Bxe4","isDrop":false,"capture":"n","fen":"r1bqkb1r/ppp1pppp/2np2b1/4P3/3PB3/2P2N2/P1P2PPP/R1BQKB1R[NPn] b KQkq - 0 8","clocks":{"A_white":114500,"A_black":113950,"B_white":116150,"B_black":112300}}
+{"type":"pass","seq":104,"ts":11550,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"thinking","seq":105,"ts":11550,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.6210468107170409,"depth":null}
+{"type":"move","seq":106,"ts":11550,"board":"B","seat":"B_black","uci":"b7c6","san":"bxc6","isDrop":false,"capture":"N","fen":"r1bqk2r/p1p2ppp/2p1pn2/8/3P4/2BpPN2/PP3PPP/R2QK2R[n] w KQkq - 0 11","clocks":{"A_white":114500,"A_black":113950,"B_white":116150,"B_black":112300}}
+{"type":"pass","seq":107,"ts":11550,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"thinking","seq":108,"ts":11550,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":109,"ts":11550,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":110,"ts":12100,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.6488442381098295,"depth":null}
+{"type":"move","seq":111,"ts":12100,"board":"A","seat":"A_black","uci":"g6e4","san":"Bxe4","isDrop":false,"capture":"B","fen":"r1bqkb1r/ppp1pppp/2np4/4P3/3Pb3/2P2N2/P1P2PPP/R1BQKB1R[NNPn] w KQkq - 0 9","clocks":{"A_white":114500,"A_black":113400,"B_white":115600,"B_black":112300}}
+{"type":"pass","seq":112,"ts":12100,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"B"}
+{"type":"message","seq":113,"ts":12100,"deliverTs":12100,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan g6e4 (+0.65)","payload":{"kind":"status","best":"g6e4","eval":0.6488442381098295,"pv":["(g6e4,d1d3)","(N@g5,N@c5)","(e4f3,d4c5)","(d1f3,d8d3)"],"needs":[]}}
+{"type":"thinking","seq":114,"ts":12100,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6354053471163932,"depth":null}
+{"type":"move","seq":115,"ts":12100,"board":"B","seat":"B_white","uci":"d1d3","san":"Qxd3","isDrop":false,"capture":"p","fen":"r1bqk2r/p1p2ppp/2p1pn2/8/3P4/2BQPN2/PP3PPP/R3K2R[Bn] b KQkq - 0 11","clocks":{"A_white":114500,"A_black":113400,"B_white":115600,"B_black":112300}}
+{"type":"pass","seq":116,"ts":12100,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"message","seq":117,"ts":12100,"deliverTs":12100,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan d1d3 (+0.64)","payload":{"kind":"status","best":"d1d3","eval":0.6354053471163932,"pv":["(g6e4,d1d3)","(N@g5,N@c5)","(e4f3,d4c5)","(d1f3,d8d3)"],"needs":[]}}
+{"type":"thinking","seq":118,"ts":12100,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":119,"ts":12100,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":120,"ts":13200,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.5403373331063824,"depth":null}
+{"type":"move","seq":121,"ts":13200,"board":"A","seat":"A_white","uci":"N@g5","san":"N@g5","isDrop":true,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/4P1N1/3Pb3/2P2N2/P1P2PPP/R1BQKB1R[NPnp] b KQkq - 1 9","clocks":{"A_white":113400,"A_black":113400,"B_white":115600,"B_black":111200}}
+{"type":"thinking","seq":122,"ts":13200,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.5403373331063824,"depth":null}
+{"type":"move","seq":123,"ts":13200,"board":"B","seat":"B_black","uci":"N@c5","san":"N@c5","isDrop":true,"capture":null,"fen":"r1bqk2r/p1p2ppp/2p1pn2/2n5/3P4/2BQPN2/PP3PPP/R3K2R[B] w KQkq - 1 12","clocks":{"A_white":113400,"A_black":113400,"B_white":115600,"B_black":111200}}
+{"type":"stall","seq":124,"ts":13200,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":125,"ts":13200,"deliverTs":13200,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":14750}}
+{"type":"message","seq":126,"ts":13200,"deliverTs":13200,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.60)","payload":{"kind":"status","best":null,"eval":0.5969704979788792,"pv":["(pass,d3e2)","(pass,c5e4)","(pass,f3e5)","(pass,e4c3)"],"needs":[]}}
+{"type":"thinking","seq":127,"ts":13200,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":128,"ts":13750,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.7213769186165504,"depth":null}
+{"type":"move","seq":129,"ts":13750,"board":"B","seat":"B_white","uci":"d3c4","san":"Qc4","isDrop":false,"capture":null,"fen":"r1bqk2r/p1p2ppp/2p1pn2/2n5/2QP4/2B1PN2/PP3PPP/R3K2R[B] b KQkq - 2 12","clocks":{"A_white":113400,"A_black":112850,"B_white":115050,"B_black":111200}}
+{"type":"message","seq":130,"ts":13750,"deliverTs":13750,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan d3c4 (+0.72)","payload":{"kind":"status","best":"d3c4","eval":0.7213769186165504,"pv":["(pass,d3c4)","(pass,c5e4)","(e4f3,c4c6)","(d1f3,c8d7)"],"needs":[]}}
+{"type":"message","seq":131,"ts":13750,"deliverTs":13750,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":15300}}
+{"type":"message","seq":132,"ts":13750,"deliverTs":13750,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.71)","payload":{"kind":"status","best":null,"eval":0.7139279296455814,"pv":["(pass,pass)","(pass,c5e4)","(pass,c4c6)","(pass,c8d7)"],"needs":[]}}
+{"type":"thinking","seq":133,"ts":13750,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":134,"ts":14850,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.6528060272272763,"depth":null}
+{"type":"move","seq":135,"ts":14850,"board":"B","seat":"B_black","uci":"c5e4","san":"Nce4","isDrop":false,"capture":null,"fen":"r1bqk2r/p1p2ppp/2p1pn2/8/2QPn3/2B1PN2/PP3PPP/R3K2R[B] w KQkq - 3 13","clocks":{"A_white":113400,"A_black":111750,"B_white":115050,"B_black":110100}}
+{"type":"thinking","seq":136,"ts":14850,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":137,"ts":14850,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":138,"ts":15400,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":139,"ts":15400,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.6266832119221307,"depth":null}
+{"type":"move","seq":140,"ts":15400,"board":"A","seat":"A_black","uci":"e4f3","san":"Bxf3","isDrop":false,"capture":"N","fen":"r1bqkb1r/ppp1pppp/2np4/4P1N1/3P4/2P2b2/P1P2PPP/R1BQKB1R[NPnp] w KQkq - 0 10","clocks":{"A_white":113400,"A_black":111200,"B_white":114500,"B_black":110100}}
+{"type":"pass","seq":141,"ts":15400,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"message","seq":142,"ts":15400,"deliverTs":15400,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e4f3 (+0.63)","payload":{"kind":"status","best":"e4f3","eval":0.6266832119221307,"pv":["(e4f3,c4c6)","(d1f3,c8d7)","(P@f6,c6a8)","(g5f7,d8a8)"],"needs":[]}}
+{"type":"thinking","seq":143,"ts":15400,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.6678940872062641,"depth":null}
+{"type":"move","seq":144,"ts":15400,"board":"B","seat":"B_white","uci":"c4c6","san":"Qxc6+","isDrop":false,"capture":"p","fen":"r1bqk2r/p1p2ppp/2Q1pn2/8/3Pn3/2B1PN2/PP3PPP/R3K2R[BN] b KQkq - 0 13","clocks":{"A_white":113400,"A_black":111200,"B_white":114500,"B_black":110100}}
+{"type":"pass","seq":145,"ts":15400,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"message","seq":146,"ts":15400,"deliverTs":15400,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan c4c6 (+0.67)","payload":{"kind":"status","best":"c4c6","eval":0.6678940872062641,"pv":["(pass,c4c6)","(pass,c8d7)","(pass,c6b7)","(pass,a8b8)"],"needs":[]}}
+{"type":"thinking","seq":147,"ts":15400,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":148,"ts":15400,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":149,"ts":16500,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.3168414130871241,"depth":null}
+{"type":"move","seq":150,"ts":16500,"board":"A","seat":"A_white","uci":"d1f3","san":"Qxf3","isDrop":false,"capture":"b","fen":"r1bqkb1r/ppp1pppp/2np4/4P1N1/3P4/2P2Q2/P1P2PPP/R1B1KB1R[NPnpp] b KQkq - 0 10","clocks":{"A_white":112300,"A_black":111200,"B_white":114500,"B_black":109000}}
+{"type":"pass","seq":151,"ts":16500,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"b"}
+{"type":"thinking","seq":152,"ts":16500,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.3168414130871241,"depth":null}
+{"type":"move","seq":153,"ts":16500,"board":"B","seat":"B_black","uci":"c8d7","san":"Bd7","isDrop":false,"capture":null,"fen":"r2qk2r/p1pb1ppp/2Q1pn2/8/3Pn3/2B1PN2/PP3PPP/R3K2R[BNb] w KQkq - 1 14","clocks":{"A_white":112300,"A_black":111200,"B_white":114500,"B_black":109000}}
+{"type":"stall","seq":154,"ts":16500,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":155,"ts":16500,"deliverTs":16500,"fromSeat":"A_black","toSeat":"B_white","token":"need_R","text":"need R","payload":{"piece":"R","deadlineTs":20050,"value":0.428}}
+{"type":"message","seq":156,"ts":16500,"deliverTs":16500,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":18050}}
+{"type":"message","seq":157,"ts":16500,"deliverTs":16500,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.43)","payload":{"kind":"status","best":null,"eval":0.42815965287552715,"pv":["(pass,c6a8)","(pass,d8a8)","(R@f5,N@e5)","(g5f7,e4c3)"],"needs":["R"]}}
+{"type":"thinking","seq":158,"ts":16500,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":159,"ts":17050,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.338509261811769,"depth":null}
+{"type":"move","seq":160,"ts":17050,"board":"B","seat":"B_white","uci":"c6a8","san":"Qxa8","isDrop":false,"capture":"r","fen":"Q2qk2r/p1pb1ppp/4pn2/8/3Pn3/2B1PN2/PP3PPP/R3K2R[BNb] b KQk - 0 14","clocks":{"A_white":112300,"A_black":110650,"B_white":113950,"B_black":109000}}
+{"type":"pass","seq":161,"ts":17050,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"r"}
+{"type":"message","seq":162,"ts":17050,"deliverTs":17050,"fromSeat":"B_white","toSeat":"A_black","token":"have_R","text":"R coming","payload":{"piece":"R"}}
+{"type":"message","seq":163,"ts":17050,"deliverTs":17050,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan c6a8 (+0.34)","payload":{"kind":"status","best":"c6a8","eval":0.338509261811769,"pv":["(pass,c6a8)","(pass,d8a8)","(R@f5,B@b4)","(g5f7,B@d6)"],"needs":[]}}
+{"type":"message","seq":164,"ts":17050,"deliverTs":17050,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":18600}}
+{"type":"message","seq":165,"ts":17050,"deliverTs":17050,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.42)","payload":{"kind":"status","best":null,"eval":0.41928379770151303,"pv":["(pass,pass)","(pass,d8a8)","(pass,N@e5)","(pass,e4c3)"],"needs":[]}}
+{"type":"thinking","seq":166,"ts":17050,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":167,"ts":18150,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.11278181118751784,"depth":null}
+{"type":"move","seq":168,"ts":18150,"board":"B","seat":"B_black","uci":"d8a8","san":"Qxa8","isDrop":false,"capture":"Q","fen":"q3k2r/p1pb1ppp/4pn2/8/3Pn3/2B1PN2/PP3PPP/R3K2R[BNb] w KQk - 0 15","clocks":{"A_white":112300,"A_black":109550,"B_white":113950,"B_black":107900}}
+{"type":"pass","seq":169,"ts":18150,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"Q"}
+{"type":"thinking","seq":170,"ts":18150,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":171,"ts":18150,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":172,"ts":18700,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":173,"ts":18700,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.4851503240760822,"depth":null}
+{"type":"move","seq":174,"ts":18700,"board":"A","seat":"A_black","uci":"R@f5","san":"R@f5","isDrop":true,"capture":null,"fen":"r1bqkb1r/ppp1pppp/2np4/4PrN1/3P4/2P2Q2/P1P2PPP/R1B1KB1R[QNPnpp] w KQkq - 1 11","clocks":{"A_white":112300,"A_black":109000,"B_white":113400,"B_black":107900}}
+{"type":"message","seq":175,"ts":18700,"deliverTs":18700,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan R@f5 (+0.49)","payload":{"kind":"status","best":"R@f5","eval":0.4851503240760822,"pv":["(R@f5,B@b4)","(g5f7,B@d6)","(f5f3,b4d6)","(f7d8,c7d6)"],"needs":[]}}
+{"type":"thinking","seq":176,"ts":18700,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.45366059068455256,"depth":null}
+{"type":"move","seq":177,"ts":18700,"board":"B","seat":"B_white","uci":"B@b4","san":"B@b4","isDrop":true,"capture":null,"fen":"q3k2r/p1pb1ppp/4pn2/8/1B1Pn3/2B1PN2/PP3PPP/R3K2R[Nb] b KQk - 1 15","clocks":{"A_white":112300,"A_black":109000,"B_white":113400,"B_black":107900}}
+{"type":"message","seq":178,"ts":18700,"deliverTs":18700,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan B@b4 (+0.45)","payload":{"kind":"status","best":"B@b4","eval":0.45366059068455256,"pv":["(R@f5,B@b4)","(e5e6,B@d6)","(c8e6,b4d6)","(g5e6,e4d6)"],"needs":[]}}
+{"type":"thinking","seq":179,"ts":18700,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":180,"ts":18700,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":181,"ts":19800,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.4515987591296267,"depth":null}
+{"type":"move","seq":182,"ts":19800,"board":"A","seat":"A_white","uci":"g5f7","san":"Nxf7","isDrop":false,"capture":"p","fen":"r1bqkb1r/ppp1pNpp/2np4/4Pr2/3P4/2P2Q2/P1P2PPP/R1B1KB1R[QNPnpp] b KQkq - 0 11","clocks":{"A_white":111200,"A_black":109000,"B_white":113400,"B_black":106800}}
+{"type":"pass","seq":183,"ts":19800,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":184,"ts":19800,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.4515987591296267,"depth":null}
+{"type":"move","seq":185,"ts":19800,"board":"B","seat":"B_black","uci":"B@d6","san":"B@d6","isDrop":true,"capture":null,"fen":"q3k2r/p1pb1ppp/3bpn2/8/1B1Pn3/2B1PN2/PP3PPP/R3K2R[Np] w KQk - 2 16","clocks":{"A_white":111200,"A_black":109000,"B_white":113400,"B_black":106800}}
+{"type":"stall","seq":186,"ts":19800,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":187,"ts":19800,"deliverTs":19800,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":21350}}
+{"type":"message","seq":188,"ts":19800,"deliverTs":19800,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.50)","payload":{"kind":"status","best":null,"eval":0.4998792495748669,"pv":["(pass,b4d6)","(pass,c7d6)","(f5f3,N@c7)","(f7d8,e8e7)"],"needs":[]}}
+{"type":"thinking","seq":189,"ts":19800,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":190,"ts":20350,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.4998792495748669,"depth":null}
+{"type":"move","seq":191,"ts":20350,"board":"B","seat":"B_white","uci":"b4d6","san":"Bxd6","isDrop":false,"capture":"b","fen":"q3k2r/p1pb1ppp/3Bpn2/8/3Pn3/2B1PN2/PP3PPP/R3K2R[Np] b KQk - 0 16","clocks":{"A_white":111200,"A_black":108450,"B_white":112850,"B_black":106800}}
+{"type":"pass","seq":192,"ts":20350,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"b"}
+{"type":"message","seq":193,"ts":20350,"deliverTs":20350,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan b4d6 (+0.50)","payload":{"kind":"status","best":"b4d6","eval":0.4998792495748669,"pv":["(pass,b4d6)","(pass,c7d6)","(f5f3,N@c7)","(f7d8,e8e7)"],"needs":[]}}
+{"type":"message","seq":194,"ts":20350,"deliverTs":20350,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":21900}}
+{"type":"message","seq":195,"ts":20350,"deliverTs":20350,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.50)","payload":{"kind":"status","best":null,"eval":0.5034603611522104,"pv":["(pass,pass)","(pass,e4d6)","(f5f3,N@e5)","(f7d8,pass)"],"needs":[]}}
+{"type":"thinking","seq":196,"ts":20350,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":197,"ts":21450,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.3694712952507588,"depth":null}
+{"type":"move","seq":198,"ts":21450,"board":"B","seat":"B_black","uci":"e4d6","san":"Nxd6","isDrop":false,"capture":"B","fen":"q3k2r/p1pb1ppp/3npn2/8/3P4/2B1PN2/PP3PPP/R3K2R[Np] w KQk - 0 17","clocks":{"A_white":111200,"A_black":107350,"B_white":112850,"B_black":105700}}
+{"type":"pass","seq":199,"ts":21450,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"B"}
+{"type":"thinking","seq":200,"ts":21450,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":201,"ts":21450,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":202,"ts":22000,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":203,"ts":22000,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.371968460807392,"depth":null}
+{"type":"move","seq":204,"ts":22000,"board":"A","seat":"A_black","uci":"f5f3","san":"Rxf3","isDrop":false,"capture":"Q","fen":"r1bqkb1r/ppp1pNpp/2np4/4P3/3P4/2P2r2/P1P2PPP/R1B1KB1R[QBNPbnpp] w KQkq - 0 12","clocks":{"A_white":111200,"A_black":106800,"B_white":112300,"B_black":105700}}
+{"type":"pass","seq":205,"ts":22000,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"Q"}
+{"type":"message","seq":206,"ts":22000,"deliverTs":22000,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan f5f3 (+0.37)","payload":{"kind":"status","best":"f5f3","eval":0.371968460807392,"pv":["(f5f3,N@e5)","(f7d8,pass)","(f3c3,pass)","(B@f7,a8f3)"],"needs":[]}}
+{"type":"thinking","seq":207,"ts":22000,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.33584573569564036,"depth":null}
+{"type":"move","seq":208,"ts":22000,"board":"B","seat":"B_white","uci":"N@e5","san":"N@e5","isDrop":true,"capture":null,"fen":"q3k2r/p1pb1ppp/3npn2/4N3/3P4/2B1PN2/PP3PPP/R3K2R[Qp] b KQk - 1 17","clocks":{"A_white":111200,"A_black":106800,"B_white":112300,"B_black":105700}}
+{"type":"message","seq":209,"ts":22000,"deliverTs":22000,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan N@e5 (+0.34)","payload":{"kind":"status","best":"N@e5","eval":0.33584573569564036,"pv":["(pass,N@e5)","(pass,d7b5)","(pass,a2a4)","(pass,b5a6)"],"needs":[]}}
+{"type":"thinking","seq":210,"ts":22000,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":211,"ts":22000,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":212,"ts":23100,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.11623062461633989,"depth":null}
+{"type":"move","seq":213,"ts":23100,"board":"A","seat":"A_white","uci":"f7d8","san":"Nxd8","isDrop":false,"capture":"q","fen":"r1bNkb1r/ppp1p1pp/2np4/4P3/3P4/2P2r2/P1P2PPP/R1B1KB1R[QBNPbnpp] b KQkq - 0 12","clocks":{"A_white":110100,"A_black":106800,"B_white":112300,"B_black":104600}}
+{"type":"pass","seq":214,"ts":23100,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"q"}
+{"type":"thinking","seq":215,"ts":23100,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":-0.11623062461633989,"depth":null}
+{"type":"move","seq":216,"ts":23100,"board":"B","seat":"B_black","uci":"d7b5","san":"Bb5","isDrop":false,"capture":null,"fen":"q3k2r/p1p2ppp/3npn2/1b2N3/3P4/2B1PN2/PP3PPP/R3K2R[Qqp] w KQk - 2 18","clocks":{"A_white":110100,"A_black":106800,"B_white":112300,"B_black":104600}}
+{"type":"thinking","seq":217,"ts":23100,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":218,"ts":23100,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":219,"ts":23100,"deliverTs":23100,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":26650,"value":0.18}}
+{"type":"message","seq":220,"ts":23100,"deliverTs":23100,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":24650}}
+{"type":"message","seq":221,"ts":23100,"deliverTs":23100,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.18)","payload":{"kind":"status","best":null,"eval":0.1802770525117277,"pv":["(f3f2,pass)","(P@f7,pass)","(f2f7,P@d3)","(d8f7,b5d3)"],"needs":["P"]}}
+{"type":"thinking","seq":222,"ts":23650,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.16038496652412862,"depth":null}
+{"type":"move","seq":223,"ts":23650,"board":"A","seat":"A_black","uci":"f3f2","san":"Rxf2","isDrop":false,"capture":"P","fen":"r1bNkb1r/ppp1p1pp/2np4/4P3/3P4/2P5/P1P2rPP/R1B1KB1R[QBNPbnpp] w KQkq - 0 13","clocks":{"A_white":110100,"A_black":106250,"B_white":111750,"B_black":104600}}
+{"type":"pass","seq":224,"ts":23650,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":225,"ts":23650,"deliverTs":23650,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan f3f2 (+0.16)","payload":{"kind":"status","best":"f3f2","eval":0.16038496652412862,"pv":["(f3f2,pass)","(P@f7,pass)","(f2f7,P@d3)","(d8f7,b5d3)"],"needs":[]}}
+{"type":"thinking","seq":226,"ts":23650,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":227,"ts":23650,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":228,"ts":24200,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":229,"ts":24200,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.3744529368770418,"depth":null}
+{"type":"move","seq":230,"ts":24200,"board":"B","seat":"B_white","uci":"P@d3","san":"@d3","isDrop":true,"capture":null,"fen":"q3k2r/p1p2ppp/3npn2/1b2N3/3P4/2BPPN2/PP3PPP/R3K2R[Qqp] b KQk - 3 18","clocks":{"A_white":109550,"A_black":106250,"B_white":111200,"B_black":104600}}
+{"type":"message","seq":231,"ts":24200,"deliverTs":24200,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@d3 (+0.37)","payload":{"kind":"status","best":"P@d3","eval":0.3744529368770418,"pv":["(pass,P@d3)","(P@f7,b5d3)","(f2f7,e5d3)","(d8f7,a8f3)"],"needs":[]}}
+{"type":"thinking","seq":232,"ts":24200,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":233,"ts":24750,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.10932638779859068,"depth":null}
+{"type":"move","seq":234,"ts":24750,"board":"A","seat":"A_white","uci":"P@f7","san":"@f7+","isDrop":true,"capture":null,"fen":"r1bNkb1r/ppp1pPpp/2np4/4P3/3P4/2P5/P1P2rPP/R1B1KB1R[QBNbnpp] b KQkq - 1 13","clocks":{"A_white":109000,"A_black":106250,"B_white":111200,"B_black":104050}}
+{"type":"stall","seq":235,"ts":24750,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":236,"ts":24750,"deliverTs":24750,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":26300}}
+{"type":"message","seq":237,"ts":24750,"deliverTs":24750,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (+0.13)","payload":{"kind":"status","best":null,"eval":0.1265356152883851,"pv":["(pass,pass)","(pass,P@e4)","(f2f7,pass)","(d8f7,pass)"],"needs":[]}}
+{"type":"thinking","seq":238,"ts":25300,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.08496893095940641,"depth":null}
+{"type":"move","seq":239,"ts":25300,"board":"B","seat":"B_black","uci":"P@e4","san":"@e4","isDrop":true,"capture":null,"fen":"q3k2r/p1p2ppp/3npn2/1b2N3/3Pp3/2BPPN2/PP3PPP/R3K2R[Qq] w KQk - 4 19","clocks":{"A_white":109000,"A_black":105700,"B_white":111200,"B_black":103500}}
+{"type":"thinking","seq":240,"ts":25300,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":241,"ts":25300,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":242,"ts":25300,"deliverTs":25300,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":28850,"value":0.203}}
+{"type":"message","seq":243,"ts":25300,"deliverTs":25300,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":26850}}
+{"type":"message","seq":244,"ts":25300,"deliverTs":25300,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.20)","payload":{"kind":"status","best":null,"eval":0.20303990322198673,"pv":["(f2f7,pass)","(d8f7,pass)","(P@f2,pass)","(e1d1,pass)"],"needs":["P"]}}
+{"type":"stall","seq":245,"ts":25850,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":246,"ts":25850,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.20945012401966798,"depth":null}
+{"type":"move","seq":247,"ts":25850,"board":"A","seat":"A_black","uci":"f2f7","san":"Rxf7","isDrop":false,"capture":"P","fen":"r1bNkb1r/ppp1prpp/2np4/4P3/3P4/2P5/P1P3PP/R1B1KB1R[QBNbnpp] w KQkq - 0 14","clocks":{"A_white":109000,"A_black":105150,"B_white":110650,"B_black":103500}}
+{"type":"pass","seq":248,"ts":25850,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":249,"ts":25850,"deliverTs":25850,"fromSeat":"A_black","toSeat":"B_white","token":"have_P","text":"P coming","payload":{"piece":"P"}}
+{"type":"message","seq":250,"ts":25850,"deliverTs":25850,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan f2f7 (+0.21)","payload":{"kind":"status","best":"f2f7","eval":0.20945012401966798,"pv":["(f2f7,pass)","(d8f7,pass)","(P@f2,pass)","(e1d1,pass)"],"needs":[]}}
+{"type":"thinking","seq":251,"ts":25850,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":252,"ts":25850,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":253,"ts":26400,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":254,"ts":26400,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.14356204691061247,"depth":null}
+{"type":"move","seq":255,"ts":26400,"board":"B","seat":"B_white","uci":"P@d7","san":"@d7+","isDrop":true,"capture":null,"fen":"q3k2r/p1pP1ppp/3npn2/1b2N3/3Pp3/2BPPN2/PP3PPP/R3K2R[Qq] b KQk - 5 19","clocks":{"A_white":108450,"A_black":105150,"B_white":110100,"B_black":103500}}
+{"type":"message","seq":256,"ts":26400,"deliverTs":26400,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@d7 (+0.14)","payload":{"kind":"status","best":"P@d7","eval":0.14356204691061247,"pv":["(pass,P@d7)","(d8f7,f6d7)","(P@f2,e5d7)","(e1f2,e4f3)"],"needs":[]}}
+{"type":"thinking","seq":257,"ts":26400,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":258,"ts":26950,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.22528512436125106,"depth":null}
+{"type":"move","seq":259,"ts":26950,"board":"A","seat":"A_white","uci":"d8f7","san":"Nxf7","isDrop":false,"capture":"r","fen":"r1b1kb1r/ppp1pNpp/2np4/4P3/3P4/2P5/P1P3PP/R1B1KB1R[QBNbnpp] b KQkq - 0 14","clocks":{"A_white":107900,"A_black":105150,"B_white":110100,"B_black":102950}}
+{"type":"pass","seq":260,"ts":26950,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"r"}
+{"type":"thinking","seq":261,"ts":26950,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":262,"ts":27500,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.0532956614669495,"depth":null}
+{"type":"move","seq":263,"ts":27500,"board":"B","seat":"B_black","uci":"f6d7","san":"Nxd7","isDrop":false,"capture":"P","fen":"q3k2r/p1pn1ppp/3np3/1b2N3/3Pp3/2BPPN2/PP3PPP/R3K2R[Qqr] w KQk - 0 20","clocks":{"A_white":107900,"A_black":104600,"B_white":110100,"B_black":102400}}
+{"type":"pass","seq":264,"ts":27500,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":265,"ts":27500,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.23154086890620618,"depth":null}
+{"type":"move","seq":266,"ts":27500,"board":"A","seat":"A_black","uci":"P@f2","san":"@f2+","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pNpp/2np4/4P3/3P4/2P5/P1P2pPP/R1B1KB1R[QBNPbnp] w KQkq - 1 15","clocks":{"A_white":107900,"A_black":104600,"B_white":110100,"B_black":102400}}
+{"type":"message","seq":267,"ts":27500,"deliverTs":27500,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan P@f2 (+0.23)","payload":{"kind":"status","best":"P@f2","eval":0.23154086890620618,"pv":["(P@f2,pass)","(e1f2,f6d7)","(N@e4,e5d7)","(f2e3,b5d7)"],"needs":[]}}
+{"type":"thinking","seq":268,"ts":27500,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":269,"ts":27500,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":270,"ts":28050,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.22214029771406527,"depth":null}
+{"type":"move","seq":271,"ts":28050,"board":"B","seat":"B_white","uci":"e5d7","san":"Nxd7","isDrop":false,"capture":"n","fen":"q3k2r/p1pN1ppp/3np3/1b6/3Pp3/2BPPN2/PP3PPP/R3K2R[Qqr] b KQk - 0 20","clocks":{"A_white":107350,"A_black":104600,"B_white":109550,"B_black":102400}}
+{"type":"pass","seq":272,"ts":28050,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"n"}
+{"type":"message","seq":273,"ts":28050,"deliverTs":28050,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan e5d7 (+0.22)","payload":{"kind":"status","best":"e5d7","eval":0.22214029771406527,"pv":["(pass,e5d7)","(e1f2,e4f3)","(N@e4,pass)","(f2e1,pass)"],"needs":[]}}
+{"type":"thinking","seq":274,"ts":28050,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":275,"ts":28600,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.16038496652412862,"depth":null}
+{"type":"move","seq":276,"ts":28600,"board":"A","seat":"A_white","uci":"e1d1","san":"Kd1","isDrop":false,"capture":null,"fen":"r1b1kb1r/ppp1pNpp/2np4/4P3/3P4/2P5/P1P2pPP/R1BK1B1R[QBNPbnnp] b kq - 2 15","clocks":{"A_white":106800,"A_black":104600,"B_white":109550,"B_black":101850}}
+{"type":"thinking","seq":277,"ts":28600,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":278,"ts":29150,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.10932638779859068,"depth":null}
+{"type":"move","seq":279,"ts":29150,"board":"B","seat":"B_black","uci":"e4f3","san":"exf3","isDrop":false,"capture":"N","fen":"q3k2r/p1pN1ppp/3np3/1b6/3P4/2BPPp2/PP3PPP/R3K2R[Qqr] w KQk - 0 21","clocks":{"A_white":106800,"A_black":104050,"B_white":109550,"B_black":101300}}
+{"type":"pass","seq":280,"ts":29150,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"thinking","seq":281,"ts":29150,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.26511256585659854,"depth":null}
+{"type":"move","seq":282,"ts":29150,"board":"A","seat":"A_black","uci":"B@h5","san":"B@h5+","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pNpp/2np4/4P2b/3P4/2P5/P1P2pPP/R1BK1B1R[QBNNPnnp] w kq - 3 16","clocks":{"A_white":106800,"A_black":104050,"B_white":109550,"B_black":101300}}
+{"type":"message","seq":283,"ts":29150,"deliverTs":29150,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan B@h5 (+0.27)","payload":{"kind":"status","best":"B@h5","eval":0.26511256585659854,"pv":["(B@h5,pass)","(B@e2,e4f3)","(h5f7,g2f3)","(N@g5,b5d3)"],"needs":[]}}
+{"type":"stall","seq":284,"ts":29150,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":285,"ts":29150,"deliverTs":29150,"fromSeat":"B_white","toSeat":"A_black","token":"need_N","text":"need N","payload":{"piece":"N","deadlineTs":32700,"value":0.164}}
+{"type":"message","seq":286,"ts":29150,"deliverTs":29150,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":30700}}
+{"type":"message","seq":287,"ts":29150,"deliverTs":29150,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.16)","payload":{"kind":"status","best":null,"eval":0.16372341835522447,"pv":["(pass,pass)","(B@e2,pass)","(h5f7,pass)","(N@b5,pass)"],"needs":["N"]}}
+{"type":"thinking","seq":288,"ts":29150,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":289,"ts":30250,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.16038496652412862,"depth":null}
+{"type":"move","seq":290,"ts":30250,"board":"A","seat":"A_white","uci":"B@e2","san":"B@e2","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pNpp/2np4/4P2b/3P4/2P5/P1P1BpPP/R1BK1B1R[QNNPnnp] b kq - 4 16","clocks":{"A_white":105700,"A_black":104050,"B_white":108450,"B_black":101300}}
+{"type":"message","seq":291,"ts":30250,"deliverTs":30250,"fromSeat":"B_white","toSeat":"A_black","token":"need_N","text":"need N","payload":{"piece":"N","deadlineTs":33800,"value":0.256}}
+{"type":"message","seq":292,"ts":30250,"deliverTs":30250,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":31800}}
+{"type":"message","seq":293,"ts":30250,"deliverTs":30250,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.26)","payload":{"kind":"status","best":null,"eval":0.2560996756406247,"pv":["(h5f7,pass)","(N@g5,pass)","(N@d5,N@f6)","(g5f7,e8d8)"],"needs":["N"]}}
+{"type":"thinking","seq":294,"ts":30250,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":295,"ts":30800,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.2591160869064822,"depth":null}
+{"type":"move","seq":296,"ts":30800,"board":"A","seat":"A_black","uci":"h5f7","san":"Bxf7","isDrop":false,"capture":"N","fen":"r1b1kb1r/ppp1pbpp/2np4/4P3/3P4/2P5/P1P1BpPP/R1BK1B1R[QNNPnnp] w kq - 0 17","clocks":{"A_white":105700,"A_black":103500,"B_white":107900,"B_black":101300}}
+{"type":"pass","seq":297,"ts":30800,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"message","seq":298,"ts":30800,"deliverTs":30800,"fromSeat":"A_black","toSeat":"B_white","token":"have_N","text":"N coming","payload":{"piece":"N"}}
+{"type":"message","seq":299,"ts":30800,"deliverTs":30800,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan h5f7 (+0.26)","payload":{"kind":"status","best":"h5f7","eval":0.2591160869064822,"pv":["(h5f7,pass)","(N@g5,pass)","(N@d5,N@f6)","(g5f7,e8d8)"],"needs":[]}}
+{"type":"thinking","seq":300,"ts":30800,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":301,"ts":30800,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":302,"ts":31350,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":303,"ts":31350,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.18683127851145326,"depth":null}
+{"type":"move","seq":304,"ts":31350,"board":"B","seat":"B_white","uci":"N@f6","san":"N@f6+","isDrop":true,"capture":null,"fen":"q3k2r/p1pN1ppp/3npN2/1b6/3P4/2BPPp2/PP3PPP/R3K2R[Qqr] b KQk - 1 21","clocks":{"A_white":105150,"A_black":103500,"B_white":107350,"B_black":101300}}
+{"type":"message","seq":305,"ts":31350,"deliverTs":31350,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan N@f6 (+0.19)","payload":{"kind":"status","best":"N@f6","eval":0.18683127851145326,"pv":["(pass,N@f6)","(N@b5,e8d8)","(N@d5,g2f3)","(Q@f3,b5d3)"],"needs":[]}}
+{"type":"thinking","seq":306,"ts":31350,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":307,"ts":31900,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.29721000576974754,"depth":null}
+{"type":"move","seq":308,"ts":31900,"board":"A","seat":"A_white","uci":"N@b5","san":"N@b5","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N2P3/3P4/2P5/P1P1BpPP/R1BK1B1R[QNPnnp] b kq - 1 17","clocks":{"A_white":104600,"A_black":103500,"B_white":107350,"B_black":100750}}
+{"type":"thinking","seq":309,"ts":31900,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":310,"ts":32450,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.032024612642271,"depth":null}
+{"type":"move","seq":311,"ts":32450,"board":"B","seat":"B_black","uci":"e8d8","san":"Kd8","isDrop":false,"capture":null,"fen":"q2k3r/p1pN1ppp/3npN2/1b6/3P4/2BPPp2/PP3PPP/R3K2R[Qqr] w KQ - 2 22","clocks":{"A_white":104600,"A_black":102950,"B_white":107350,"B_black":100200}}
+{"type":"thinking","seq":312,"ts":32450,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.33584573569564036,"depth":null}
+{"type":"move","seq":313,"ts":32450,"board":"A","seat":"A_black","uci":"N@d5","san":"N@d5","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P5/P1P1BpPP/R1BK1B1R[QNPnp] w kq - 2 18","clocks":{"A_white":104600,"A_black":102950,"B_white":107350,"B_black":100200}}
+{"type":"message","seq":314,"ts":32450,"deliverTs":32450,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan N@d5 (+0.34)","payload":{"kind":"status","best":"N@d5","eval":0.33584573569564036,"pv":["(N@d5,pass)","(Q@f3,e8d8)","(d6e5,pass)","(N@g5,pass)"],"needs":[]}}
+{"type":"stall","seq":315,"ts":32450,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":316,"ts":32450,"deliverTs":32450,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":34000}}
+{"type":"message","seq":317,"ts":32450,"deliverTs":32450,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.13)","payload":{"kind":"status","best":null,"eval":0.12995621057530393,"pv":["(pass,pass)","(Q@f3,pass)","(P@b2,pass)","(c1b2,pass)"],"needs":[]}}
+{"type":"thinking","seq":318,"ts":32450,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":319,"ts":33550,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.1900934673523721,"depth":null}
+{"type":"move","seq":320,"ts":33550,"board":"A","seat":"A_white","uci":"Q@f3","san":"Q@f3","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P2Q2/P1P1BpPP/R1BK1B1R[NPnp] b kq - 3 18","clocks":{"A_white":103500,"A_black":102950,"B_white":106250,"B_black":100200}}
+{"type":"message","seq":321,"ts":33550,"deliverTs":33550,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":35100}}
+{"type":"message","seq":322,"ts":33550,"deliverTs":33550,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.31)","payload":{"kind":"status","best":null,"eval":0.3112962136522235,"pv":["(P@b2,pass)","(c1b2,pass)","(N@e3,pass)","(d1d2,pass)"],"needs":[]}}
+{"type":"thinking","seq":323,"ts":33550,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":324,"ts":34100,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.3914910028135952,"depth":null}
+{"type":"move","seq":325,"ts":34100,"board":"A","seat":"A_black","uci":"P@b2","san":"@b2","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P2Q2/PpP1BpPP/R1BK1B1R[NPn] w kq - 4 19","clocks":{"A_white":103500,"A_black":102400,"B_white":105700,"B_black":100200}}
+{"type":"message","seq":326,"ts":34100,"deliverTs":34100,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan P@b2 (+0.39)","payload":{"kind":"status","best":"P@b2","eval":0.3914910028135952,"pv":["(P@b2,pass)","(c1b2,pass)","(N@e3,pass)","(d1c1,pass)"],"needs":[]}}
+{"type":"thinking","seq":327,"ts":34100,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":328,"ts":34100,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":329,"ts":34650,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":330,"ts":34650,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":0.3644388126481026,"depth":null}
+{"type":"move","seq":331,"ts":34650,"board":"B","seat":"B_white","uci":"g2f3","san":"gxf3","isDrop":false,"capture":"p","fen":"q2k3r/p1pN1ppp/3npN2/1b6/3P4/2BPPP2/PP3P1P/R3K2R[Qqr] b KQ - 0 22","clocks":{"A_white":102950,"A_black":102400,"B_white":105150,"B_black":100200}}
+{"type":"pass","seq":332,"ts":34650,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"p"}
+{"type":"message","seq":333,"ts":34650,"deliverTs":34650,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan g2f3 (+0.36)","payload":{"kind":"status","best":"g2f3","eval":0.3644388126481026,"pv":["(pass,g2f3)","(c1b2,b5d3)","(N@e3,Q@b8)","(d1c1,a8b8)"],"needs":[]}}
+{"type":"thinking","seq":334,"ts":34650,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":335,"ts":35200,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.11967264795785212,"depth":null}
+{"type":"move","seq":336,"ts":35200,"board":"A","seat":"A_white","uci":"c1b2","san":"Bxb2","isDrop":false,"capture":"p","fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P2Q2/PBP1BpPP/R2K1B1R[NPnp] b kq - 0 19","clocks":{"A_white":102400,"A_black":102400,"B_white":105150,"B_black":99650}}
+{"type":"pass","seq":337,"ts":35200,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":338,"ts":35200,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":339,"ts":35750,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":-0.01068277161150048,"depth":null}
+{"type":"move","seq":340,"ts":35750,"board":"B","seat":"B_black","uci":"b5d3","san":"Bxd3","isDrop":false,"capture":"P","fen":"q2k3r/p1pN1ppp/3npN2/8/3P4/2BbPP2/PP3P1P/R3K2R[Qqrp] w KQ - 0 23","clocks":{"A_white":102400,"A_black":101850,"B_white":105150,"B_black":99100}}
+{"type":"pass","seq":341,"ts":35750,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":342,"ts":35750,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.24391434430279801,"depth":null}
+{"type":"move","seq":343,"ts":35750,"board":"A","seat":"A_black","uci":"N@e3","san":"N@e3+","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P1nQ2/PBP1BpPP/R2K1B1R[NPPp] w kq - 1 20","clocks":{"A_white":102400,"A_black":101850,"B_white":105150,"B_black":99100}}
+{"type":"message","seq":344,"ts":35750,"deliverTs":35750,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan N@e3 (+0.24)","payload":{"kind":"status","best":"N@e3","eval":0.24391434430279801,"pv":["(N@e3,pass)","(d1c1,b5d3)","(d6e5,pass)","(N@g5,pass)"],"needs":[]}}
+{"type":"stall","seq":345,"ts":35750,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":346,"ts":35750,"deliverTs":35750,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":39300,"value":0.336}}
+{"type":"message","seq":347,"ts":35750,"deliverTs":35750,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":37300}}
+{"type":"message","seq":348,"ts":35750,"deliverTs":35750,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.34)","payload":{"kind":"status","best":null,"eval":0.33584573569564036,"pv":["(pass,pass)","(d1c1,pass)","(d6e5,pass)","(N@g5,pass)"],"needs":["P"]}}
+{"type":"thinking","seq":349,"ts":35750,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":350,"ts":36850,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.2828073592403722,"depth":null}
+{"type":"move","seq":351,"ts":36850,"board":"A","seat":"A_white","uci":"d1c1","san":"Kc1","isDrop":false,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P1nQ2/PBP1BpPP/R1K2B1R[NPPp] b kq - 2 20","clocks":{"A_white":101300,"A_black":101850,"B_white":104050,"B_black":99100}}
+{"type":"message","seq":352,"ts":36850,"deliverTs":36850,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":38400}}
+{"type":"message","seq":353,"ts":36850,"deliverTs":36850,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (+0.22)","payload":{"kind":"status","best":null,"eval":0.22214029771406527,"pv":["(P@d2,pass)","(c1d2,pass)","(e3f1,pass)","(h1f1,pass)"],"needs":[]}}
+{"type":"thinking","seq":354,"ts":36850,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":355,"ts":37400,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.22214029771406527,"depth":null}
+{"type":"move","seq":356,"ts":37400,"board":"A","seat":"A_black","uci":"P@d2","san":"@d2+","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P1nQ2/PBPpBpPP/R1K2B1R[NPP] w kq - 3 21","clocks":{"A_white":101300,"A_black":101300,"B_white":103500,"B_black":99100}}
+{"type":"message","seq":357,"ts":37400,"deliverTs":37400,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan P@d2 (+0.22)","payload":{"kind":"status","best":"P@d2","eval":0.22214029771406527,"pv":["(P@d2,pass)","(c1d2,pass)","(e3f1,pass)","(h1f1,pass)"],"needs":[]}}
+{"type":"thinking","seq":358,"ts":37400,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":359,"ts":37400,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":360,"ts":37950,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":361,"ts":37950,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.11623062461633989,"depth":null}
+{"type":"move","seq":362,"ts":37950,"board":"B","seat":"B_white","uci":"Q@b8","san":"Q@b8+","isDrop":true,"capture":null,"fen":"qQ1k3r/p1pN1ppp/3npN2/8/3P4/2BbPP2/PP3P1P/R3K2R[qrp] b KQ - 1 23","clocks":{"A_white":100750,"A_black":101300,"B_white":102950,"B_black":99100}}
+{"type":"message","seq":363,"ts":37950,"deliverTs":37950,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan Q@b8 (-0.12)","payload":{"kind":"status","best":"Q@b8","eval":-0.11623062461633989,"pv":["(pass,Q@b8)","(c1d2,a8b8)","(c8e6,d7b8)","(N@g5,Q@e2)"],"needs":[]}}
+{"type":"thinking","seq":364,"ts":37950,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":365,"ts":38500,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":-0.21898428887679947,"depth":null}
+{"type":"move","seq":366,"ts":38500,"board":"A","seat":"A_white","uci":"c1d2","san":"Kxd2","isDrop":false,"capture":"p","fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P1nQ2/PBPKBpPP/R4B1R[NPP] b kq - 0 21","clocks":{"A_white":100200,"A_black":101300,"B_white":102950,"B_black":98550}}
+{"type":"pass","seq":367,"ts":38500,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"p"}
+{"type":"thinking","seq":368,"ts":38500,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":369,"ts":39050,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.7364589809930826,"depth":null}
+{"type":"move","seq":370,"ts":39050,"board":"B","seat":"B_black","uci":"a8b8","san":"Qxb8","isDrop":false,"capture":"Q","fen":"1q1k3r/p1pN1ppp/3npN2/8/3P4/2BbPP2/PP3P1P/R3K2R[qrpp] w KQ - 0 24","clocks":{"A_white":100200,"A_black":100750,"B_white":102950,"B_black":98000}}
+{"type":"pass","seq":371,"ts":39050,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"Q"}
+{"type":"thinking","seq":372,"ts":39050,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":0.11623062461633989,"depth":null}
+{"type":"move","seq":373,"ts":39050,"board":"A","seat":"A_black","uci":"e3f1","san":"Nxf1+","isDrop":false,"capture":"B","fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P2Q2/PBPKBpPP/R4n1R[QNPP] w kq - 0 22","clocks":{"A_white":100200,"A_black":100750,"B_white":102950,"B_black":98000}}
+{"type":"pass","seq":374,"ts":39050,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"B"}
+{"type":"message","seq":375,"ts":39050,"deliverTs":39050,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e3f1 (+0.12)","payload":{"kind":"status","best":"e3f1","eval":0.11623062461633989,"pv":["(e3f1,pass)","(h1f1,a8b8)","(c6e5,pass)","(d4e5,pass)"],"needs":[]}}
+{"type":"stall","seq":376,"ts":39050,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":377,"ts":39050,"deliverTs":39050,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":40600}}
+{"type":"message","seq":378,"ts":39050,"deliverTs":39050,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.56)","payload":{"kind":"status","best":null,"eval":-0.5601121471424981,"pv":["(pass,pass)","(h1f1,pass)","(d6e5,pass)","(N@g5,pass)"],"needs":[]}}
+{"type":"thinking","seq":379,"ts":39050,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":380,"ts":40150,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.7024266477755126,"depth":null}
+{"type":"move","seq":381,"ts":40150,"board":"A","seat":"A_white","uci":"h1f1","san":"Rhxf1","isDrop":false,"capture":"n","fen":"r1b1kb1r/ppp1pbpp/2np4/1N1nP3/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] b kq - 0 22","clocks":{"A_white":99100,"A_black":100750,"B_white":101850,"B_black":98000}}
+{"type":"pass","seq":382,"ts":40150,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"message","seq":383,"ts":40150,"deliverTs":40150,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":43700,"value":0.705}}
+{"type":"message","seq":384,"ts":40150,"deliverTs":40150,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":41700}}
+{"type":"message","seq":385,"ts":40150,"deliverTs":40150,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.70)","payload":{"kind":"status","best":null,"eval":-0.7046462852407899,"pv":["(d6e5,pass)","(N@g5,pass)","(c8e6,P@e7)","(g5e6,d8e7)"],"needs":["P"]}}
+{"type":"thinking","seq":386,"ts":40150,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":387,"ts":40700,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.693239384479462,"depth":null}
+{"type":"move","seq":388,"ts":40700,"board":"A","seat":"A_black","uci":"d6e5","san":"dxe5","isDrop":false,"capture":"P","fen":"r1b1kb1r/ppp1pbpp/2n5/1N1np3/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] w kq - 0 23","clocks":{"A_white":99100,"A_black":100200,"B_white":101300,"B_black":98000}}
+{"type":"pass","seq":389,"ts":40700,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":390,"ts":40700,"deliverTs":40700,"fromSeat":"A_black","toSeat":"B_white","token":"have_P","text":"P coming","payload":{"piece":"P"}}
+{"type":"message","seq":391,"ts":40700,"deliverTs":40700,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan d6e5 (-0.69)","payload":{"kind":"status","best":"d6e5","eval":-0.693239384479462,"pv":["(d6e5,pass)","(N@g5,pass)","(c8e6,P@e7)","(g5e6,d8e7)"],"needs":[]}}
+{"type":"thinking","seq":392,"ts":40700,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":393,"ts":40700,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":394,"ts":41250,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":395,"ts":41250,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.5465731313936212,"depth":null}
+{"type":"move","seq":396,"ts":41250,"board":"B","seat":"B_white","uci":"P@e7","san":"@e7+","isDrop":true,"capture":null,"fen":"1q1k3r/p1pNPppp/3npN2/8/3P4/2BbPP2/PP3P1P/R3K2R[Bqrnpp] b KQ - 1 24","clocks":{"A_white":98550,"A_black":100200,"B_white":100750,"B_black":98000}}
+{"type":"message","seq":397,"ts":41250,"deliverTs":41250,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@e7 (-0.55)","payload":{"kind":"status","best":"P@e7","eval":-0.5465731313936212,"pv":["(pass,P@e7)","(N@g5,d8e7)","(c8e6,B@f8)","(g5e6,h8f8)"],"needs":[]}}
+{"type":"thinking","seq":398,"ts":41250,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":399,"ts":41800,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.6364707627132378,"depth":null}
+{"type":"move","seq":400,"ts":41800,"board":"A","seat":"A_white","uci":"N@g5","san":"N@g5","isDrop":true,"capture":null,"fen":"r1b1kb1r/ppp1pbpp/2n5/1N1np1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QPP] b kq - 1 23","clocks":{"A_white":98000,"A_black":100200,"B_white":100750,"B_black":97450}}
+{"type":"stall","seq":401,"ts":41800,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":402,"ts":41800,"deliverTs":41800,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":43350}}
+{"type":"message","seq":403,"ts":41800,"deliverTs":41800,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.51)","payload":{"kind":"status","best":null,"eval":-0.5122409851091757,"pv":["(pass,pass)","(pass,d8e7)","(c8e6,pass)","(P@f5,pass)"],"needs":[]}}
+{"type":"thinking","seq":404,"ts":42350,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.8055423463868193,"depth":null}
+{"type":"move","seq":405,"ts":42350,"board":"B","seat":"B_black","uci":"d8e7","san":"Kxe7","isDrop":false,"capture":"P","fen":"1q5r/p1pNkppp/3npN2/8/3P4/2BbPP2/PP3P1P/R3K2R[Bqrnpp] w KQ - 0 25","clocks":{"A_white":98000,"A_black":99650,"B_white":100750,"B_black":96900}}
+{"type":"pass","seq":406,"ts":42350,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":407,"ts":42350,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":408,"ts":42350,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":409,"ts":42350,"deliverTs":42350,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":43900}}
+{"type":"message","seq":410,"ts":42350,"deliverTs":42350,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.72)","payload":{"kind":"status","best":null,"eval":-0.7239987304399083,"pv":["(c8e6,pass)","(P@f5,pass)","(e6f5,pass)","(f3f5,pass)"],"needs":[]}}
+{"type":"stall","seq":411,"ts":42900,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":412,"ts":42900,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.7246471696843155,"depth":null}
+{"type":"move","seq":413,"ts":42900,"board":"A","seat":"A_black","uci":"c8e6","san":"Bce6","isDrop":false,"capture":null,"fen":"r3kb1r/ppp1pbpp/2n1b3/1N1np1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QPPP] w kq - 2 24","clocks":{"A_white":98000,"A_black":99100,"B_white":100200,"B_black":96900}}
+{"type":"message","seq":414,"ts":42900,"deliverTs":42900,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan c8e6 (-0.72)","payload":{"kind":"status","best":"c8e6","eval":-0.7246471696843155,"pv":["(c8e6,pass)","(P@f5,pass)","(e6f5,pass)","(f3f5,pass)"],"needs":[]}}
+{"type":"message","seq":415,"ts":42900,"deliverTs":42900,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":44450}}
+{"type":"message","seq":416,"ts":42900,"deliverTs":42900,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.75)","payload":{"kind":"status","best":null,"eval":-0.7468209834726393,"pv":["(pass,pass)","(P@f5,pass)","(e6f5,pass)","(f3f5,pass)"],"needs":[]}}
+{"type":"thinking","seq":417,"ts":42900,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":418,"ts":44000,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.7894254566287513,"depth":null}
+{"type":"move","seq":419,"ts":44000,"board":"A","seat":"A_white","uci":"P@e4","san":"@e4","isDrop":true,"capture":null,"fen":"r3kb1r/ppp1pbpp/2n1b3/1N1np1N1/3PP3/2P2Q2/PBPKBpPP/R4R2[QPP] b kq - 3 24","clocks":{"A_white":96900,"A_black":99100,"B_white":99100,"B_black":96900}}
+{"type":"thinking","seq":420,"ts":44000,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":421,"ts":44000,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":422,"ts":44550,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":423,"ts":44550,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.6900627836787331,"depth":null}
+{"type":"move","seq":424,"ts":44550,"board":"B","seat":"B_white","uci":"f6d5","san":"Nd5+","isDrop":false,"capture":null,"fen":"1q5r/p1pNkppp/3np3/3N4/3P4/2BbPP2/PP3P1P/R3K2R[Bqrnpp] b KQ - 1 25","clocks":{"A_white":96900,"A_black":98550,"B_white":98550,"B_black":96900}}
+{"type":"message","seq":425,"ts":44550,"deliverTs":44550,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan f6d5 (-0.69)","payload":{"kind":"status","best":"f6d5","eval":-0.6900627836787331,"pv":["(a7a6,f6d5)","(e4d5,e6d5)","(e6d5,B@g5)","(b5c7,P@f6)"],"needs":[]}}
+{"type":"thinking","seq":426,"ts":44550,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.1900934673523721,"depth":null}
+{"type":"move","seq":427,"ts":44550,"board":"A","seat":"A_black","uci":"a7a6","san":"a6","isDrop":false,"capture":null,"fen":"r3kb1r/1pp1pbpp/p1n1b3/1N1np1N1/3PP3/2P2Q2/PBPKBpPP/R4R2[QPP] w kq - 0 25","clocks":{"A_white":96900,"A_black":98550,"B_white":98550,"B_black":96900}}
+{"type":"message","seq":428,"ts":44550,"deliverTs":44550,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan a7a6 (-0.19)","payload":{"kind":"status","best":"a7a6","eval":-0.1900934673523721,"pv":["(a7a6,pass)","(b5a3,pass)","(d5c3,pass)","(b2c3,pass)"],"needs":[]}}
+{"type":"thinking","seq":429,"ts":44550,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":430,"ts":44550,"seat":"A_white","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":431,"ts":45650,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9154597671944882,"depth":null}
+{"type":"move","seq":432,"ts":45650,"board":"B","seat":"B_black","uci":"e6d5","san":"exd5","isDrop":false,"capture":"N","fen":"1q5r/p1pNkppp/3n4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqrnpp] w KQ - 0 26","clocks":{"A_white":95800,"A_black":98550,"B_white":98550,"B_black":95800}}
+{"type":"pass","seq":433,"ts":45650,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"thinking","seq":434,"ts":45650,"seat":"A_white","phase":"end","think_ms":1100,"nodes":0,"eval":0.9154597671944882,"depth":null}
+{"type":"move","seq":435,"ts":45650,"board":"A","seat":"A_white","uci":"e4d5","san":"exd5","isDrop":false,"capture":"n","fen":"r3kb1r/1pp1pbpp/p1n1b3/1N1Pp1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] b kq - 0 25","clocks":{"A_white":95800,"A_black":98550,"B_white":98550,"B_black":95800}}
+{"type":"pass","seq":436,"ts":45650,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"stall","seq":437,"ts":45650,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":438,"ts":45650,"deliverTs":45650,"fromSeat":"B_white","toSeat":"A_black","token":"need_N","text":"need N","payload":{"piece":"N","deadlineTs":49200,"value":0.787}}
+{"type":"message","seq":439,"ts":45650,"deliverTs":45650,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":47200}}
+{"type":"message","seq":440,"ts":45650,"deliverTs":45650,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.79)","payload":{"kind":"status","best":null,"eval":-0.7874357300410488,"pv":["(a6b5,pass)","(d5e6,pass)","(f7e6,N@c6)","(g5e6,e7e8)"],"needs":["N"]}}
+{"type":"thinking","seq":441,"ts":45650,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":442,"ts":46200,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.7870335810090981,"depth":null}
+{"type":"move","seq":443,"ts":46200,"board":"A","seat":"A_black","uci":"a6b5","san":"axb5","isDrop":false,"capture":"N","fen":"r3kb1r/1pp1pbpp/2n1b3/1p1Pp1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] w kq - 0 26","clocks":{"A_white":95800,"A_black":98000,"B_white":98000,"B_black":95800}}
+{"type":"pass","seq":444,"ts":46200,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"message","seq":445,"ts":46200,"deliverTs":46200,"fromSeat":"A_black","toSeat":"B_white","token":"have_N","text":"N coming","payload":{"piece":"N"}}
+{"type":"message","seq":446,"ts":46200,"deliverTs":46200,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan a6b5 (-0.79)","payload":{"kind":"status","best":"a6b5","eval":-0.7870335810090981,"pv":["(a6b5,pass)","(d5e6,pass)","(f7e6,N@c6)","(g5e6,e7e8)"],"needs":[]}}
+{"type":"message","seq":447,"ts":46200,"deliverTs":46200,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":47750}}
+{"type":"message","seq":448,"ts":46200,"deliverTs":46200,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.79)","payload":{"kind":"status","best":null,"eval":-0.7913807905979195,"pv":["(pass,pass)","(d5e6,pass)","(f7e6,N@c6)","(g5e6,e7e8)"],"needs":[]}}
+{"type":"thinking","seq":449,"ts":46200,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":450,"ts":47300,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.8362463318230585,"depth":null}
+{"type":"move","seq":451,"ts":47300,"board":"A","seat":"A_white","uci":"d5e6","san":"dxe6","isDrop":false,"capture":"b","fen":"r3kb1r/1pp1pbpp/2n1P3/1p2p1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] b kq - 0 26","clocks":{"A_white":94700,"A_black":98000,"B_white":96900,"B_black":95800}}
+{"type":"pass","seq":452,"ts":47300,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"b"}
+{"type":"thinking","seq":453,"ts":47300,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":454,"ts":47300,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":455,"ts":47850,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":456,"ts":47850,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.7959382931233595,"depth":null}
+{"type":"move","seq":457,"ts":47850,"board":"B","seat":"B_white","uci":"N@c6","san":"N@c6+","isDrop":true,"capture":null,"fen":"1q5r/p1pNkppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqrbnnpp] b KQ - 1 26","clocks":{"A_white":94700,"A_black":97450,"B_white":96350,"B_black":95800}}
+{"type":"message","seq":458,"ts":47850,"deliverTs":47850,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":50850,"value":0.796}}
+{"type":"message","seq":459,"ts":47850,"deliverTs":47850,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan N@c6 (-0.80)","payload":{"kind":"status","best":"N@c6","eval":-0.7959382931233595,"pv":["(f7e6,N@c6)","(g5e6,e7d7)","(pass,c6b8)","(pass,h8b8)"],"needs":["P"]}}
+{"type":"thinking","seq":460,"ts":47850,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.8124464159970616,"depth":null}
+{"type":"move","seq":461,"ts":47850,"board":"A","seat":"A_black","uci":"f7e6","san":"Bxe6","isDrop":false,"capture":"P","fen":"r3kb1r/1pp1p1pp/2n1b3/1p2p1N1/3P4/2P2Q2/PBPKBpPP/R4R2[QNPP] w kq - 0 27","clocks":{"A_white":94700,"A_black":97450,"B_white":96350,"B_black":95800}}
+{"type":"pass","seq":462,"ts":47850,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":463,"ts":47850,"deliverTs":47850,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan f7e6 (-0.81)","payload":{"kind":"status","best":"f7e6","eval":-0.8124464159970616,"pv":["(f7e6,N@c6)","(g5e6,e7d7)","(pass,c6e5)","(pass,d7e7)"],"needs":[]}}
+{"type":"thinking","seq":464,"ts":47850,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":465,"ts":47850,"seat":"A_white","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":466,"ts":48950,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9273700112858381,"depth":null}
+{"type":"move","seq":467,"ts":48950,"board":"B","seat":"B_black","uci":"e7d7","san":"Kxd7","isDrop":false,"capture":"N","fen":"1q5r/p1pk1ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[BPqrbnnpp] w KQ - 0 27","clocks":{"A_white":93600,"A_black":97450,"B_white":96350,"B_black":94700}}
+{"type":"pass","seq":468,"ts":48950,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"thinking","seq":469,"ts":48950,"seat":"A_white","phase":"end","think_ms":1100,"nodes":0,"eval":0.9273700112858381,"depth":null}
+{"type":"move","seq":470,"ts":48950,"board":"A","seat":"A_white","uci":"g5e6","san":"Nxe6","isDrop":false,"capture":"b","fen":"r3kb1r/1pp1p1pp/2n1N3/1p2p3/3P4/2P2Q2/PBPKBpPP/R4R2[QNNPP] b kq - 0 27","clocks":{"A_white":93600,"A_black":97450,"B_white":96350,"B_black":94700}}
+{"type":"pass","seq":471,"ts":48950,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"b"}
+{"type":"thinking","seq":472,"ts":48950,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":473,"ts":48950,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":474,"ts":48950,"deliverTs":48950,"fromSeat":"A_black","toSeat":"B_white","token":"need_Q","text":"need Q","payload":{"piece":"Q","deadlineTs":52500,"value":0.887}}
+{"type":"message","seq":475,"ts":48950,"deliverTs":48950,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":50500}}
+{"type":"message","seq":476,"ts":48950,"deliverTs":48950,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.89)","payload":{"kind":"status","best":null,"eval":-0.8866388173016221,"pv":["(pass,c6b8)","(pass,d7c8)","(Q@f4,P@d7)","(e6f4,c8b8)"],"needs":["Q"]}}
+{"type":"thinking","seq":477,"ts":49500,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.8958053052559923,"depth":null}
+{"type":"move","seq":478,"ts":49500,"board":"B","seat":"B_white","uci":"c6b8","san":"Nxb8+","isDrop":false,"capture":"q","fen":"1N5r/p1pk1ppp/3n4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[BPqrbbnnpp] b KQ - 0 27","clocks":{"A_white":93600,"A_black":96900,"B_white":95800,"B_black":94700}}
+{"type":"pass","seq":479,"ts":49500,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"q"}
+{"type":"message","seq":480,"ts":49500,"deliverTs":49500,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan c6b8 (-0.90)","payload":{"kind":"status","best":"c6b8","eval":-0.8958053052559923,"pv":["(pass,c6b8)","(pass,d7c8)","(Q@f4,P@d7)","(e6f4,c8b8)"],"needs":[]}}
+{"type":"thinking","seq":481,"ts":49500,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":482,"ts":49500,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":483,"ts":50050,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":484,"ts":50050,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.7720109518096346,"depth":null}
+{"type":"move","seq":485,"ts":50050,"board":"A","seat":"A_black","uci":"Q@f4","san":"Q@f4+","isDrop":true,"capture":null,"fen":"r3kb1r/1pp1p1pp/2n1N3/1p2p3/3P1q2/2P2Q2/PBPKBpPP/R4R2[QNNPP] w kq - 1 28","clocks":{"A_white":93600,"A_black":96350,"B_white":95800,"B_black":94150}}
+{"type":"message","seq":486,"ts":50050,"deliverTs":50050,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan Q@f4 (-0.77)","payload":{"kind":"status","best":"Q@f4","eval":-0.7720109518096346,"pv":["(Q@f4,pass)","(e6f4,d7c8)","(e5f4,pass)","(P@d7,pass)"],"needs":[]}}
+{"type":"thinking","seq":487,"ts":50050,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":488,"ts":50600,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.8771554323192061,"depth":null}
+{"type":"move","seq":489,"ts":50600,"board":"B","seat":"B_black","uci":"d7c8","san":"Kc8","isDrop":false,"capture":null,"fen":"1Nk4r/p1p2ppp/3n4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[BPqrbbnnpp] w KQ - 1 28","clocks":{"A_white":93050,"A_black":96350,"B_white":95800,"B_black":93600}}
+{"type":"stall","seq":490,"ts":50600,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":491,"ts":50600,"deliverTs":50600,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":52150}}
+{"type":"message","seq":492,"ts":50600,"deliverTs":50600,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.78)","payload":{"kind":"status","best":null,"eval":-0.7845906597524929,"pv":["(pass,pass)","(e6f4,pass)","(e5f4,pass)","(P@f7,pass)"],"needs":[]}}
+{"type":"thinking","seq":493,"ts":51150,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.941254971074121,"depth":null}
+{"type":"move","seq":494,"ts":51150,"board":"A","seat":"A_white","uci":"e6f4","san":"Nxf4","isDrop":false,"capture":"q","fen":"r3kb1r/1pp1p1pp/2n5/1p2p3/3P1N2/2P2Q2/PBPKBpPP/R4R2[QNNPP] b kq - 0 28","clocks":{"A_white":92500,"A_black":96350,"B_white":95250,"B_black":93600}}
+{"type":"pass","seq":495,"ts":51150,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"q"}
+{"type":"message","seq":496,"ts":51150,"deliverTs":51150,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":52700}}
+{"type":"message","seq":497,"ts":51150,"deliverTs":51150,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.95)","payload":{"kind":"status","best":null,"eval":-0.9512657196359514,"pv":["(e5f4,pass)","(P@f7,pass)","(e8f7,pass)","(N@g5,pass)"],"needs":[]}}
+{"type":"thinking","seq":498,"ts":51150,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":499,"ts":51700,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9501458095699286,"depth":null}
+{"type":"move","seq":500,"ts":51700,"board":"A","seat":"A_black","uci":"e5f4","san":"exf4","isDrop":false,"capture":"N","fen":"r3kb1r/1pp1p1pp/2n5/1p6/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNPP] w kq - 0 29","clocks":{"A_white":92500,"A_black":95800,"B_white":94700,"B_black":93600}}
+{"type":"pass","seq":501,"ts":51700,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"N"}
+{"type":"message","seq":502,"ts":51700,"deliverTs":51700,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e5f4 (-0.95)","payload":{"kind":"status","best":"e5f4","eval":-0.9501458095699286,"pv":["(e5f4,pass)","(P@f7,pass)","(e8f7,pass)","(N@g5,pass)"],"needs":[]}}
+{"type":"thinking","seq":503,"ts":51700,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":504,"ts":51700,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":505,"ts":52250,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":506,"ts":52250,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9371402203526643,"depth":null}
+{"type":"move","seq":507,"ts":52250,"board":"B","seat":"B_white","uci":"P@d7","san":"@d7+","isDrop":true,"capture":null,"fen":"1Nk4r/p1pP1ppp/3n4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[BNqqrbbnnpp] b KQ - 2 28","clocks":{"A_white":91950,"A_black":95800,"B_white":94150,"B_black":93600}}
+{"type":"message","seq":508,"ts":52250,"deliverTs":52250,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@d7 (-0.94)","payload":{"kind":"status","best":"P@d7","eval":-0.9371402203526643,"pv":["(pass,P@d7)","(P@f7,c8b8)","(e8f7,N@c6)","(N@g5,b8a8)"],"needs":[]}}
+{"type":"thinking","seq":509,"ts":52250,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":510,"ts":52800,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.9655475259384841,"depth":null}
+{"type":"move","seq":511,"ts":52800,"board":"A","seat":"A_white","uci":"P@e6","san":"@e6","isDrop":true,"capture":null,"fen":"r3kb1r/1pp1p1pp/2n1P3/1p6/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNP] b kq - 1 29","clocks":{"A_white":91400,"A_black":95800,"B_white":94150,"B_black":93050}}
+{"type":"stall","seq":512,"ts":52800,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":513,"ts":52800,"deliverTs":52800,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":54350}}
+{"type":"message","seq":514,"ts":52800,"deliverTs":52800,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.92)","payload":{"kind":"status","best":null,"eval":-0.9195207676344648,"pv":["(pass,pass)","(pass,c8b8)","(c6e5,N@c6)","(d4e5,b8a8)"],"needs":[]}}
+{"type":"thinking","seq":515,"ts":53350,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9630999452101733,"depth":null}
+{"type":"move","seq":516,"ts":53350,"board":"B","seat":"B_black","uci":"c8b8","san":"Kxb8","isDrop":false,"capture":"N","fen":"1k5r/p1pP1ppp/3n4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[BNqqrbbnnpp] w KQ - 0 29","clocks":{"A_white":91400,"A_black":95250,"B_white":94150,"B_black":92500}}
+{"type":"pass","seq":517,"ts":53350,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"N"}
+{"type":"message","seq":518,"ts":53350,"deliverTs":53350,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":54900}}
+{"type":"message","seq":519,"ts":53350,"deliverTs":53350,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.95)","payload":{"kind":"status","best":null,"eval":-0.9508067587774597,"pv":["(pass,N@c6)","(pass,b8a8)","(pass,d7d8q)","(pass,h8d8)"],"needs":[]}}
+{"type":"thinking","seq":520,"ts":53350,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":521,"ts":53900,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9556114110478445,"depth":null}
+{"type":"move","seq":522,"ts":53900,"board":"B","seat":"B_white","uci":"N@c6","san":"N@c6+","isDrop":true,"capture":null,"fen":"1k5r/p1pP1ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqqrbbnnpp] b KQ - 1 29","clocks":{"A_white":91400,"A_black":94700,"B_white":93600,"B_black":92500}}
+{"type":"message","seq":523,"ts":53900,"deliverTs":53900,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan N@c6 (-0.96)","payload":{"kind":"status","best":"N@c6","eval":-0.9556114110478445,"pv":["(pass,N@c6)","(pass,b8a8)","(pass,d7d8q)","(pass,h8d8)"],"needs":[]}}
+{"type":"thinking","seq":524,"ts":53900,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":525,"ts":53900,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"stall","seq":526,"ts":54450,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":527,"ts":54450,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9546842880619953,"depth":null}
+{"type":"move","seq":528,"ts":54450,"board":"A","seat":"A_black","uci":"c6e5","san":"Ne5","isDrop":false,"capture":null,"fen":"r3kb1r/1pp1p1pp/4P3/1p2n3/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNNP] w kq - 2 30","clocks":{"A_white":91400,"A_black":94150,"B_white":93600,"B_black":91950}}
+{"type":"message","seq":529,"ts":54450,"deliverTs":54450,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan c6e5 (-0.95)","payload":{"kind":"status","best":"c6e5","eval":-0.9546842880619953,"pv":["(c6e5,pass)","(d4e5,b8b7)","(a8d8,d7d8n)","(P@d7,h8d8)"],"needs":[]}}
+{"type":"thinking","seq":530,"ts":54450,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":531,"ts":55000,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9019154686865998,"depth":null}
+{"type":"move","seq":532,"ts":55000,"board":"B","seat":"B_black","uci":"b8a8","san":"Ka8","isDrop":false,"capture":null,"fen":"k6r/p1pP1ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqqrbbnnpp] w KQ - 2 30","clocks":{"A_white":90850,"A_black":94150,"B_white":93600,"B_black":91400}}
+{"type":"stall","seq":533,"ts":55000,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":534,"ts":55000,"deliverTs":55000,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":56550}}
+{"type":"message","seq":535,"ts":55000,"deliverTs":55000,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.97)","payload":{"kind":"status","best":null,"eval":-0.9660307030327381,"pv":["(pass,pass)","(d4e5,pass)","(a8d8,pass)","(P@d7,pass)"],"needs":[]}}
+{"type":"thinking","seq":536,"ts":55550,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.9770654209100815,"depth":null}
+{"type":"move","seq":537,"ts":55550,"board":"A","seat":"A_white","uci":"P@d7","san":"@d7+","isDrop":true,"capture":null,"fen":"r3kb1r/1ppPp1pp/4P3/1p2n3/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNN] b kq - 3 30","clocks":{"A_white":90300,"A_black":94150,"B_white":93050,"B_black":91400}}
+{"type":"message","seq":538,"ts":55550,"deliverTs":55550,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":57100}}
+{"type":"message","seq":539,"ts":55550,"deliverTs":55550,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.97)","payload":{"kind":"status","best":null,"eval":-0.9705264654021875,"pv":["(e5d7,pass)","(e6d7,pass)","(e8d7,pass)","(N@c5,pass)"],"needs":[]}}
+{"type":"stall","seq":540,"ts":55550,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":541,"ts":55550,"deliverTs":55550,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":57100}}
+{"type":"message","seq":542,"ts":55550,"deliverTs":55550,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.87)","payload":{"kind":"status","best":null,"eval":-0.8695414434745204,"pv":["(pass,d7d8q)","(pass,h8d8)","(pass,B@b7)","(pass,d6b7)"],"needs":[]}}
+{"type":"thinking","seq":543,"ts":55550,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":544,"ts":56100,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":545,"ts":56100,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.8405742711385945,"depth":null}
+{"type":"move","seq":546,"ts":56100,"board":"B","seat":"B_white","uci":"d7d8q","san":"d8=Q+","isDrop":false,"capture":null,"fen":"k2Q~3r/p1p2ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqqrbbnnpp] b KQ - 0 30","clocks":{"A_white":90300,"A_black":93600,"B_white":92500,"B_black":91400}}
+{"type":"message","seq":547,"ts":56100,"deliverTs":56100,"fromSeat":"B_white","toSeat":"A_black","token":"need_P","text":"need P","payload":{"piece":"P","deadlineTs":59100,"value":0.841}}
+{"type":"message","seq":548,"ts":56100,"deliverTs":56100,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan d7d8q (-0.84)","payload":{"kind":"status","best":"d7d8q","eval":-0.8405742711385945,"pv":["(pass,d7d8q)","(pass,h8d8)","(e5d7,B@b7)","(P@f7,d6b7)"],"needs":["P"]}}
+{"type":"message","seq":549,"ts":56100,"deliverTs":56100,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":57650}}
+{"type":"message","seq":550,"ts":56100,"deliverTs":56100,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.84)","payload":{"kind":"status","best":null,"eval":-0.8424296671228516,"pv":["(pass,pass)","(pass,h8d8)","(pass,B@b7)","(pass,d6b7)"],"needs":[]}}
+{"type":"thinking","seq":551,"ts":56100,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":552,"ts":57200,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9893734460861793,"depth":null}
+{"type":"move","seq":553,"ts":57200,"board":"B","seat":"B_black","uci":"h8d8","san":"Rxd8","isDrop":false,"capture":"P","fen":"k2r4/p1p2ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Bqqrbbnnpp] w KQ - 0 31","clocks":{"A_white":90300,"A_black":92500,"B_white":92500,"B_black":90300}}
+{"type":"pass","seq":554,"ts":57200,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"P"}
+{"type":"thinking","seq":555,"ts":57200,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":556,"ts":57200,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":557,"ts":57750,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":558,"ts":57750,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9834313197034812,"depth":null}
+{"type":"move","seq":559,"ts":57750,"board":"A","seat":"A_black","uci":"e5d7","san":"Nxd7","isDrop":false,"capture":"P","fen":"r3kb1r/1ppnp1pp/4P3/1p6/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNNP] w kq - 0 31","clocks":{"A_white":90300,"A_black":91950,"B_white":91950,"B_black":90300}}
+{"type":"pass","seq":560,"ts":57750,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":561,"ts":57750,"deliverTs":57750,"fromSeat":"A_black","toSeat":"B_white","token":"have_P","text":"P coming","payload":{"piece":"P"}}
+{"type":"message","seq":562,"ts":57750,"deliverTs":57750,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e5d7 (-0.98)","payload":{"kind":"status","best":"e5d7","eval":-0.9834313197034812,"pv":["(e5d7,pass)","(e6d7,pass)","(e8d7,P@b7)","(N@c5,d6b7)"],"needs":[]}}
+{"type":"thinking","seq":563,"ts":57750,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9882854866189503,"depth":null}
+{"type":"move","seq":564,"ts":57750,"board":"B","seat":"B_white","uci":"B@b7","san":"B@b7+","isDrop":true,"capture":null,"fen":"k2r4/pBp2ppp/2Nn4/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Pqqrbbnnpp] b KQ - 1 31","clocks":{"A_white":90300,"A_black":91950,"B_white":91950,"B_black":90300}}
+{"type":"message","seq":565,"ts":57750,"deliverTs":57750,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan B@b7 (-0.99)","payload":{"kind":"status","best":"B@b7","eval":-0.9882854866189503,"pv":["(pass,B@b7)","(pass,d6b7)","(e5d7,pass)","(e6d7,pass)"],"needs":[]}}
+{"type":"thinking","seq":566,"ts":57750,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":567,"ts":57750,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":568,"ts":58850,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.9905530238496365,"depth":null}
+{"type":"move","seq":569,"ts":58850,"board":"A","seat":"A_white","uci":"e6d7","san":"exd7+","isDrop":false,"capture":"n","fen":"r3kb1r/1ppPp1pp/8/1p6/3P1p2/2P2Q2/PBPKBpPP/R4R2[QNNNP] b kq - 0 31","clocks":{"A_white":89200,"A_black":91950,"B_white":91950,"B_black":89200}}
+{"type":"pass","seq":570,"ts":58850,"fromBoard":"A","fromSeat":"A_white","toSeat":"B_black","piece":"n"}
+{"type":"thinking","seq":571,"ts":58850,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":0.9905530238496365,"depth":null}
+{"type":"move","seq":572,"ts":58850,"board":"B","seat":"B_black","uci":"d6b7","san":"Nxb7","isDrop":false,"capture":"B","fen":"k2r4/pnp2ppp/2N5/3p4/3P4/2BbPP2/PP3P1P/R3K2R[Pqqrbbnnnpp] w KQ - 0 32","clocks":{"A_white":89200,"A_black":91950,"B_white":91950,"B_black":89200}}
+{"type":"pass","seq":573,"ts":58850,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"B"}
+{"type":"thinking","seq":574,"ts":58850,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":575,"ts":58850,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":576,"ts":58850,"deliverTs":58850,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":60400}}
+{"type":"message","seq":577,"ts":58850,"deliverTs":58850,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9907841658635677,"pv":["(e8d7,pass)","(N@c5,pass)","(d7e8,pass)","(B@d7,pass)"],"needs":[]}}
+{"type":"thinking","seq":578,"ts":59400,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9907343758266696,"depth":null}
+{"type":"move","seq":579,"ts":59400,"board":"A","seat":"A_black","uci":"e8d7","san":"Kxd7","isDrop":false,"capture":"P","fen":"r4b1r/1ppkp1pp/8/1p6/3P1p2/2P2Q2/PBPKBpPP/R4R2[QBNNNP] w - - 0 32","clocks":{"A_white":89200,"A_black":91400,"B_white":91400,"B_black":89200}}
+{"type":"pass","seq":580,"ts":59400,"fromBoard":"A","fromSeat":"A_black","toSeat":"B_white","piece":"P"}
+{"type":"message","seq":581,"ts":59400,"deliverTs":59400,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e8d7 (-0.99)","payload":{"kind":"status","best":"e8d7","eval":-0.9907343758266696,"pv":["(e8d7,pass)","(N@c5,pass)","(d7e8,pass)","(B@d7,pass)"],"needs":[]}}
+{"type":"message","seq":582,"ts":59400,"deliverTs":59400,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":60950}}
+{"type":"message","seq":583,"ts":59400,"deliverTs":59400,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9909050891046406,"pv":["(pass,pass)","(N@c5,pass)","(d7e8,pass)","(B@d7,pass)"],"needs":[]}}
+{"type":"thinking","seq":584,"ts":59400,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":585,"ts":60500,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.9909228497262059,"depth":null}
+{"type":"move","seq":586,"ts":60500,"board":"A","seat":"A_white","uci":"N@c5","san":"N@c5+","isDrop":true,"capture":null,"fen":"r4b1r/1ppkp1pp/8/1pN5/3P1p2/2P2Q2/PBPKBpPP/R4R2[QBNNP] b - - 1 32","clocks":{"A_white":88100,"A_black":91400,"B_white":90300,"B_black":89200}}
+{"type":"thinking","seq":587,"ts":60500,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":588,"ts":60500,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":589,"ts":61050,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":590,"ts":61050,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9917213822375079,"depth":null}
+{"type":"move","seq":591,"ts":61050,"board":"B","seat":"B_white","uci":"P@e2","san":"@e2","isDrop":true,"capture":null,"fen":"k2r4/pnp2ppp/2N5/3p4/3P4/2BbPP2/PP2PP1P/R3K2R[Pqqrbbnnnpp] b KQ - 1 32","clocks":{"A_white":88100,"A_black":90850,"B_white":89750,"B_black":89200}}
+{"type":"message","seq":592,"ts":61050,"deliverTs":61050,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@e2 (-0.99)","payload":{"kind":"status","best":"P@e2","eval":-0.9917213822375079,"pv":["(pass,P@e2)","(pass,N@c2)","(pass,e1d2)","(pass,c2a1)"],"needs":[]}}
+{"type":"thinking","seq":593,"ts":61050,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9907909316960484,"depth":null}
+{"type":"move","seq":594,"ts":61050,"board":"A","seat":"A_black","uci":"d7e8","san":"Ke8","isDrop":false,"capture":null,"fen":"r3kb1r/1pp1p1pp/8/1pN5/3P1p2/2P2Q2/PBPKBpPP/R4R2[QBNNP] w - - 2 33","clocks":{"A_white":88100,"A_black":90850,"B_white":89750,"B_black":89200}}
+{"type":"message","seq":595,"ts":61050,"deliverTs":61050,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan d7e8 (-0.99)","payload":{"kind":"status","best":"d7e8","eval":-0.9907909316960484,"pv":["(d7e8,pass)","(Q@d7,pass)","(e8f7,pass)","(B@e6,pass)"],"needs":[]}}
+{"type":"thinking","seq":596,"ts":61050,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":597,"ts":61050,"seat":"A_white","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":598,"ts":62150,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9884080381352759,"depth":null}
+{"type":"move","seq":599,"ts":62150,"board":"B","seat":"B_black","uci":"N@c2","san":"N@c2+","isDrop":true,"capture":null,"fen":"k2r4/pnp2ppp/2N5/3p4/3P4/2BbPP2/PPn1PP1P/R3K2R[Pqqrbbnnpp] w KQ - 2 33","clocks":{"A_white":87000,"A_black":90850,"B_white":89750,"B_black":88100}}
+{"type":"thinking","seq":600,"ts":62150,"seat":"A_white","phase":"end","think_ms":1100,"nodes":0,"eval":0.9884080381352759,"depth":null}
+{"type":"move","seq":601,"ts":62150,"board":"A","seat":"A_white","uci":"Q@d7","san":"Q@d7+","isDrop":true,"capture":null,"fen":"r3kb1r/1ppQp1pp/8/1pN5/3P1p2/2P2Q2/PBPKBpPP/R4R2[BNNP] b - - 3 33","clocks":{"A_white":87000,"A_black":90850,"B_white":89750,"B_black":88100}}
+{"type":"thinking","seq":602,"ts":62150,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":603,"ts":62150,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":604,"ts":62150,"deliverTs":62150,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":63700}}
+{"type":"message","seq":605,"ts":62150,"deliverTs":62150,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9908201848740933,"pv":["(pass,e1d2)","(pass,N@c4)","(pass,d2c1)","(pass,c2a1)"],"needs":[]}}
+{"type":"thinking","seq":606,"ts":62700,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9907298342226818,"depth":null}
+{"type":"move","seq":607,"ts":62700,"board":"B","seat":"B_white","uci":"e1d2","san":"Kd2","isDrop":false,"capture":null,"fen":"k2r4/pnp2ppp/2N5/3p4/3P4/2BbPP2/PPnKPP1P/R6R[Pqqrbbnnpp] b - - 3 33","clocks":{"A_white":87000,"A_black":90300,"B_white":89200,"B_black":88100}}
+{"type":"message","seq":608,"ts":62700,"deliverTs":62700,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan e1d2 (-0.99)","payload":{"kind":"status","best":"e1d2","eval":-0.9907298342226818,"pv":["(pass,e1d2)","(pass,N@c4)","(pass,d2c1)","(pass,c2a1)"],"needs":[]}}
+{"type":"message","seq":609,"ts":62700,"deliverTs":62700,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":64250}}
+{"type":"message","seq":610,"ts":62700,"deliverTs":62700,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9909317152764348,"pv":["(pass,pass)","(pass,N@c4)","(pass,d2c1)","(pass,c2a1)"],"needs":[]}}
+{"type":"thinking","seq":611,"ts":62700,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":612,"ts":63800,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9896336486746412,"depth":null}
+{"type":"move","seq":613,"ts":63800,"board":"B","seat":"B_black","uci":"N@c4","san":"N@c4+","isDrop":true,"capture":null,"fen":"k2r4/pnp2ppp/2N5/3p4/2nP4/2BbPP2/PPnKPP1P/R6R[Pqqrbbnpp] w - - 4 34","clocks":{"A_white":87000,"A_black":89200,"B_white":89200,"B_black":87000}}
+{"type":"thinking","seq":614,"ts":63800,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":615,"ts":63800,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":616,"ts":64350,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":617,"ts":64350,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.992463948810636,"depth":null}
+{"type":"move","seq":618,"ts":64350,"board":"A","seat":"A_black","uci":"e8f7","san":"Kf7","isDrop":false,"capture":null,"fen":"r4b1r/1ppQpkpp/8/1pN5/3P1p2/2P2Q2/PBPKBpPP/R4R2[BNNP] w - - 4 34","clocks":{"A_white":87000,"A_black":88650,"B_white":88650,"B_black":87000}}
+{"type":"message","seq":619,"ts":64350,"deliverTs":64350,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan e8f7 (-0.99)","payload":{"kind":"status","best":"e8f7","eval":-0.992463948810636,"pv":["(e8f7,d2d3)","(N@e5,B@f5)","(f7g8,P@e4)","(B@f7,d5e4)"],"needs":[]}}
+{"type":"thinking","seq":620,"ts":64350,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9910460798357027,"depth":null}
+{"type":"move","seq":621,"ts":64350,"board":"B","seat":"B_white","uci":"d2d3","san":"Kxd3","isDrop":false,"capture":"b","fen":"k2r4/pnp2ppp/2N5/3p4/2nP4/2BKPP2/PPn1PP1P/R6R[Pqqrbbnpp] b - - 0 34","clocks":{"A_white":87000,"A_black":88650,"B_white":88650,"B_black":87000}}
+{"type":"pass","seq":622,"ts":64350,"fromBoard":"B","fromSeat":"B_white","toSeat":"A_black","piece":"b"}
+{"type":"message","seq":623,"ts":64350,"deliverTs":64350,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan d2d3 (-0.99)","payload":{"kind":"status","best":"d2d3","eval":-0.9910460798357027,"pv":["(pass,d2d3)","(pass,B@g6)","(pass,P@e4)","(pass,d5e4)"],"needs":[]}}
+{"type":"thinking","seq":624,"ts":64350,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":625,"ts":64350,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":626,"ts":65450,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":0.9925878379276859,"depth":null}
+{"type":"move","seq":627,"ts":65450,"board":"A","seat":"A_white","uci":"N@g5","san":"N@g5+","isDrop":true,"capture":null,"fen":"r4b1r/1ppQpkpp/8/1pN3N1/3P1p2/2P2Q2/PBPKBpPP/R4R2[BNPb] b - - 5 34","clocks":{"A_white":85900,"A_black":88650,"B_white":88650,"B_black":85900}}
+{"type":"thinking","seq":628,"ts":65450,"seat":"B_black","phase":"end","think_ms":1100,"nodes":0,"eval":0.9925878379276859,"depth":null}
+{"type":"move","seq":629,"ts":65450,"board":"B","seat":"B_black","uci":"B@g6","san":"B@g6+","isDrop":true,"capture":null,"fen":"k2r4/pnp2ppp/2N3b1/3p4/2nP4/2BKPP2/PPn1PP1P/R6R[Pqqrbnpp] w - - 1 35","clocks":{"A_white":85900,"A_black":88650,"B_white":88650,"B_black":85900}}
+{"type":"thinking","seq":630,"ts":65450,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":631,"ts":65450,"seat":"B_white","active":true,"reason":"time_advantage"}
+{"type":"message","seq":632,"ts":65450,"deliverTs":65450,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":67000}}
+{"type":"message","seq":633,"ts":65450,"deliverTs":65450,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9941388341010834,"pv":["(f7g6,pass)","(f3h5,pass)","(pass,P@e4)","(pass,d5e4)"],"needs":[]}}
+{"type":"thinking","seq":634,"ts":66000,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-0.9939768276784001,"depth":null}
+{"type":"move","seq":635,"ts":66000,"board":"A","seat":"A_black","uci":"f7g6","san":"Kg6","isDrop":false,"capture":null,"fen":"r4b1r/1ppQp1pp/6k1/1pN3N1/3P1p2/2P2Q2/PBPKBpPP/R4R2[BNPb] w - - 6 35","clocks":{"A_white":85900,"A_black":88100,"B_white":88100,"B_black":85900}}
+{"type":"message","seq":636,"ts":66000,"deliverTs":66000,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan f7g6 (-0.99)","payload":{"kind":"status","best":"f7g6","eval":-0.9939768276784001,"pv":["(f7g6,pass)","(f3h5,pass)","(pass,P@e4)","(pass,d5e4)"],"needs":[]}}
+{"type":"message","seq":637,"ts":66000,"deliverTs":66000,"fromSeat":"B_white","toSeat":"A_black","token":"stall","text":"sitting","payload":{"deadlineTs":67550}}
+{"type":"message","seq":638,"ts":66000,"deliverTs":66000,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9935431870090495,"pv":["(pass,pass)","(f3h5,pass)","(pass,P@e4)","(pass,d5e4)"],"needs":[]}}
+{"type":"thinking","seq":639,"ts":66000,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":640,"ts":67100,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":1.0,"depth":null}
+{"type":"move","seq":641,"ts":67100,"board":"A","seat":"A_white","uci":"f3h5","san":"Qh5+","isDrop":false,"capture":null,"fen":"r4b1r/1ppQp1pp/6k1/1pN3NQ/3P1p2/2P5/PBPKBpPP/R4R2[BNPb] b - - 7 35","clocks":{"A_white":84800,"A_black":88100,"B_white":87000,"B_black":85900}}
+{"type":"thinking","seq":642,"ts":67100,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":643,"ts":67100,"seat":"A_black","active":true,"reason":"time_advantage"}
+{"type":"message","seq":644,"ts":67100,"deliverTs":67100,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":68650}}
+{"type":"message","seq":645,"ts":67100,"deliverTs":67100,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.994192406897449,"pv":["(pass,P@e4)","(pass,d5e4)","(pass,d3c2)","(pass,P@d3)"],"needs":[]}}
+{"type":"stall","seq":646,"ts":67650,"seat":"B_white","active":false,"reason":null}
+{"type":"thinking","seq":647,"ts":67650,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9939008883981335,"depth":null}
+{"type":"move","seq":648,"ts":67650,"board":"B","seat":"B_white","uci":"P@e4","san":"@e4","isDrop":true,"capture":null,"fen":"k2r4/pnp2ppp/2N3b1/3p4/2nPP3/2BKPP2/PPn1PP1P/R6R[qqrbnpp] b - - 2 35","clocks":{"A_white":84800,"A_black":87550,"B_white":86450,"B_black":85900}}
+{"type":"message","seq":649,"ts":67650,"deliverTs":67650,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan P@e4 (-0.99)","payload":{"kind":"status","best":"P@e4","eval":-0.9939008883981335,"pv":["(pass,P@e4)","(pass,d5e4)","(pass,f3e4)","(pass,g6e4)"],"needs":[]}}
+{"type":"message","seq":650,"ts":67650,"deliverTs":67650,"fromSeat":"A_black","toSeat":"B_white","token":"stall","text":"sitting","payload":{"deadlineTs":69200}}
+{"type":"message","seq":651,"ts":67650,"deliverTs":67650,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan sit (-0.99)","payload":{"kind":"status","best":null,"eval":-0.9936156772760019,"pv":["(pass,pass)","(pass,d5e4)","(pass,f3e4)","(pass,g6e4)"],"needs":[]}}
+{"type":"thinking","seq":652,"ts":67650,"seat":"B_black","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":653,"ts":68750,"seat":"B_black","phase":"end","think_ms":1100,"nodes":200,"eval":0.9952552139492125,"depth":null}
+{"type":"move","seq":654,"ts":68750,"board":"B","seat":"B_black","uci":"c2a1","san":"Nxa1","isDrop":false,"capture":"R","fen":"k2r4/pnp2ppp/2N3b1/3p4/2nPP3/2BKPP2/PP2PP1P/n6R[qqrbnpp] w - - 0 36","clocks":{"A_white":84800,"A_black":86450,"B_white":86450,"B_black":84800}}
+{"type":"pass","seq":655,"ts":68750,"fromBoard":"B","fromSeat":"B_black","toSeat":"A_white","piece":"R"}
+{"type":"thinking","seq":656,"ts":68750,"seat":"A_black","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"thinking","seq":657,"ts":68750,"seat":"B_white","phase":"start","think_ms":550,"nodes":100,"eval":null,"depth":null}
+{"type":"stall","seq":658,"ts":69300,"seat":"A_black","active":false,"reason":null}
+{"type":"thinking","seq":659,"ts":69300,"seat":"A_black","phase":"end","think_ms":550,"nodes":100,"eval":-1.0,"depth":null}
+{"type":"move","seq":660,"ts":69300,"board":"A","seat":"A_black","uci":"g6f6","san":"Kf6","isDrop":false,"capture":null,"fen":"r4b1r/1ppQp1pp/5k2/1pN3NQ/3P1p2/2P5/PBPKBpPP/R4R2[RBNPb] w - - 8 36","clocks":{"A_white":84800,"A_black":85900,"B_white":85900,"B_black":84800}}
+{"type":"message","seq":661,"ts":69300,"deliverTs":69300,"fromSeat":"A_black","toSeat":"B_white","token":"ok","text":"plan g6f6 (-1.00)","payload":{"kind":"status","best":"g6f6","eval":-1.0,"pv":["(g6f6,h2h4)","(d7e6,Q@c2)"],"needs":[]}}
+{"type":"thinking","seq":662,"ts":69300,"seat":"B_white","phase":"end","think_ms":550,"nodes":100,"eval":-0.9957227335459716,"depth":null}
+{"type":"move","seq":663,"ts":69300,"board":"B","seat":"B_white","uci":"c6b4","san":"Nb4","isDrop":false,"capture":null,"fen":"k2r4/pnp2ppp/6b1/3p4/1NnPP3/2BKPP2/PP2PP1P/n6R[qqrbnpp] b - - 1 36","clocks":{"A_white":84800,"A_black":85900,"B_white":85900,"B_black":84800}}
+{"type":"message","seq":664,"ts":69300,"deliverTs":69300,"fromSeat":"B_white","toSeat":"A_black","token":"ok","text":"plan c6b4 (-1.00)","payload":{"kind":"status","best":"c6b4","eval":-0.9957227335459716,"pv":["(pass,c6b4)","(pass,Q@b5)","(pass,a2a4)","(pass,b5a4)"],"needs":[]}}
+{"type":"thinking","seq":665,"ts":69300,"seat":"A_white","phase":"start","think_ms":1100,"nodes":200,"eval":null,"depth":null}
+{"type":"thinking","seq":666,"ts":69300,"seat":"B_black","phase":"start","think_ms":1100,"nodes":0,"eval":null,"depth":null}
+{"type":"thinking","seq":667,"ts":70400,"seat":"A_white","phase":"end","think_ms":1100,"nodes":200,"eval":1.0,"depth":null}
+{"type":"move","seq":668,"ts":70400,"board":"A","seat":"A_white","uci":"c5e4","san":"Nce4#","isDrop":false,"capture":null,"fen":"r4b1r/1ppQp1pp/5k2/1p4NQ/3PNp2/2P5/PBPKBpPP/R4R2[RBNPb] b - - 9 36","clocks":{"A_white":83700,"A_black":85900,"B_white":85900,"B_black":83700}}
+{"type":"game_end","seq":669,"ts":70400,"result":"T1","reason":"checkmate","board":"A","loserSeat":"A_black"}
