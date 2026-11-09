@@ -74,8 +74,10 @@ def test_schedule_pairs_swap_sides_and_hold_out_eval_openings():
 
 def test_unbuildable_kinds_reported_and_validation():
     pool = Pool.from_dict(pool_dict())
-    pool.add_snapshot("it01", "ckpt/it01.pt")  # kind "agent" has no player yet
-    assert unbuildable(make_schedule(pool, 10)) == ["it01 (kind agent)"]
+    pool.add_snapshot("it01", "ckpt/it01.pt")  # kind "agent" is the Phase 1 scheduler
+    assert unbuildable(make_schedule(pool, 10)) == []
+    pool.add_snapshot("it02", "ckpt/it02.pt", kind="mystery")
+    assert unbuildable(make_schedule(pool, 10)) == ["it02 (kind mystery)"]
     with pytest.raises(ValueError, match="unique"):
         Pool.from_dict(pool_dict(opponents=[{"name": "a", "setup": "silent", "group": "target"},
                                             {"name": "a", "setup": "silent", "group": "variant"}]))

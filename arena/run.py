@@ -61,8 +61,8 @@ def build_team_players(teams: dict, *, seed: int) -> tuple[dict, list]:
     players: dict = {}
     for i, team in enumerate(("T1", "T2")):
         t = teams[team]
-        players.update(team_players(team, t["setup"], t["kind"], seed=seed + i, nodes=t["nodes"],
-                                    **(t.get("player_kw") or {})))
+        kw = {**(t.get("player_kw") or {}), **({"path": t["path"]} if t.get("path") else {})}
+        players.update(team_players(team, t["setup"], t["kind"], seed=seed + i, nodes=t["nodes"], **kw))
     return players, list({id(p): p for p in players.values()}.values())
 
 

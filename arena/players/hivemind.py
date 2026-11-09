@@ -319,6 +319,31 @@ def _pv_needs(pv: list[tuple[str, str]], board: str, fen: str) -> list[str]:
     return out
 
 
+def pv_offers(pv: list[tuple[str, str]], board: str, fen: str) -> list[tuple[str, int]]:
+    """Pieces our side captures on ``board`` in the PV, as (letter, plies from now), earliest first and
+    one entry per letter. These can be offered to the partner. A captured promoted piece counts as a
+    pawn, as it does in the pocket. Drops are replayed even if the piece is not in the pocket yet."""
+    b = parse_board(fen)
+    color = b.turn
+    out: dict[str, int] = {}
+    for i, (ma, mb) in enumerate(pv):
+        mv = ma if board == "A" else mb
+        if not mv:
+            continue
+        b.turn = color if i % 2 == 0 else not color
+        move = chess.Move.from_uci(mv)
+        if i % 2 == 0 and not move.drop:
+            target = chess.square(chess.square_file(move.to_square), chess.square_rank(move.from_square)) \
+                if b.is_en_passant(move) else move.to_square
+            pt = b.piece_type_at(target)
+            if pt is not None and b.color_at(target) != color:
+                out.setdefault("P" if b.promoted & chess.BB_SQUARES[target] else LETTER.get(pt, "K"), i)
+        if move.drop:
+            b.pockets[b.turn].add(move.drop)
+        b.push(move)
+    return sorted(out.items(), key=lambda kv: kv[1])
+
+
 class HivemindPlayer:
     """One seat driven by one engine process (independent setups). The engine searches joint actions
     over both boards for the seat's team; we play only the entry for our own board. A ``pass`` there

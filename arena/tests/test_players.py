@@ -19,6 +19,7 @@ from arena.players import (
     SearchResult,
     hivemind_available,
     make_players,
+    pv_offers,
     team_time_edge,
 )
 
@@ -326,3 +327,34 @@ def test_hivemind_player_borrows_idle_partner_machine():
     assert not d.borrow and d.nodes == 100 and d.think_ms == 1000 and stub.calls[-1]["nodes"] == 100
     p_off = HivemindPlayer("A_white", stub, nodes=100, ms_per_node=10.0)
     assert not p_off.decide(replace(obs, partner_machine_free=True)).borrow
+
+
+# ---------------------------------------------------------------------------------------------- pv_offers
+
+def test_pv_offers_finds_our_captures_with_their_distance():
+    # Board A, white to move: Nf3 (ours), d5 (theirs), exd5 takes a pawn two plies from now.
+    fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[] w KQkq - 0 1"
+    pv = [("g1f3", None), ("d7d5", None), ("e4d5", None)]
+    assert pv_offers(pv, "A", fen) == [("P", 2)]
+
+
+def test_pv_offers_reads_only_our_board_and_ignores_their_captures():
+    fen = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR[] b KQkq - 0 1"
+    pv = [("d5e4", "e2e4"), ("b1c3", "d7d5"), ("g8f6", "e4d5")]
+    assert pv_offers(pv, "A", fen) == [("P", 0)]             # black's own capture, right now
+    fen_b = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+    assert pv_offers(pv, "B", fen_b) == [("P", 2)]           # the e4d5 entry is our third, board B
+
+
+def test_pv_offers_keeps_earliest_per_piece_and_replays_drops():
+    fen = "4k3/8/8/3n4/8/2N5/8/4K3[] w - - 0 1"
+    # The knight on c3 takes d5 at once; a dropped queen on e7 is replayed without being in the pocket.
+    pv = [("c3d5", None), ("e8d7", None), ("Q@e7", None)]
+    assert pv_offers(pv, "A", fen) == [("N", 0)]
+
+
+def test_pv_offers_counts_en_passant_and_promoted_pieces_as_pawns():
+    ep = "4k3/8/8/3pP3/8/8/8/4K3[] w - d6 0 1"
+    assert pv_offers([("e5d6", None)], "A", ep) == [("P", 0)]
+    promoted = "4k3/8/8/3q~4/4P3/8/8/4K3[] w - - 0 1"
+    assert pv_offers([("e4d5", None)], "A", promoted) == [("P", 0)]

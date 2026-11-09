@@ -36,7 +36,8 @@ search (twice the nodes, same think time): what a split team gains when one team
 For the heuristic kind there are no nodes; think time follows the same complexity/clock formula in all
 setups, so the setups differ only in information and coordination.
 
-``kind="random"`` ignores the setup (all seats random; useful for tests).
+``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
+scheduler (setup ``"sharing"`` only); ``path`` names its checkpoint.
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ from arena.players.hivemind import (
 from arena.players.random_player import RandomPlayer
 
 SETUPS = ("centralized", "silent", "sharing")
-KINDS = ("random", "heuristic", "hivemind")
+KINDS = ("random", "heuristic", "hivemind", "agent")
 COMPUTE_MODELS = ("throughput", "nodes")
 
 
@@ -97,6 +98,11 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         comm = "none" if setup == "silent" else "share"
         return {s: HivemindPlayer(s, HivemindProcess(binary, model, **pkw), nodes=half, ms_per_node=ms,
                                   comm=comm, lend=lend, **skw) for s in seats}
+
+    if kind == "agent":  # imported here so that only agent games need torch
+        from arena.players.scheduler_player import agent_team
+
+        return agent_team(team, setup, seed=seed, nodes=nodes, **kw)
 
     raise ValueError(f"unknown kind {kind!r}; expected one of {KINDS}")
 

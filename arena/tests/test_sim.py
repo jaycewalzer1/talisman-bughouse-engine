@@ -505,3 +505,41 @@ def test_simulator_starts_at_forked_state_time():
     assert ev[0]["ts"] == 5000 and ev[0]["clocks"]["A_white"] == 55000
     first = of(ev, "move")[0]
     assert first["ts"] == 5100 and first["clocks"]["A_white"] == 54900
+
+
+# ---------------------------------------------------------------------------------------------- phase 1 waits
+
+def test_open_ended_wait_is_asked_again_every_5s():
+    scripts = {"A_white": lambda obs: wait(5000), "A_black": lambda obs: wait(5000),
+               "B_white": lambda obs: wait(5000), "B_black": lambda obs: wait(5000)}
+    sim, players, _ = make(FakeState(base_ms=16_000), scripts)
+    sim.run()
+    assert [o.now_ms for o in players["A_white"].observations] == [0, 5000, 10000, 15000]
+
+
+def test_piece_arrival_ends_the_wait_right_away():
+    # A_white waits for a knight. B_black captures one at 2000 ms: A_white is asked again at that moment,
+    # with the knight already in its pocket, and does not sit out the rest of its 5 s.
+    def a_white(obs):
+        if "N@e4" in obs.legal_moves:
+            return mv("N@e4", 0)
+        return wait(5000)
+
+    scripts = {"A_white": a_white, "B_white": [mv("a2a3", 1000)], "B_black": [mv("xn", 1000)]}
+    sim, players, _ = make(FakeState(captures={"xn": "n"}, extra={"B_black": ["xn"]}), scripts, max_plies=3)
+    sim.run()
+    assert of(sim.events, "pass", toSeat="A_white")[0]["ts"] == 2000
+    assert of(sim.events, "move", seat="A_white")[0]["uci"] == "N@e4"
+    assert of(sim.events, "move", seat="A_white")[0]["ts"] == 2000
+
+
+def test_partner_message_interrupts_an_open_ended_wait():
+    msg = Message("B_black", "A_white", "have_N", 0, payload={"piece": "N", "plies": 2})
+    scripts = {"A_white": lambda obs: wait(5000), "B_white": [mv("a2a3", 1000)],
+               "B_black": [mv("a2a3", 500, messages=(msg,))], "A_black": lambda obs: wait(5000)}
+    sim, players, _ = make(FakeState(base_ms=3000), scripts)
+    sim.run()
+    asked = players["A_white"].observations
+    delivered = [o for o in asked if o.inbox]
+    assert delivered and delivered[0].now_ms == 1500
+    assert delivered[0].inbox[0].payload["plies"] == 2

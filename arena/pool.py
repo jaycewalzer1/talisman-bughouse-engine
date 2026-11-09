@@ -148,6 +148,10 @@ class _SmoothRR:
         return best
 
 
+def _compute_kind(kind: str) -> str:
+    return "hivemind" if kind == "agent" else kind  # an agent spends the same engine nodes as stock Hivemind
+
+
 def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "train", base_ms: int = 60000,
                   increment_ms: int = 0, channel_delay_ms: int = 0, max_plies: int = 400) -> list[dict]:
     """2 * n_pairs game specs (each opening pair twice, teams swapped), opponents rotated by group share."""
@@ -170,7 +174,7 @@ def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "t
             specs.append({
                 "index": i + 1, "game_id": f"p{i + 1:05d}", "pair_index": k,
                 "contender_team": contender_team, "contender": c.name, "opponent": opp.name, "group": group,
-                "equal_compute": opp.kind == c.kind and opp.nodes == c.nodes,
+                "equal_compute": _compute_kind(opp.kind) == _compute_kind(c.kind) and opp.nodes == c.nodes,
                 "opening_id": pair.id, "opening": pair.name, "fens": pair.fens, "openings": openings, "swap": swap,
                 "teams": {contender_team: c.team_dict(), opp_team: opp.team_dict()},
                 "t1_setup": (opp if swap else c).setup, "t2_setup": (c if swap else opp).setup,

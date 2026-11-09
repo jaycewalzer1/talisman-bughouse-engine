@@ -9,6 +9,7 @@ from arena.players.hivemind import (
     HivemindTeamController,
     SearchResult,
     hivemind_available,
+    pv_offers,
     measure_ms_per_node,
 )
 from arena.players.random_player import RandomPlayer
@@ -26,6 +27,7 @@ __all__ = [
     "SearchResult",
     "MS_PER_NODE",
     "hivemind_available",
+    "pv_offers",
     "measure_ms_per_node",
     "make_players",
     "team_players",
