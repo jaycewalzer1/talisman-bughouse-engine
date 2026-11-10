@@ -2,12 +2,14 @@
 // camera, so it works the same in broadcast and orbit modes. The night sky dome sits outside the
 // shaking group (it follows the camera), and the fog colour matches the sky's horizon so distant
 // geometry melts into it.
-import { useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useLayoutEffect, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import type { Group } from 'three'
 import { useEventDirector } from './director'
 import { fx } from './viewStore'
-import { STYLE } from './style.config'
+import { fxBus } from './fxBus'
+import { useGame } from '../../store/gameStore'
+import { RETRO, STYLE } from './style.config'
 import { Sky } from './environment/Sky'
 import { Street } from './environment/Street'
 import { Walls } from './environment/Walls'
@@ -23,10 +25,24 @@ import { Clocks } from './board/Clocks'
 import { Characters } from './characters/Characters'
 import { SprayWall } from './graffiti/SprayWall'
 import { CameraRig } from './camera/CameraRig'
+import { bakeWorldLighting } from './environment/bakeLighting'
+
+/** Dev only: lets scripts/shot-3d.mjs aim the camera and fire events at the view. */
+function DevHook() {
+  const get = useThree(s => s.get)
+  useLayoutEffect(() => {
+    const w = window as unknown as { __three3d?: unknown; __fxBus?: unknown; __game?: unknown }
+    w.__three3d = get; w.__fxBus = fxBus; w.__game = useGame
+  }, [get])
+  return null
+}
 
 export function Scene() {
   useEventDirector()
   const world = useRef<Group>(null)
+  const set = useRef<Group>(null)   // everything that never moves: gets lighting baked into it
+
+  useLayoutEffect(() => { if (RETRO && set.current) bakeWorldLighting(set.current) }, [])
 
   useFrame((_, dt) => {
     const g = world.current; if (!g) return
@@ -39,18 +55,21 @@ export function Scene() {
     <>
       <color attach="background" args={[STYLE.world.fogColor]} />
       <fog attach="fog" args={[STYLE.world.fogColor, STYLE.world.fogNear, STYLE.world.fogFar]} />
+      {import.meta.env.DEV && <DevHook />}
       <Sky />
       <CameraRig />
       <group ref={world}>
         <Lights />
-        <Street />
-        <Walls />
-        <Fence />
-        <Tracks />
+        <group ref={set}>
+          <Street />
+          <Walls />
+          <Fence />
+          <Tracks />
+          <Props />
+          <SetDressing />
+          <Tables />
+        </group>
         <Train />
-        <Props />
-        <SetDressing />
-        <Tables />
         <Pieces />
         <Clocks />
         <Characters />

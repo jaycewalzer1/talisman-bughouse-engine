@@ -5,7 +5,7 @@
 // with a cool violet tint (team-agnostic). No shadow maps.
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { AdditiveBlending, Euler, InstancedMesh, Matrix4, Mesh, PlaneGeometry, Quaternion, Vector3 } from 'three'
+import { AdditiveBlending, Color, Euler, InstancedMesh, Matrix4, Mesh, PlaneGeometry, Quaternion, Vector3 } from 'three'
 import { fenGrid, type BoardId } from '../../../events/types'
 import { useGame } from '../../../store/gameStore'
 import { BOARD_ROT, BOARD_Y, reserveSlot, squareWorld } from '../layout'
@@ -15,7 +15,8 @@ import { grabBus } from '../grab/grabChoreo'
 import { onFxReset, onGameEvent } from '../director'
 import { retroMaterial } from '../materials/retroMaterial'
 import { outlineMaterial, withOutline } from '../materials/outline'
-import { STYLE } from '../style.config'
+import { RETRO, STYLE } from '../style.config'
+import { wornPieceTexture } from '../environment/textures'
 
 const CAP = 48
 const POOL = 14
@@ -31,7 +32,10 @@ function grid(fen: string) {
 const jitter = (i: number) => (((i * 2654435761) >>> 0) % 1000) / 1000 - 0.5
 
 export function Pieces() {
-  const mats = useMemo(() => ({
+  const mats = useMemo(() => RETRO ? {
+    w: retroMaterial({ map: wornPieceTexture(true), color: new Color(1.5, 1.45, 1.32), chrome: 0.12 }),
+    b: retroMaterial({ map: wornPieceTexture(false), color: '#c8b8c0', chrome: 0.3 }),
+  } : ({
     w: retroMaterial({ color: '#efe6d2', chrome: 0.3 }),
     b: retroMaterial({ color: '#4a3a5e', chrome: 0.35 }),
   }), [])

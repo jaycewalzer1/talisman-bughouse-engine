@@ -7,7 +7,7 @@
 // any reaction for that seat in the last 300 ms, and the same reaction for the same seat is never
 // started twice within 300 ms (whichever source fires first wins).
 // To swap in a glTF/Mixamo rig, change `Rig` below (see README).
-import { useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Vector3 } from 'three'
 import { BOARD_OF, PARTNER, SEATS, TEAM_OF, type GameEvent, type Seat, type TeamId } from '../../../events/types'
@@ -25,6 +25,7 @@ import { REACTION_DUR, REACTION_PRIORITY } from './poses'
 import { SPECS } from './specs'
 import { NameTag } from './NameTag'
 import { PortraitCapture } from './portraits'
+import { RETRO } from '../style.config'
 
 const Rig: CharacterRig = ProceduralCharacter
 const MOVE_LINGER = 0.3
@@ -97,7 +98,8 @@ function useReactionFeeds() {
       switch (e.kind) {
         case 'reaction': trigger(e.seat, e.reaction, 'fx'); break
         case 'capture': trigger(e.seat, 'fistPump', 'fx'); trigger(e.victim, 'headInHands', 'fx'); break
-        case 'talk': trigger(e.seat, 'talk', 'fx'); break
+        // asking for a piece gets its own gesture toward the partner
+        case 'talk': trigger(e.seat, RETRO && e.token.startsWith('need_') ? 'request' : 'talk', 'fx'); break
         case 'gameEnd': endReactions(e.result, 'fx'); break
       }
     })
@@ -111,8 +113,13 @@ function useReactionFeeds() {
 
 // ---------------------------------------------------------------------------------------------
 
+/** Dev only (?lineup=1&source=live): stands all four in a row facing the camera, for checking the look. */
+const LINEUP = import.meta.env.DEV && new URLSearchParams(window.location.search).has('lineup')
+
 function Player({ seat, index }: { seat: Seat; index: number }) {
-  const { pos, rotY } = useMemo(() => seatPose(seat), [seat])
+  const { pos, rotY } = useMemo(() => LINEUP
+    ? { pos: new Vector3(-1.5 + index, 0, 2.4), rotY: 0 }
+    : seatPose(seat), [seat, index])
   const driver = useRef<CharacterDriver>({
     state: 'idle', since: 0, pressure: 0, lookYaw: 0, reach: null, seed: index * 1.7,
     reaction: null, reactionAt: 0, pending: null, pendingAt: 0, trick: winTrickOf(seat),
@@ -161,7 +168,9 @@ function Player({ seat, index }: { seat: Seat; index: number }) {
 
   return (
     <group position={pos} rotation-y={rotY}>
-      <Rig seat={seat} spec={SPECS[seat]} driver={driver} teamColor={TEAM_COLOR[TEAM_OF[seat]]} />
+      <Suspense fallback={null}>
+        <Rig seat={seat} spec={SPECS[seat]} driver={driver} teamColor={TEAM_COLOR[TEAM_OF[seat]]} />
+      </Suspense>
       <NameTag seat={seat} height={2.08 * SPECS[seat].height} />
     </group>
   )

@@ -4,11 +4,11 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, type ThreeElements } from '@react-three/fiber'
 import { CatmullRomCurve3, Color, type Group, Vector3 } from 'three'
-import { STYLE } from '../style.config'
+import { RETRO, STYLE } from '../style.config'
 import { retroMaterial } from '../materials/retroMaterial'
 import { WALL_Z } from '../layout'
 import {
-  awningTexture, bodegaSignTexture, bodegaWindowTexture, boomboxTexture, deckTexture, gripTexture, stickerTexture,
+  awningTexture, bodegaSignTexture, bodegaWindowTexture, boomboxTexture, crackedConcreteTexture, deckTexture, gripTexture, stickerTexture,
 } from './textures'
 import { BlobShadow, BlobShadows, LightPool } from './BlobShadow'
 import { StaticInstances, type InstanceXform } from './StaticInstances'
@@ -196,7 +196,8 @@ const bulbMat = retroMaterial({ unlit: true, color: new Color(GLOW * 0.8, GLOW *
 const wireMat = retroMaterial({ color: '#121212' })
 
 function StringLights() {
-  const strings = useMemo(() => [bulbString(-4.5, 4.5, 2.25, 0.9, 0), bulbString(-4.5, 4.5, -3.25, 0.7, 2)], [])
+  // (retro: only the string by the wall; the other hangs right in front of the default camera)
+  const strings = useMemo(() => RETRO ? [bulbString(-4.5, 4.5, -3.25, 0.7, 2)] : [bulbString(-4.5, 4.5, 2.25, 0.9, 0), bulbString(-4.5, 4.5, -3.25, 0.7, 2)], [])
   const bulbs = useMemo(() => strings.flatMap(s => s.bulbs), [strings])
   return (
     <group>
@@ -212,12 +213,70 @@ function StringLights() {
   )
 }
 
+// ---------------------------------------------------------------- mid-2000s additions
+/** A deck stood on its tail and leaned back against the wall, art side out. */
+function LeaningDeck({ seed, x }: { seed: number; x: number }) {
+  return (
+    <group position={[x, 0.41, WALL_Z + 0.2 + 0.09]} rotation-x={-0.2}>
+      <group rotation-y={-Math.PI / 2}>
+        <group rotation-z={Math.PI / 2}>
+          <Skateboard seed={seed} position={[0, -0.05, 0]} />
+        </group>
+      </group>
+    </group>
+  )
+}
+
+const ledgeMat = RETRO ? retroMaterial({ map: crackedConcreteTexture(), repeat: [3.2, 0.4] }) : null
+const ledgeEdge = retroMaterial({ color: '#77736c', chrome: 0.18 })    // waxed, grinded steel edge
+const stoolTop = retroMaterial({ color: '#7a2a24', chrome: 0.3 })
+const stoolLeg = retroMaterial({ color: '#6c6c6a', chrome: 0.4 })
+
+function Ledge({ x, len }: { x: number; len: number }) {
+  return (
+    <group position={[x, 0, -3.42]}>
+      <mesh position={[0, 0.25, 0]} material={ledgeMat!}><boxGeometry args={[len, 0.5, 0.55]} /></mesh>
+      <mesh position={[0, 0.505, 0.27]} material={ledgeEdge} userData={{ noOcclude: true }}><boxGeometry args={[len, 0.018, 0.018]} /></mesh>
+      <BlobShadow radius={0.4} stretch={len / 0.8} opacity={0.5} />
+    </group>
+  )
+}
+
+function Stool({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.46, 0]} material={stoolTop}><cylinderGeometry args={[0.17, 0.17, 0.05, 10]} /></mesh>
+      {[0, 2.09, 4.19].map(a => (
+        <mesh key={a} position={[Math.cos(a) * 0.1, 0.22, Math.sin(a) * 0.1]} rotation={[Math.sin(a) * 0.14, 0, -Math.cos(a) * 0.14]} material={stoolLeg} userData={{ noOcclude: true }}>
+          <cylinderGeometry args={[0.012, 0.012, 0.46, 5]} />
+        </mesh>
+      ))}
+      <BlobShadow radius={0.22} opacity={0.5} />
+    </group>
+  )
+}
+
+function RetroExtras() {
+  return (
+    <>
+      <Ledge x={1.6} len={4.4} />
+      <LeaningDeck seed={3} x={-2.1} />
+      <LeaningDeck seed={4} x={-1.72} />
+      <LeaningDeck seed={5} x={-1.28} />
+      <Stool position={[-3.1, 0, -1.25]} />
+      <Stool position={[3.15, 0, 1.05]} />
+      <BlobShadows opacity={0.4} items={[{ x: -2.1, z: -3.9, r: 0.2 }, { x: -1.72, z: -3.9, r: 0.2 }, { x: -1.28, z: -3.9, r: 0.2 }]} />
+    </>
+  )
+}
+
 export function SetDressing() {
   return (
     <group>
       <Bodega />
       <Rail />
       <Boombox />
+      {RETRO && <RetroExtras />}
       <Skateboard seed={1} position={[-0.6, 0, 2.95]} rotation-y={0.5} />
       <Skateboard seed={2} position={[-3.95, 0.1, 1.05]} rotation={[Math.PI, 0.3, 0]} />
       <StaticInstances items={CANS} material={canMat}>

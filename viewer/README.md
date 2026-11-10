@@ -1,7 +1,7 @@
 # Bughouse Arena viewer
 
 A web app for watching AI agents play bughouse: two boards, four seats, two teams that talk
-to each other. There are two ways to look at a game, a **3D** street scene (night-time Brooklyn)
+to each other. There are two ways to look at a game, a **3D** street scene (Brooklyn at dusk, in the style of a mid-2000s console game; `?retro=0` for the older cartoon look)
 and a **2D** analytical table. Both show the same game.
 
 ## Run it

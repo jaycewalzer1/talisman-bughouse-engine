@@ -5,7 +5,7 @@
 // samples them nearest + mip-mapped. All art is original: abstract shapes and made-up words only.
 // To use real CC0 photos later (Poly Haven / ambientCG), replace a function body with
 // `new TextureLoader().load('/textures/....jpg')` and keep the same wrap/repeat settings.
-import { CanvasTexture, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
+import { CanvasTexture, Color, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
 import { STYLE } from '../style.config'
 
 /** Cel-background mode: grime as a few flat painted blotches + ink lines instead of pixel noise. */
@@ -202,7 +202,32 @@ function puddles(g: CanvasRenderingContext2D, W: number, H: number, r: () => num
     g.fill()
   }
 }
+/** Mid-2000s asphalt: paler aggregate, soft damp stains instead of puddles, no road line (it would tile visibly). */
+function dryAsphaltCanvas(): HTMLCanvasElement {
+  const W = 512, H = 512
+  const [c, g] = canvas(W, H); const r = rng(11)
+  g.fillStyle = '#54525a'; g.fillRect(0, 0, W, H)
+  speckle(g, W, H, 13000, r, ['#6c6a72', '#3c3a40', '#7c7a80', '#47454c'], 2)
+  for (let i = 0; i < 26; i++) {
+    const x = r() * W, y = r() * H, rad = 20 + r() * 70
+    const grad = g.createRadialGradient(x, y, 0, x, y, rad)
+    grad.addColorStop(0, `rgba(18,16,20,${0.1 + r() * 0.2})`); grad.addColorStop(1, 'rgba(18,16,20,0)')
+    g.fillStyle = grad
+    for (const [dx, dy] of [[0, 0], [W, 0], [-W, 0], [0, H], [0, -H]]) { g.setTransform(1, 0, 0, 1, dx, dy); g.fillRect(x - rad, y - rad, rad * 2, rad * 2) }
+    g.setTransform(1, 0, 0, 1, 0, 0)
+  }
+  g.strokeStyle = 'rgba(12,10,12,0.8)'; g.lineWidth = 1.5
+  for (let i = 0; i < 9; i++) {
+    let x = r() * W, y = r() * H; g.beginPath(); g.moveTo(x, y)
+    for (let k = 0; k < 12; k++) { x += (r() - 0.5) * 34; y += (r() - 0.5) * 34; g.lineTo(x, y) }
+    g.stroke()
+  }
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(16,14,16,${0.3 + r() * 0.4})`; g.beginPath(); g.arc(r() * W, r() * H, 1 + r() * 2.2, 0, 7); g.fill() }
+  return c
+}
+
 function asphaltCanvas(rough: boolean): HTMLCanvasElement {
+  if (!PAINTED && !rough && !STYLE.world.wetGround) return dryAsphaltCanvas()
   const W = 1024, H = 1024
   const [c, g] = canvas(W, H); const r = rng(11)
   g.fillStyle = rough ? '#d8d8d8' : '#2a2a2c'; g.fillRect(0, 0, W, H)
@@ -470,5 +495,125 @@ export const boomboxTexture = () => tex('boombox', () => {
   g.fillStyle = '#9a9ca0'; g.fillRect(24, 24, 16, 2)
   sticker(g, 8, 6, 7, r)
   speckle(g, W, H, 80, r, ['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.3)'], 1)
+  return c
+})
+
+// ---------------------------------------------------------------------------------------------
+// Mid-2000s look: soft, stained, <= 512 px.
+
+/** Cracked, patched sidewalk concrete with expansion joints every tile. */
+export const crackedConcreteTexture = () => tex('concrete', () => {
+  const S = 512; const [c, g] = canvas(S, S); const r = rng(133)
+  g.fillStyle = '#8a8680'; g.fillRect(0, 0, S, S)
+  for (let i = 0; i < 90; i++) {
+    const x = r() * S, y = r() * S, rad = 12 + r() * 60
+    const grad = g.createRadialGradient(x, y, 0, x, y, rad)
+    const v = r() < 0.55 ? '40,36,32' : '190,184,170'
+    grad.addColorStop(0, `rgba(${v},${0.05 + r() * 0.13})`); grad.addColorStop(1, `rgba(${v},0)`)
+    g.fillStyle = grad; g.fillRect(x - rad, y - rad, rad * 2, rad * 2)
+  }
+  speckle(g, S, S, 3200, r, ['#6e6a64', '#a39e94', '#55514c', '#b5b0a4'], 2)
+  // joints
+  g.strokeStyle = 'rgba(28,26,24,0.8)'; g.lineWidth = 4
+  g.beginPath(); g.moveTo(0, 2); g.lineTo(S, 2); g.moveTo(2, 0); g.lineTo(2, S); g.stroke()
+  g.strokeStyle = 'rgba(220,214,200,0.16)'; g.lineWidth = 2
+  g.beginPath(); g.moveTo(0, 6); g.lineTo(S, 6); g.moveTo(6, 0); g.lineTo(6, S); g.stroke()
+  // cracks: wandering, branching
+  const crack = (x: number, y: number, a: number, n: number, w: number) => {
+    g.strokeStyle = 'rgba(20,18,16,0.85)'; g.lineWidth = w; g.lineCap = 'round'
+    g.beginPath(); g.moveTo(x, y)
+    for (let i = 0; i < n; i++) {
+      a += (r() - 0.5) * 0.9; x += Math.cos(a) * (6 + r() * 12); y += Math.sin(a) * (6 + r() * 12)
+      g.lineTo(x, y)
+      if (r() < 0.14 && w > 0.8) { g.stroke(); crack(x, y, a + (r() < 0.5 ? 1 : -1), Math.floor(n / 2), w * 0.65); g.strokeStyle = 'rgba(20,18,16,0.85)'; g.lineWidth = w; g.beginPath(); g.moveTo(x, y) }
+    }
+    g.stroke()
+  }
+  crack(40, 90, 0.5, 26, 2.2); crack(470, 330, 2.6, 22, 2); crack(210, 480, -1.3, 18, 1.6)
+  // gum + oil
+  for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(22,20,20,${0.35 + r() * 0.4})`; g.beginPath(); g.ellipse(r() * S, r() * S, 2 + r() * 3, 2 + r() * 3, 0, 0, 7); g.fill() }
+  return c
+})
+
+/** Transparent overlay for walls: water stains running down from the top, soot rising from the bottom. */
+export const wallGrimeTexture = () => tex('wallGrime', () => {
+  const W = 512, H = 256; const [c, g] = canvas(W, H); const r = rng(211)
+  const soot = g.createLinearGradient(0, H, 0, H * 0.45)
+  soot.addColorStop(0, 'rgba(12,10,10,0.62)'); soot.addColorStop(1, 'rgba(12,10,10,0)')
+  g.fillStyle = soot; g.fillRect(0, 0, W, H)
+  const top = g.createLinearGradient(0, 0, 0, H * 0.25)
+  top.addColorStop(0, 'rgba(14,12,12,0.5)'); top.addColorStop(1, 'rgba(14,12,12,0)')
+  g.fillStyle = top; g.fillRect(0, 0, W, H)
+  for (let i = 0; i < 70; i++) {
+    const x = r() * W, w = 3 + r() * 16, h = H * (0.2 + r() * 0.65)
+    const grad = g.createLinearGradient(0, 0, 0, h)
+    const col = r() < 0.75 ? '18,16,14' : '84,62,40'    // soot, some rust
+    grad.addColorStop(0, `rgba(${col},${0.12 + r() * 0.3})`); grad.addColorStop(1, `rgba(${col},0)`)
+    g.fillStyle = grad; g.fillRect(x, 0, w, h)
+  }
+  for (let i = 0; i < 26; i++) {
+    const x = r() * W, y = H * (0.5 + r() * 0.5), rad = 14 + r() * 42
+    const grad = g.createRadialGradient(x, y, 0, x, y, rad)
+    grad.addColorStop(0, `rgba(10,10,10,${0.1 + r() * 0.22})`); grad.addColorStop(1, 'rgba(10,10,10,0)')
+    g.fillStyle = grad; g.fillRect(x - rad, y - rad, rad * 2, rad * 2)
+  }
+  return c
+})
+
+/** Chipped, handled paint for the chess pieces. */
+export const wornPieceTexture = (light: boolean) => tex(light ? 'pieceW' : 'pieceB', () => {
+  const S = 128; const [c, g] = canvas(S, S); const r = rng(light ? 171 : 172)
+  g.fillStyle = light ? '#d8cdb4' : '#3a2f33'; g.fillRect(0, 0, S, S)
+  speckle(g, S, S, 500, r, light ? ['#c2b598', '#e6dcc6', '#a89a7c'] : ['#2a2226', '#4c4044', '#5c4a42'], 2)
+  for (let i = 0; i < 26; i++) {
+    g.fillStyle = light ? `rgba(90,74,50,${0.2 + r() * 0.4})` : `rgba(170,150,120,${0.15 + r() * 0.3})`
+    g.beginPath(); g.ellipse(r() * S, r() * S, 1 + r() * 5, 1 + r() * 3, r() * 3, 0, 7); g.fill()
+  }
+  const dirt = g.createLinearGradient(0, 0, 0, S)      // lathe v runs bottom -> top: grime collects at the foot
+  dirt.addColorStop(0, 'rgba(10,8,6,0)'); dirt.addColorStop(1, 'rgba(10,8,6,0.42)')
+  g.fillStyle = dirt; g.fillRect(0, 0, S, S)
+  return c
+})
+
+/** The dusk sky dome: painted gradient, smeared clouds and a hazy skyline silhouette. u wraps the horizon, v = 0.5 is the horizon. */
+export const duskSkyTexture = (top: string, horizon: string, fog: string) => tex('duskSky', () => {
+  const W = 512, H = 256; const [c, g] = canvas(W, H); const r = rng(909)
+  const H2 = H / 2
+  const grad = g.createLinearGradient(0, 0, 0, H2)
+  grad.addColorStop(0, top); grad.addColorStop(0.34, '#5a5286'); grad.addColorStop(0.56, '#b0647a')
+  grad.addColorStop(0.76, horizon); grad.addColorStop(0.94, '#e8a468'); grad.addColorStop(1, fog)
+  g.fillStyle = grad; g.fillRect(0, 0, W, H2)
+  g.fillStyle = fog; g.fillRect(0, H2, W, H2)
+  // long smeared clouds, lit from below
+  for (let i = 0; i < 46; i++) {
+    const x = r() * W, y = H2 * (0.32 + r() * 0.55), w = 30 + r() * 120, h = 2 + r() * 6
+    const warm = y > H2 * 0.55
+    g.fillStyle = warm ? `rgba(246,170,110,${0.08 + r() * 0.2})` : `rgba(58,48,92,${0.1 + r() * 0.22})`
+    for (const dx of [0, W, -W]) { g.beginPath(); g.ellipse(x + dx, y, w, h, 0, 0, 7); g.fill() }
+  }
+  // skyline: two hazy layers of blocks, a water tower or two (it's Brooklyn), each wrapping at u = 0/1
+  const layer = (base: number, maxH: number, color: string, seed: number) => {
+    const q = rng(seed)
+    g.fillStyle = color
+    let x = 0
+    while (x < W) {
+      const w = 5 + q() * 14, h = maxH * (0.25 + q() * 0.75)
+      g.fillRect(x, base - h, w + 1, h + 2)
+      if (q() < 0.12) {                       // water tower on legs
+        g.fillRect(x + w * 0.2, base - h - 7, w * 0.6, 5); g.fillRect(x + w * 0.25, base - h - 2, 1, 3); g.fillRect(x + w * 0.7, base - h - 2, 1, 3)
+      }
+      x += w
+    }
+  }
+  // far blocks, then the taller rooftops right behind the wall: these clear it when seen from the street
+  layer(H2 + 1, 62, '#a06a6c', 31)
+  layer(H2 + 1, 40, '#6e4a5a', 32)
+  layer(H2 + 1, 26, '#47323f', 33)
+  // haze over the skyline's foot melts it into the fog colour
+  const haze = g.createLinearGradient(0, H2 - 10, 0, H2 + 1)
+  const f = new Color(fog)
+  const rgb = `${Math.round(Math.pow(f.r, 1 / 2.2) * 255)},${Math.round(Math.pow(f.g, 1 / 2.2) * 255)},${Math.round(Math.pow(f.b, 1 / 2.2) * 255)}`
+  haze.addColorStop(0, `rgba(${rgb},0)`); haze.addColorStop(1, `rgba(${rgb},0.9)`)
+  g.fillStyle = haze; g.fillRect(0, H2 - 10, W, 12)
   return c
 })

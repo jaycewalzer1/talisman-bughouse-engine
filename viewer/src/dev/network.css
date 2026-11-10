@@ -1,0 +1,53 @@
+/* Scheduler network page (network.html). Uses the dev panel's colors and buttons. In the diagram, border weight
+   says where a decision came from: thin = spec or tests, heavy = decided in discussion. */
+
+.nn-page { padding: 20px 24px 32px; font-size: clamp(14px, 1.05vw, 22px); }
+.nn-page h1 { margin: 0; font-size: 1.5em; font-weight: 600; }
+.nn-sub { margin: 2px 0 14px; color: var(--dim); }
+
+.nn-page .dp-btn { height: 2.4em; padding: 0 1.05em; font-size: .95em; }
+.nn-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; }
+.nn-steps .dp-btn[aria-current='step'] { background: var(--text); border-color: var(--text); color: var(--bg); box-shadow: none; }
+
+.nn-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 640px); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .nn-layout { grid-template-columns: minmax(0, 1fr); } }
+
+.nn-stage { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; }
+.nn-stage svg { display: block; width: 100%; min-width: 860px; height: auto; }
+
+.nn-legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 10px 4px 0; color: var(--dim); font-size: .95em; }
+.nn-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.nn-swatch { width: 22px; height: 14px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--bg); }
+.nn-swatch.decided { border: 2.5px solid var(--text); }
+
+.nn-panel { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; font-size: 1.08em; line-height: 1.55; }
+.nn-panel h2 { margin: 0 0 8px; font-size: 1.2em; font-weight: 600; }
+.nn-panel p { margin: 0 0 10px; }
+.nn-panel h3 { margin: 14px 0 3px; font-size: .88em; font-weight: 600; color: var(--dim); }
+.nn-refs { margin: 14px 0 0; padding: 0; list-style: none; color: var(--dim); font-size: .88em; }
+.nn-refs code { font-size: 1em; }
+.nn-try { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 10px; }
+.nn-page .nn-try .dp-btn { padding: 0 .65em; }
+.nn-try .dp-btn[aria-pressed='true'] { background: var(--text); border-color: var(--text); color: var(--bg); box-shadow: none; }
+.nn-panel code.nn-vector { display: block; margin-bottom: 10px; font-size: .95em; }
+.nn-nav { display: flex; justify-content: space-between; margin-top: 14px; }
+.nn-nav .dp-btn:disabled { color: var(--line-strong); cursor: default; }
+
+.nn-part { transition: opacity .18s; }
+.nn-part.dim { opacity: .2; }
+.nn-click { cursor: pointer; }
+.nn-box { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; }
+.nn-box.decided { stroke: var(--text); stroke-width: 2.5; }
+.nn-chip { fill: var(--bg); stroke: var(--line-strong); }
+.nn-chip.on { fill: var(--text); stroke: var(--text); }
+.nn-edge { fill: none; stroke: var(--dim); stroke-width: 1.5; }
+.nn-edge.faint { stroke: var(--line-strong); stroke-width: .6; }
+.nn-node { fill: var(--raised); stroke: var(--dim); }
+.nn-arrow { fill: var(--dim); }
+
+.nn-stage text { fill: var(--text); font-family: var(--font); font-size: 14.5px; }
+.nn-stage text.title { font-size: 17px; font-weight: 600; }
+.nn-stage text.note { fill: var(--dim); font-size: 14px; }
+.nn-stage text.field { font-family: ui-monospace, Menlo, monospace; font-size: 13.5px; }
+.nn-stage text.mid { text-anchor: middle; }
+.nn-stage text.on { fill: var(--bg); font-weight: 600; }

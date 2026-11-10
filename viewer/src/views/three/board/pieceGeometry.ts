@@ -1,6 +1,7 @@
 // Chunky low-poly chess pieces built from lathe profiles + boxes (8 sides = visibly faceted).
 import { BoxGeometry, BufferGeometry, IcosahedronGeometry, LatheGeometry, Matrix4, Vector2 } from 'three'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { RETRO } from '../style.config'
 
 const SIDES = 8
 const lathe = (pts: [number, number][]) => new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), SIDES)
@@ -17,7 +18,8 @@ function merge(parts: BufferGeometry[]): BufferGeometry {
   }))!
   g.computeVertexNormals()
   g.computeBoundingSphere()
-  return g
+  // mid-2000s: chunky but smooth-shaded (Gouraud), not faceted
+  return RETRO ? toCreasedNormals(g, 0.9) : g
 }
 
 const BASE: [number, number][] = [[0, 0], [0.034, 0], [0.034, 0.012], [0.027, 0.018]]

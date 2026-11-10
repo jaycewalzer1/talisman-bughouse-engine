@@ -5,9 +5,9 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { BackSide, Color, type Mesh, ShaderMaterial } from 'three'
-import { STYLE } from '../style.config'
+import { RETRO, STYLE } from '../style.config'
 import { retroMaterial } from '../materials/retroMaterial'
-import { rng, windowsTexture } from './textures'
+import { duskSkyTexture, rng, windowsTexture } from './textures'
 import { StaticInstances, type InstanceXform } from './StaticInstances'
 
 const W = STYLE.world
@@ -71,7 +71,29 @@ function skylineItems(): InstanceXform[] {
   return out
 }
 
+/** Mid-2000s look: a low-res painted dusk dome that follows the camera, skyline painted right into it. */
+function PaintedSky() {
+  const dome = useRef<Mesh>(null)
+  const mat = useMemo(() => {
+    const map = duskSkyTexture(W.skyTop, W.skyHorizon, W.fogColor)
+    const m = retroMaterial({ map, unlit: true, fog: false, side: BackSide })
+    map.flipY = true
+    m.depthWrite = false
+    return m
+  }, [])
+  useFrame(({ camera }) => { dome.current?.position.copy(camera.position) })
+  return (
+    <mesh ref={dome} material={mat} renderOrder={-1000} frustumCulled={false}>
+      <sphereGeometry args={[100, 24, 16]} />
+    </mesh>
+  )
+}
+
 export function Sky() {
+  return RETRO ? <PaintedSky /> : <NightSky />
+}
+
+function NightSky() {
   const dome = useRef<Mesh>(null)
   const mat = useMemo(() => new ShaderMaterial({
     uniforms: {

@@ -1,10 +1,11 @@
 // Entry point of the 3D view (lazy-loaded by App.tsx). Canvas + HTML overlays.
-// The scene renders at the full device pixel ratio (capped by STYLE.render.maxDpr), antialiased by
-// the composer's MSAA: a clean cel-cartoon frame. No shadow maps, no tone mapping (the palette is
-// set directly in the materials).
+// Mid-2000s look: the scene renders at a low internal resolution (LOOK.internalWidth x Height) and the
+// browser upscales the canvas with bilinear filtering. ?retro=0: full device pixel ratio (capped by
+// STYLE.render.maxDpr), a clean cel-cartoon frame. No shadow maps, no tone mapping (the palette is set
+// directly in the materials).
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { STYLE } from './style.config'
+import { LOOK, RETRO, STYLE } from './style.config'
 import { Scene } from './Scene'
 import { Hud } from './hud/Hud'
 import { CommsLog } from './graffiti/CommsLog'
@@ -14,9 +15,10 @@ import { retroLight } from './materials/retroMaterial'
 
 const Effects = lazy(() => import('./Effects'))
 
-/** Full device pixel ratio, capped. */
-function renderDpr(): number {
-  return Math.min(window.devicePixelRatio || 1, STYLE.render.maxDpr)
+/** Device pixels per CSS pixel. Retro: whatever keeps the pixel count at the internal resolution. */
+function renderDpr(host: { w: number; h: number } = { w: window.innerWidth, h: window.innerHeight }): number {
+  if (!RETRO) return Math.min(window.devicePixelRatio || 1, STYLE.render.maxDpr)
+  return Math.sqrt((LOOK.internalWidth * LOOK.internalHeight) / Math.max(1, host.w * host.h))
 }
 
 /** Keeps the outline hulls' pixel width and the retro resolution uniform in sync with the buffer. */
@@ -68,7 +70,14 @@ interface ThreeViewProps {
 }
 
 export default function ThreeView({ thumb = false, paused = false }: ThreeViewProps) {
-  const [initialDpr] = useState(renderDpr)
+  const [dpr, setDpr] = useState(() => renderDpr())
+  // retro: the window size decides the dpr, so keep it in step (the canvas's layout box is the window's)
+  useEffect(() => {
+    if (!RETRO) return
+    const on = () => setDpr(renderDpr())
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
   // low-rate rendering only kicks in once the shrink animation has finished
   const [settled, setSettled] = useState(thumb)
   useEffect(() => {
@@ -91,7 +100,7 @@ export default function ThreeView({ thumb = false, paused = false }: ThreeViewPr
         // measure the layout size (offsetWidth/Height), not the transformed on-screen box: the PiP
         // thumbnail is a CSS scale of this layer, and must not shrink the drawing buffer / composer
         resize={{ offsetSize: true }}
-        dpr={initialDpr}
+        dpr={dpr}
         // the composer does the MSAA; the default framebuffer itself needs none
         gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ fov: 45, near: 0.05, far: 140, position: [0, 2.6, 6.8] }}

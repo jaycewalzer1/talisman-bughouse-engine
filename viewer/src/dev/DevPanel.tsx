@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type GameEvent, type Seat, TEAM_OF } from '../events/types'
 import { type EvalPoint, type GameSummary, describe, parseJsonl, summarize } from './analyze'
+import GameReplay from './GameReplay'
 
 const WS_URL = new URLSearchParams(window.location.search).get('ws') ?? 'ws://localhost:8765'
 const MAX_LIVE_HISTORY = 20
@@ -103,8 +104,8 @@ function SeatTable({ sum }: { sum: GameSummary }) {
         </thead>
         <tbody>
           {sum.seats.map(s => (
-            <tr key={s.seat} className={TEAM_OF[s.seat] === 'T1' ? 't1' : 't2'}>
-              <td><span className="dp-dot" />{s.seat}</td>
+            <tr key={s.seat}>
+              <td className={TEAM_OF[s.seat] === 'T1' ? 't1' : 't2'}><span className="dp-dot" />{s.seat}</td>
               <td className="dp-name" title={`${s.name} (${s.kind})`}>{s.name}</td>
               <td className="num">{s.moves}</td><td className="num">{s.drops}</td><td className="num">{s.captures}</td>
               <td className="num">{s.searches}</td><td className="num">{s.nodes.toLocaleString()}</td>
@@ -122,8 +123,8 @@ function SeatTable({ sum }: { sum: GameSummary }) {
 
 const SEAT_STYLE: Record<Seat, string> = { A_white: 't1', B_black: 't1 dashed', A_black: 't2', B_white: 't2 dashed' }
 
-function EvalChart({ evals, t0, t1 }: { evals: EvalPoint[]; t0: number; t1: number }) {
-  const W = 800, H = 220, L = 44, R = 12, T = 12, B = 28
+function EvalChart({ evals, t0, t1, cursor }: { evals: EvalPoint[]; t0: number; t1: number; cursor?: number | null }) {
+  const W = 800, H = 240, L = 28, R = 4, T = 8, B = 24
   const span = Math.max(1, t1 - t0)
   const x = (ts: number) => L + ((ts - t0) / span) * (W - L - R)
   const y = (v: number) => T + ((1 - v) / 2) * (H - T - B)
@@ -147,12 +148,13 @@ function EvalChart({ evals, t0, t1 }: { evals: EvalPoint[]; t0: number; t1: numb
         {ticks.map(s => (
           <text key={s} x={x(t0 + s * 1000)} y={H - 8} textAnchor="middle" className="axis">{s}s</text>
         ))}
-        <text x={W - R} y={T + 10} textAnchor="end" className="axis label">T1 ahead</text>
-        <text x={W - R} y={H - B - 4} textAnchor="end" className="axis label">T2 ahead</text>
+        <text x={W - R} y={T + 10} textAnchor="end" className="axis">T1 ahead</text>
+        <text x={W - R} y={H - B - 4} textAnchor="end" className="axis">T2 ahead</text>
+        {cursor != null && <line x1={x(cursor)} x2={x(cursor)} y1={T} y2={H - B} className="cursor" />}
         {bySeat.map(({ seat, pts }) => pts.length > 0 && (
           <g key={seat} className={`series ${SEAT_STYLE[seat]}`}>
             <polyline fill="none" points={pts.map(p => `${x(p.ts)},${y(p.t1)}`).join(' ')} />
-            {pts.map((p, i) => <circle key={i} cx={x(p.ts)} cy={y(p.t1)} r={2.5} />)}
+            {pts.map((p, i) => <circle key={i} cx={x(p.ts)} cy={y(p.t1)} r={1.75} />)}
           </g>
         ))}
       </svg>
@@ -171,7 +173,8 @@ function EventLog({ events, follow }: { events: GameEvent[]; follow: boolean }) 
   useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight }, [shown.length, follow])
   const toggle = (t: string) => setHidden(h => { const n = new Set(h); if (n.has(t)) n.delete(t); else n.add(t); return n })
   return (
-    <>
+    <details className="dp-logbox" open>
+      <summary>Event log<small>{events.length} events</small></summary>
       <div className="dp-chips" role="group" aria-label="Event types">
         {LOG_TYPES.map(t => (
           <button key={t} className={hidden.has(t) ? '' : 'on'} aria-pressed={!hidden.has(t)} onClick={() => toggle(t)}>
@@ -197,13 +200,14 @@ function EventLog({ events, follow }: { events: GameEvent[]; follow: boolean }) 
           </tbody>
         </table>
       </div>
-    </>
+    </details>
   )
 }
 
 function GameView({ events, title, live }: { events: GameEvent[]; title: string; live?: boolean }) {
   const sum = useMemo(() => summarize(events), [events])
   const t0 = sum.start?.ts ?? 0
+  const [cursor, setCursor] = useState<number | null>(null)
   const result = sum.end
     ? `${sum.end.result === 'draw' ? 'Draw' : `${sum.end.result} wins`} by ${sum.end.reason}${sum.end.board ? ` on board ${sum.end.board}` : ''}`
     : live ? 'In progress' : 'No result recorded'
@@ -211,18 +215,21 @@ function GameView({ events, title, live }: { events: GameEvent[]; title: string;
     <div className="dp-game">
       <header className="dp-gamehead">
         <h2>{title}</h2>
-        <div className="dp-facts">
-          <span className={`dp-pill ${sum.end ? (sum.end.result === 'T1' ? 't1' : sum.end.result === 'T2' ? 't2' : '') : 'live'}`}>{result}</span>
+        <p className="dp-facts">
+          <b>{result}</b>
           {sum.start && <span>{sum.start.setup}</span>}
           <span>{sum.plies} plies</span>
           <span>{fmtS(sum.lastTs - t0)} game time</span>
           <span>{sum.transfers} pieces passed</span>
           <span>{sum.messages} messages</span>
-        </div>
+        </p>
       </header>
-      <section><h3>Seats</h3><SeatTable sum={sum} /></section>
-      <section><h3>Evaluation <small>from T1's side, one point per search</small></h3><EvalChart evals={sum.evals} t0={t0} t1={sum.lastTs} /></section>
-      <section className="grow"><h3>Event log</h3><EventLog events={events} follow={!!live} /></section>
+      {!live && <GameReplay key={title} events={events} onCursor={setCursor} />}
+      <div className="dp-below">
+        <section><h3>Seats</h3><SeatTable sum={sum} /></section>
+        <section><h3>Evaluation<small>from T1's side, one point per search</small></h3><EvalChart evals={sum.evals} t0={t0} t1={sum.lastTs} cursor={live ? null : cursor} /></section>
+      </div>
+      <EventLog events={events} follow={!!live} />
     </div>
   )
 }
@@ -262,14 +269,14 @@ export default function DevPanel() {
         <h1>Dev panel</h1>
         <span className="dp-status">{live.status}</span>
         <nav className="dp-links">
-          <a href="/" target="_blank" rel="noopener">Viewer ↗</a>
-          <a href="https://claude.ai/artifact/B8Wfe56MCf1xFekB2RJymf" target="_blank" rel="noopener noreferrer">Progress ↗</a>
+          <a href="/" target="_blank" rel="noopener">Viewer</a>
+          <a href="https://claude.ai/artifact/B8Wfe56MCf1xFekB2RJymf" target="_blank" rel="noopener noreferrer">Progress</a>
         </nav>
       </header>
       <aside className="dp-side">
         <h3>Live</h3>
         <button className={isSel({ kind: 'live' }) ? 'on' : ''} onClick={() => setSel({ kind: 'live' })}>
-          ● Current {live.current.length ? `· ${gameLabel(live.current)}` : ''}
+          Current{live.current.length ? ` · ${gameLabel(live.current)}` : ''}
         </button>
         {live.past.map((g, i) => (
           <button key={i} className={isSel({ kind: 'past', index: i }) ? 'on' : ''} onClick={() => setSel({ kind: 'past', index: i })}>
@@ -282,7 +289,7 @@ export default function DevPanel() {
         {runs?.map(r => (
           <div key={r.name} className="dp-run">
             <button className="dp-runname" aria-expanded={open === r.name} onClick={() => setOpen(open === r.name ? null : r.name)}>
-              {open === r.name ? '▾' : '▸'} {r.name} <span>{r.games.length}</span>
+              <span className="dp-caret">{open === r.name ? '▾' : '▸'}</span> {r.name} <span>{r.games.length}</span>
             </button>
             {open === r.name && (
               <div className="dp-games">

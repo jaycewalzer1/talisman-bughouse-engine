@@ -7,9 +7,11 @@
 // the right hand reaches, grips, carries and slams the piece, the left plucks captured pieces.
 // Hands are jointed procedural meshes (grab/hand.ts) attached at the wrists.
 // Win: the skater rides onto the deck and loops their trick (tricks/, mapped in trickPose.ts).
+// Mid-2000s look: all of this still runs, but on invisible joints (only the deck is drawn); street/StreetSkin
+// copies the result onto a skinned glTF body. The joints adopt that body's shoulder and hip widths.
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Group, Quaternion, Vector3 } from 'three'
+import { Group, type Mesh, Quaternion, Vector3 } from 'three'
 import type { CharacterRigProps } from './rig'
 import { legAbduction, legAngles, poseFor, POSE_KEYS, type Ik, type Pose, type V3 } from './poses'
 import {
@@ -22,6 +24,9 @@ import { BlobShadow } from '../environment/BlobShadow'
 import { armPole, solveArm, type ArmChain, type ReachBudget } from '../grab/ik'
 import { buildHand } from '../grab/hand'
 import { clockNow, grabBus, type GrabSample } from '../grab/grabChoreo'
+import { RETRO } from '../style.config'
+import { BODIES, OUTFITS } from './street/outfits'
+import { StreetSkin, type SkinProxies } from './street/StreetSkin'
 
 const BLEND_RATE = 9
 const IK_FOLLOW = 14
@@ -36,8 +41,9 @@ const loggedTris = new Set<string>()
 const HAND_TRIS = 198
 
 /** A joint's meshes: one per finish, plus its merged ink hull (inverted-hull outline, moves with the joint). */
-function PartMeshes({ g }: { g: PartGeo }) {
+function PartMeshes({ g, always = false }: { g: PartGeo; always?: boolean }) {
   const M = skaterMaterials()
+  if (RETRO && !always) return null
   return <>
     {FINISHES.map(f => g[f] && <mesh key={f} geometry={g[f]!} material={M[f]} />)}
     {g.ink && <mesh geometry={g.ink} material={outlineMaterial()} raycast={noRaycast} userData={{ inkHull: true }} />}
@@ -83,7 +89,14 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
     g: newSample(), o: newSample(),
     chains: null as null | { L: ArmChain; R: ArmChain; pL: ArmChain; pR: ArmChain; budget: ReachBudget },
   }), [])
-  const SX = shoulderX(spec), HX = hipX(spec)
+  const body = RETRO ? BODIES[OUTFITS[seat].body] : null
+  const SX = body?.shoulderX ?? shoulderX(spec), HX = body?.hipX ?? hipX(spec), SY = body?.shoulderY ?? 0.46
+  const proxies = useRef<SkinProxies>({ joints: J.current, wrists: W.current, handPoses: { L: hands.L.pose, R: hands.R.pose }, hipY: HIP_Y })
+  useLayoutEffect(() => {
+    if (!RETRO) return
+    for (const h of [hands.L, hands.R]) h.root.traverse(o => { o.visible = o === h.root || !(o as Mesh).isMesh })
+    proxies.current.handPoses = { L: hands.L.pose, R: hands.R.pose }
+  }, [hands])
 
   useLayoutEffect(() => {
     root.current?.traverse(o => o.layers.enable(PORTRAIT_LAYER))
@@ -150,18 +163,20 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
     const kk = exact ? 1 : k
     if (target.snapDeck) { c.deckPos = [...target.deckPos]; c.deckRot = [...target.deckRot] }
     c.hipsY += (target.hipsY - c.hipsY) * kk
+    c.hipsX += (target.hipsX - c.hipsX) * kk
     c.footL[0] += (target.footL[0] - c.footL[0]) * kk; c.footL[1] += (target.footL[1] - c.footL[1]) * kk
     c.footR[0] += (target.footR[0] - c.footR[0]) * kk; c.footR[1] += (target.footR[1] - c.footR[1]) * kk
 
     const hipY = HIP_Y + c.hipsY
     r.rotation.y = target.spinY
-    j.hips?.position.set(0, hipY, 0); j.hips?.rotation.set(...c.hips)
+    j.hips?.position.set(c.hipsX, hipY, 0); j.hips?.rotation.set(...c.hips)
     j.spine?.rotation.set(...c.spine)
     j.head?.rotation.set(...c.head)
     j.deck?.position.set(...c.deckPos); j.deck?.rotation.set(c.deckRot[0], c.deckRot[1], c.deckRot[2], 'YXZ')
     // legs: sagittal 2-bone IK plus hip abduction for a sideways stance (footX)
-    S.abd[0] += (legAbduction(hipY, c.footL[1], target.footX?.[0], 1, HX) - S.abd[0]) * kk
-    S.abd[1] += (legAbduction(hipY, c.footR[1], target.footX?.[1], -1, HX) - S.abd[1]) * kk
+    const fx = target.footX ? [target.footX[0] - c.hipsX, target.footX[1] - c.hipsX] : null     // relative to the shifted hips
+    S.abd[0] += (legAbduction(hipY, c.footL[1], fx?.[0], 1, HX) - S.abd[0]) * kk
+    S.abd[1] += (legAbduction(hipY, c.footR[1], fx?.[1], -1, HX) - S.abd[1]) * kk
     const [hl, kl, al] = legAngles(hipY, c.footL, S.abd[0])
     const [hr, kr, ar] = legAngles(hipY, c.footR, S.abd[1])
     j.hipL?.rotation.set(hl, 0, S.abd[0]); j.knL?.rotation.set(kl, 0, 0); j.anL?.rotation.set(al, 0, -S.abd[0])
@@ -206,14 +221,14 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
     }
 
     // fingers: relaxed / clenched from the pose, grab choreography overrides while active
-    const handPose = (h: typeof hands.L, st: ArmState, s: GrabSample) => {
-      const base = 0.5 + 0.45 * Math.min(1, st.w)
+    const handPose = (h: typeof hands.L, st: ArmState, s: GrabSample, open: number) => {
+      const base = open >= 0 ? open : 0.5 + 0.45 * Math.min(1, st.w)
       if (!s.active) { h.setPose({ grip: base, spread: 0, pinch: 0 }); return }
       const m = s.phase === 'return' ? s.weight : 1
       h.setPose({ grip: base + (s.grip - base) * m, spread: s.spread * m, pinch: s.pinch * m })
     }
-    handPose(hands.R, S.R, g)
-    handPose(hands.L, S.L, o)
+    handPose(hands.R, S.R, g, target.handOpen?.[1] ?? -1)
+    handPose(hands.L, S.L, o, target.handOpen?.[0] ?? -1)
 
     // tell the grab bus where the hands really are (Pieces draws held pieces there)
     if (g.active) grabBus.reportSocket(seat, 'main', hands.R.socket.getWorldPosition(S.sock), tn)
@@ -228,7 +243,7 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
 
   const P = built.parts
   const arm = (side: 1 | -1) => (
-    <group ref={set(side > 0 ? 'shL' : 'shR')} position={[side * SX, 0.46, 0]}>
+    <group ref={set(side > 0 ? 'shL' : 'shR')} position={[side * SX, SY, 0]}>
       <PartMeshes g={P[side > 0 ? 'shL' : 'shR']} />
       <group ref={set(side > 0 ? 'elL' : 'elR')} position={[0, -UPPER_ARM, 0]}>
         <PartMeshes g={P[side > 0 ? 'elL' : 'elR']} />
@@ -264,8 +279,9 @@ export function ProceduralCharacter({ seat, spec, driver, teamColor }: Character
           {leg(1)}{leg(-1)}
         </group>
         <group ref={set('deck')}>
-          <PartMeshes g={P.deck} />
+          <PartMeshes g={P.deck} always />
         </group>
+        {RETRO && <StreetSkin seat={seat} proxies={proxies} />}
       </group>
       <group ref={shadow}>
         <BlobShadow radius={0.4 * Math.max(1, spec.bulk) * spec.height} opacity={0.55} />

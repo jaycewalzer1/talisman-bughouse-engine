@@ -4,7 +4,7 @@
 
 import type { BoardId, Seat, TeamId } from '../../events/types'
 
-export type Reaction = 'fistPump' | 'headInHands' | 'impatientTap' | 'celebrate' | 'slump' | 'talk'
+export type Reaction = 'fistPump' | 'headInHands' | 'impatientTap' | 'celebrate' | 'slump' | 'talk' | 'request'
 
 export type FxEvent =
   | { kind: 'reaction'; seat: Seat; reaction: Reaction }

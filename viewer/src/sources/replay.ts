@@ -25,6 +25,7 @@ export interface ReplaySource extends Source {
   duration: number                     // global ms
   position: () => number               // global ms
   seek: (globalMs: number) => void
+  seekEvent: (index: number) => void   // land right after events[index], even if later events share its ts
   ended: () => boolean
 }
 
@@ -65,11 +66,21 @@ export function createReplaySource(events: GameEvent[]): ReplaySource {
     syncPlayhead()
   }
 
+  function seekEvent(index: number) {
+    const store = useGame.getState()
+    store.reset()
+    store.ingestMany(events.slice(0, index + 1))
+    cursor = index + 1
+    pos = gts[index]
+    syncPlayhead()
+  }
+
   return {
     duration,
     position: () => pos,
     ended: () => pos >= duration,
     seek,
+    seekEvent,
     start() { seek(0) },
     stop() { /* nothing to clean up */ },
     tick(dtMs) {

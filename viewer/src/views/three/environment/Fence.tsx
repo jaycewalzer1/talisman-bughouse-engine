@@ -41,7 +41,7 @@ export function Fence() {
     <group>
       {runs.map(({ r, len, rot, mat }, i) => (
         <group key={i} position={[(r.from[0] + r.to[0]) / 2, 0, (r.from[1] + r.to[1]) / 2]} rotation-y={rot}>
-          <mesh position={[0, H / 2, 0]} material={mat}>
+          <mesh position={[0, H / 2, 0]} material={mat} userData={{ noOcclude: true, noBake: true }}>
             <planeGeometry args={[len, H]} />
           </mesh>
           <mesh position={[0, H, 0]} rotation-z={Math.PI / 2} material={steel}>

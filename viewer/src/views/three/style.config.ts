@@ -1,7 +1,13 @@
 // Every art-direction knob for the 3D view in one place. Flip things off here if a laptop
 // struggles or you want to compare looks. Nothing in here touches game logic.
+//
+// Two looks live here: BASE is the flat late-90s cartoon, MID_2000S layers the PS2 / early-360
+// console look on top of it. ?retro=0 in the URL switches back to BASE for comparison.
 
-export const STYLE = {
+/** The mid-2000s console look is on unless the URL says ?retro=0. */
+export const RETRO = typeof window === 'undefined' || new URLSearchParams(window.location.search).get('retro') !== '0'
+
+const BASE = {
   render: {
     maxDpr: 2,              // full device-pixel-ratio render, capped (2 = retina; 1.5 helps weak iGPUs)
     msaa: 0,                // composer multisample count (0 = off -> SMAA). >0 rendered a blank frame on Apple M-series + postprocessing 6.37; SMAA is cheaper anyway
@@ -124,4 +130,69 @@ export const STYLE = {
   },
 } as const
 
-export type StyleConfig = typeof STYLE
+export type StyleConfig = typeof BASE
+
+type Widen<T> = T extends string ? string : T extends number ? number : T extends boolean ? boolean : T
+type Overrides = { [K in keyof StyleConfig]?: { [F in keyof StyleConfig[K]]?: Widen<StyleConfig[K][F]> } }
+
+const MID_2000S: Overrides = {
+  render: { smaa: false },
+  post: {
+    bloom: true,            // lights only: threshold above anything a lit surface reaches
+    bloomIntensity: 0.55,
+    bloomThreshold: 1.0,
+    bloomSmoothing: 0.08,
+    bloomRadius: 0.62,
+    inkEdges: false,
+    vignette: true,
+    vignetteOffset: 0.42,
+    vignetteDarkness: 0.42,
+  },
+  toon: { enabled: false, outlines: false, paintedTextures: false },
+  material: { ambient: 0.92, keyStrength: 1.05, chrome: 0.55 },
+  world: {
+    fogNear: 14,
+    fogFar: 58,
+    skyTop: '#27305c',      // dusk: deep blue overhead, mauve, burnt orange on the horizon
+    skyHorizon: '#c9764a',
+    skyBottom: '#2a2428',
+    fogColor: '#8d6660',    // the sky's hazy band just above the skyline
+    keyColor: '#ffae66',    // sodium streetlamp orange
+    ambientSky: '#5d6a9c',  // cool, weak
+    ambientGround: '#2c2a36',
+    wetGround: false,
+  },
+  scene: {
+    lampCones: false,       // the lamps' reach is baked into vertex colours instead of decals
+    lightPools: false,
+    bulbGlow: 1.9,          // well above bloomThreshold
+  },
+  graffiti: { pxPerMeter: 80, tagCount: 90, paint: '#e2dccf' },   // sliced into <= 512 px tiles (Walls.tsx)
+}
+
+function merged(): StyleConfig {
+  const out: Record<string, object> = {}
+  for (const k of Object.keys(BASE) as (keyof StyleConfig)[]) out[k] = { ...BASE[k], ...(MID_2000S[k] ?? {}) }
+  return out as unknown as StyleConfig
+}
+
+export const STYLE: StyleConfig = RETRO ? merged() : BASE
+
+/** Mid-2000s look only. */
+export const LOOK = {
+  // internal render resolution; the browser upscales the canvas with bilinear filtering
+  internalWidth: 854,
+  internalHeight: 480,
+  maxTexture: 512,          // no texture in the world is larger than this
+  // lighting baked into world-geometry vertex colours at load (environment/bakeLighting.ts)
+  aoRays: 14,
+  aoRadius: 1.7,            // metres; how far a corner / ledge / wall darkens
+  aoStrength: 1.25,
+  contactAO: 0.5,           // extra darkening where vertical surfaces meet the ground
+  bakedLamp: 0.8,           // how strongly the streetlamps' reach is baked in
+  // post (post/RetroGradeEffect.ts)
+  crush: 0.02,              // black point lifted away (crushed blacks)
+  warmth: 0.05,             // red up, blue down
+  saturation: 1.08,
+  ditherLevels: 56,         // per channel; 4x4 ordered dither between them (16-bit-framebuffer feel)
+} as const

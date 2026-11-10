@@ -96,6 +96,41 @@ export function summarize(events: GameEvent[]): GameSummary {
   return { start, end, lastTs, plies, seats: SEATS.map(s => stats.get(s)!), evals, messages, transfers }
 }
 
+/** A place the replay can stop: the start, each move, each sit, and the end. */
+export interface ReplayStop {
+  index: number                 // last event to show, in the game's event list
+  ts: number
+  kind: 'start' | 'move' | 'sit' | 'end'
+  seat: Seat | null
+  label: string
+  t1Eval: number | null         // the search behind this move, from team T1's side
+}
+
+export function replayStops(events: GameEvent[]): ReplayStop[] {
+  const stops: ReplayStop[] = []
+  const lastEval = new Map<Seat, number>()
+  events.forEach((e, i) => {
+    if (e.type === 'game_start') {
+      stops.push({ index: i, ts: e.ts, kind: 'start', seat: null, label: 'Start', t1Eval: null })
+    } else if (e.type === 'thinking') {
+      if (e.phase === 'end' && e.eval != null) lastEval.set(e.seat, TEAM_OF[e.seat] === 'T1' ? e.eval : -e.eval)
+    } else if (e.type === 'move') {
+      // the capture's pass and any message sent with the move belong to the same stop
+      let index = i
+      while (events[index + 1] && events[index + 1].ts === e.ts
+        && (events[index + 1].type === 'pass' || events[index + 1].type === 'message')) index++
+      const san = `${e.san ?? e.uci}${e.capture ? ` ×${e.capture}` : ''}`
+      stops.push({ index, ts: e.ts, kind: 'move', seat: e.seat, label: `${e.board}: ${san}`, t1Eval: lastEval.get(e.seat) ?? null })
+      lastEval.delete(e.seat)
+    } else if (e.type === 'stall' && e.active) {
+      stops.push({ index: i, ts: e.ts, kind: 'sit', seat: e.seat, label: `sits (${e.reason ?? '?'})`, t1Eval: null })
+    } else if (e.type === 'game_end') {
+      stops.push({ index: i, ts: e.ts, kind: 'end', seat: e.loserSeat ?? null, label: describe(e).text, t1Eval: null })
+    }
+  })
+  return stops
+}
+
 /** One readable line per event for the log table. */
 export function describe(e: GameEvent): { seat: string; text: string } {
   switch (e.type) {

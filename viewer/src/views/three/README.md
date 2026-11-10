@@ -1,13 +1,17 @@
-# 3D view — "under the el" (Bushwick, night)
+# 3D view — "under the el" (Bushwick)
 
 Lazy-loaded by `src/App.tsx` via `import('./views/three')` and kept mounted once loaded (it shrinks
 into the corner thumbnail when the 2D view is active). It only **reads** the game store
 (`useGame` in `src/store/gameStore.ts`); event sources live in `src/sources/`.
 
-Look: a flat late-90s TV-cartoon style (cel shading, ink outlines, muted urban palette, painted
-backgrounds) rendered in 3D. **Every look/feel knob is in `style.config.ts`**: render dpr and
-antialiasing, toon bands, outline widths, ink edge pass, bloom, vignette, fog/sky/lighting colours,
-palette, comms, HUD and camera settings. Start there.
+Two looks, both in `style.config.ts` (**every look/feel knob is there, start there**):
+
+- **Mid-2000s console (default):** PS2 / early-360 at dusk. Renders at 854x480 (`LOOK.internalWidth/Height`), upscaled
+  by the browser with bilinear filtering; Lambert / Phong only; lighting baked into vertices at load; textures
+  capped at 512 px; bloom on lights only, crushed blacks, warm grade, ordered dither.
+- **Late-90s cartoon (`?retro=0`):** cel shading, ink outlines, night. Kept for comparison.
+
+The look is chosen once at load from the URL (`RETRO` in `style.config.ts`).
 
 ## How the files fit together
 
@@ -26,6 +30,11 @@ materials/         retroMaterial (2-tone cel shading, fog, banded chrome) used b
 environment/       Street + wet puddles, brick walls + graffiti, fence, el tracks, train, lamps,
                    sky, bodega/boombox/rail props, blob shadows, light pools, textures.ts.
 board/             Milk-crate tables, chess pieces + move/drop/toss animation, chess clocks.
+characters/street/ Mid-2000s bodies: CC0 glTF models dressed at load. outfits.ts (who wears what), sculpt.ts (baggy
+                   clothes pushed out of the body mesh), texture.ts + prints.ts (paints the 512 px texture in 3D),
+                   accessories.ts (shoes, hair cards, hats, belt, chain), StreetSkin.tsx (drives the skeleton).
+environment/bakeLighting.ts   Raycast AO + streetlamp reach, baked into an `aBake` vertex attribute at load.
+post/RetroGradeEffect.ts      Crushed blacks, warm balance, ordered dither.
 characters/        The four skaters: smooth low-poly parts (loft.ts, skaterParts.ts), specs,
                    pose state machine (poses.ts), rig (ProceduralCharacter.tsx), reactions,
                    win tricks (trickPose.ts), name tags, one-time portrait snapshots.
@@ -49,8 +58,13 @@ From `viewer/`: `npx tsc -b`, `npx vite build`, and the headless scripts —
 `scripts/grab-check.ts`, `scripts/trick-rig-check.ts`, `src/views/three/tricks/*.check.ts`
 (bundle with esbuild, run with node; each file's header has the command).
 
-## Swapping in real models later
+## How the glTF bodies are driven
 
-Characters are procedural. To use rigged glTF models instead, keep the joint contract in
-`grab/README.md` (joint names/axes the IK, hands and tricks rely on) and build the rig from
-`useGLTF` + bone lookups instead of `skaterParts.ts`.
+`ProceduralCharacter.tsx` still computes everything (poses, reactions, grab IK, tricks) on its joint groups, which
+are invisible in the mid-2000s look; only the deck is drawn from them. `street/StreetSkin.tsx` then copies the result
+onto the skeleton every frame (priority -0.5: after the rig, before Pieces). So a new pose in `poses.ts` works
+in both looks. The joint contract is in `grab/README.md`. Model sources and licences: `../../../../ASSETS.md`.
+
+To regenerate the models: `node scripts/prepare-models.mjs "<unzipped pack>"`.
+To look at the characters on their own (dev server only): `/?view=3d&source=live&lineup=1`.
+To screenshot + measure FPS: `node scripts/shot-3d.mjs out.png --fps 5` (header lists the options).

@@ -2,6 +2,7 @@
 // cross ties, worn rails (repeats instanced). Fake blob shadows at the column feet.
 import { useMemo } from 'react'
 import { retroMaterial } from '../materials/retroMaterial'
+import { RETRO } from '../style.config'
 import { rustTexture, stickerTexture } from './textures'
 import { StaticInstances, type InstanceXform } from './StaticInstances'
 import { BlobShadows } from './BlobShadow'
@@ -12,10 +13,11 @@ const COL_X = [-12, -4.5, 4.5, 12]
 const COL_Z = [-3.4, 2.4]
 const COL_H = TRACK_Y - 0.6
 
-const columnMat = retroMaterial({ map: rustTexture(), repeat: [1, COL_H / 1.2] })
+const STEEL = RETRO ? '#7c9088' : '#ffffff'    // knocks back the rust's red
+const columnMat = retroMaterial({ map: rustTexture(), repeat: [1, COL_H / 1.2], color: STEEL })
 const columnFoot = retroMaterial({ map: stickerTexture(), repeat: [1, 1] })   // sticker-bombed bottom 1.4 m
-const beamMat = retroMaterial({ map: rustTexture(), repeat: [6, 1] })
-const girderMat = retroMaterial({ map: rustTexture(), repeat: [80 / 1.4, 1] })
+const beamMat = retroMaterial({ map: rustTexture(), repeat: [6, 1], color: STEEL })
+const girderMat = retroMaterial({ map: rustTexture(), repeat: [80 / 1.4, 1], color: STEEL })
 const tieMat = retroMaterial({ color: '#2a2420' })
 const railMat = retroMaterial({ color: '#6b6b6b', chrome: 0.5 })
 

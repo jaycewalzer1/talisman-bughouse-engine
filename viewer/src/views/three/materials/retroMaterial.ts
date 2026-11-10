@@ -4,6 +4,9 @@
 // fields stay flat. Vertex colours, smooth-filtered textures, optional (banded) chrome shine,
 // emissive and scene fog all still work. STYLE.toon.enabled = false falls back to smooth lighting.
 // Ink outlines are separate: materials/outline.ts (hulls) + post/InkEdgeEffect.ts (depth edges).
+// In the mid-2000s look (STYLE.toon.enabled = false) it is plain per-vertex Lambert: warm key + cool
+// hemisphere ambient, no normal / roughness maps, with baked occlusion and lamp reach read from the
+// optional `aBake` attribute (environment/bakeLighting.ts). Without that attribute both are zero.
 //
 // Usage:  const m = retroMaterial({ color: '#ff7a1a', chrome: 0.6 })
 //         <mesh material={m} />   or   <primitive object={m} attach="material" />
@@ -13,7 +16,7 @@ import {
   Color, LinearFilter, LinearMipmapLinearFilter, Matrix3, ShaderMaterial, type Texture, UniformsLib,
   UniformsUtils, Vector3, SRGBColorSpace,
 } from 'three'
-import { STYLE } from '../style.config'
+import { LOOK, RETRO, STYLE } from '../style.config'
 import { chromeTexture } from './chrome'
 
 export interface RetroOptions {
@@ -50,6 +53,8 @@ export const retroLight = {
   toonSoft: { value: STYLE.toon.softness },
   toonShadow: { value: STYLE.toon.shadowTone },
   toonShadowTint: { value: new Color(STYLE.toon.shadowTint) },
+  contactAO: { value: RETRO ? LOOK.contactAO : 0 },
+  lampColor: { value: new Color(STYLE.world.keyColor) },
 }
 
 const vertexShader = /* glsl */`
@@ -57,7 +62,8 @@ const vertexShader = /* glsl */`
   #include <fog_pars_vertex>
   uniform vec3 keyDir; uniform vec3 keyColor; uniform vec3 skyColor; uniform vec3 groundColor;
   uniform float ambient; uniform float keyStrength; uniform float snap; uniform float unlit;
-  uniform vec2 resolution; uniform mat3 mapTransform;
+  uniform vec2 resolution; uniform mat3 mapTransform; uniform float contactAO; uniform vec3 lampColor;
+  attribute vec2 aBake;       // x = baked occlusion (0..1), y = baked lamp reach; per vertex or per instance
   varying vec3 vLight; varying vec2 vUv; varying vec2 vEnvUv; varying vec3 vWN;
   #ifdef USE_VCOLOR
     attribute vec3 color; varying vec3 vColor;
@@ -78,7 +84,10 @@ const vertexShader = /* glsl */`
     // smooth fallback (toon off): lighting evaluated here, interpolated across the face.
     float nl = max(dot(wn, keyDir), 0.0);
     vec3 hemi = mix(groundColor, skyColor, wn.y * 0.5 + 0.5);
-    vLight = mix(hemi * ambient + keyColor * nl * keyStrength, vec3(1.0), unlit);
+    float worldY = (modelMatrix * localPos).y;
+    float contact = contactAO * (1.0 - max(wn.y, 0.0)) * (1.0 - smoothstep(0.0, 0.55, worldY));
+    float vis = (1.0 - aBake.x) * (1.0 - contact);
+    vLight = mix(hemi * ambient * vis + keyColor * nl * keyStrength * (0.35 + 0.65 * vis) + lampColor * aBake.y * vis, vec3(1.0), unlit);
     // sphere-map coordinates for chrome
     vec3 vn = normalize(normalMatrix * objNormal);
     vEnvUv = vn.xy * 0.5 + 0.5;
@@ -162,10 +171,26 @@ const fragmentShader = /* glsl */`
   }
 `
 
+/** Shrinks a canvas texture that exceeds the look's texture cap (with smoothing, so it goes a bit soft). */
+function capTexture(t: Texture) {
+  const img = t.image as HTMLCanvasElement | undefined
+  const max = LOOK.maxTexture
+  if (!img || !(img.width > max || img.height > max)) return
+  const k = Math.min(max / img.width, max / img.height)
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k))
+  const g = c.getContext('2d')!
+  g.imageSmoothingQuality = 'high'
+  g.drawImage(img, 0, 0, c.width, c.height)
+  t.image = c
+  t.needsUpdate = true
+}
+
 export function retroMaterial(o: RetroOptions = {}): ShaderMaterial {
   const color = o.color instanceof Color ? o.color : new Color(o.color ?? '#ffffff')
   const emissive = o.emissive instanceof Color ? o.emissive : new Color(o.emissive ?? '#000000')
   if (o.map) {
+    if (RETRO) capTexture(o.map)
     const mips = o.mipmaps ?? true
     o.map.magFilter = LinearFilter
     o.map.minFilter = mips ? LinearMipmapLinearFilter : LinearFilter

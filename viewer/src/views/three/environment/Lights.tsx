@@ -7,9 +7,10 @@
 import { useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Color, PlaneGeometry } from 'three'
-import { STYLE } from '../style.config'
+import { RETRO, STYLE } from '../style.config'
 import { retroLight, retroMaterial } from '../materials/retroMaterial'
 import { LightPool } from './BlobShadow'
+import { stickerTexture } from './textures'
 import { lightConeMaterial, lightPoolMaterial } from './decalMaterials'
 import { SODIUM, STREET_LAMPS, WORK_LAMP, lampState } from './lamps'
 import { WALL_Z } from '../layout'
@@ -20,6 +21,7 @@ const CONE = STYLE.scene.lampConeStrength
 const poleMat = retroMaterial({ color: '#3b4038', chrome: 0.25 })
 const headMat = retroMaterial({ color: '#2e322c', chrome: 0.3 })
 const wallPlane = new PlaneGeometry(1, 1)
+const stickerBand = RETRO ? retroMaterial({ map: stickerTexture(), repeat: [2, 3] }) : null
 
 function StreetLamp({ base, arm, flicker = false }: { base: [number, number, number]; arm: number; flicker?: boolean }) {
   const bulb = useMemo(() => retroMaterial({ color: '#000000', emissive: '#ffcf8a', emissiveIntensity: GLOW, unlit: true, fog: false }), [])
@@ -46,6 +48,11 @@ function StreetLamp({ base, arm, flicker = false }: { base: [number, number, num
       <mesh position={[0, y / 2, 0]} material={poleMat}>
         <cylinderGeometry args={[0.06, 0.09, y, 6]} />
       </mesh>
+      {stickerBand && (
+        <mesh position={[0, 1.15, 0]} material={stickerBand}>
+          <cylinderGeometry args={[0.078, 0.082, 1.0, 6]} />
+        </mesh>
+      )}
       <mesh position={[arm / 2, y, 0]} rotation-z={Math.PI / 2} material={poleMat}>
         <cylinderGeometry args={[0.04, 0.04, Math.abs(arm), 5]} />
       </mesh>
@@ -76,8 +83,18 @@ export function Lights() {
   return (
     <group>
       {/* fallback for stock materials (no shadows) */}
-      <hemisphereLight args={[retroLight.skyColor.value, retroLight.groundColor.value, STYLE.material.ambient * 2]} />
-      <directionalLight position={keyPos} intensity={STYLE.material.keyStrength * 2.2} color={retroLight.keyColor.value} />
+      {RETRO ? (
+        // what lights the skaters' Phong materials: warm key over the camera's shoulder + cool sky, warm street bounce
+        <>
+          <hemisphereLight args={['#7f8ac0', '#5c4438', 2.4]} />
+          <directionalLight position={[3, 7, 6]} intensity={3.1} color={retroLight.keyColor.value} />
+        </>
+      ) : (
+        <>
+          <hemisphereLight args={[retroLight.skyColor.value, retroLight.groundColor.value, STYLE.material.ambient * 2]} />
+          <directionalLight position={keyPos} intensity={STYLE.material.keyStrength * 2.2} color={retroLight.keyColor.value} />
+        </>
+      )}
 
       {/* work lamp bolted under the el, right over the boards */}
       <mesh position={[wx, wy + 0.11, wz]} material={headMat}>

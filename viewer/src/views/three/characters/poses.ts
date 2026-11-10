@@ -12,6 +12,7 @@ import { Euler, Vector3 } from 'three'
 import type { Reaction } from '../fxBus'
 import type { CharacterDriver } from './rig'
 import { winPose } from './trickPose'
+import { RETRO } from '../style.config'
 
 export type V3 = [number, number, number]
 export type IkSpace = 'root' | 'spine' | 'deck' | 'world'
@@ -20,6 +21,7 @@ export interface Ik { w: number; space: IkSpace; p: V3; pole?: V3 }
 
 export interface Pose {
   hipsY: number            // hip height offset (crouch < 0 < jump)
+  hipsX: number            // sideways hip shift over the standing leg (contrapposto)
   hips: V3
   spine: V3                // x > 0 = lean forward
   head: V3
@@ -34,6 +36,7 @@ export interface Pose {
   ikL: Ik
   ikR: Ik
   spinY: number            // whole-body yaw, applied unsmoothed (spins)
+  handOpen: [number, number] | null   // finger curl override [left, right], -1 = leave it to the rig; 0 flat .. 1 fist
 }
 
 export const POSE_KEYS = ['hips', 'spine', 'head', 'shL', 'elL', 'shR', 'elR', 'deckPos', 'deckRot'] as const
@@ -53,10 +56,10 @@ const WATCH: V3 = [0.9, -0.5, 0.25]
 const HOLD: V3 = [0.8, -0.5, -0.2]
 
 export const REACTION_DUR: Record<Reaction, number> = {
-  fistPump: 1.4, headInHands: 1.9, impatientTap: 2.0, celebrate: 2.3, slump: 2.3, talk: 1.6,
+  fistPump: 1.4, headInHands: 1.9, impatientTap: 2.0, celebrate: 2.3, slump: 2.3, talk: 1.6, request: 1.9,
 }
 export const REACTION_PRIORITY: Record<Reaction, number> = {
-  celebrate: 3, slump: 3, fistPump: 2, headInHands: 2, impatientTap: 1, talk: 1,
+  celebrate: 3, slump: 3, fistPump: 2, headInHands: 2, request: 2, impatientTap: 1, talk: 1,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -79,7 +82,7 @@ export function deckAt(at: V3, rot: V3, local: V3): V3 {
 
 function base(): Pose {
   return {
-    hipsY: -0.02, hips: [0, 0, 0], spine: [0.06, 0, 0], head: [0, 0, 0],
+    hipsY: -0.02, hipsX: 0, handOpen: null, hips: [0, 0, 0], spine: [0.06, 0, 0], head: [0, 0, 0],
     shL: [0.02, 0, 0.12], elL: [-0.3, 0, 0], shR: [0.02, 0, -0.12], elR: [-0.3, 0, 0],
     footL: [0, 0], footR: [0, 0], footX: null, deckPos: [...ASIDE_POS], deckRot: [...ASIDE_ROT], snapDeck: false,
     ikL: NO_IK(), ikR: NO_IK(), spinY: 0,
@@ -111,6 +114,8 @@ function mixPose(a: Pose, b: Pose, w: number): Pose {
   o.ikL = mixIk(a.ikL, b.ikL, w)
   o.ikR = mixIk(a.ikR, b.ikR, w)
   o.spinY = lerp(a.spinY, b.spinY, w)
+  o.hipsX = lerp(a.hipsX, b.hipsX, w)
+  o.handOpen = w > 0.5 ? b.handOpen : a.handOpen
   return o
 }
 
@@ -131,7 +136,45 @@ function idleKind(t: number, seed: number): { kind: IdleKind; u: number } {
 /** Sharp dip on each beat, ~92 bpm. */
 const nodBeat = (t: number, s: number) => Math.exp(-(((t * 1.53 + s) % 1) * 7))
 
+/** Mid-2000s idle: a stiff video-game contrapposto. Weight sits on one leg with the hip kicked out, the
+ *  free knee eases forward and the shoulders counter-tilt; every several seconds the weight swaps
+ *  over. Each skater has their own arm habit, picked by seed. */
+function contrappostoPose(p: Pose, d: CharacterDriver, t: number) {
+  const s = d.seed
+  const w = Math.max(-1, Math.min(1, Math.sin((t + s * 3.1) * 0.42) * 2.4))     // +1 = standing on the left leg
+  const breathe = Math.sin(t * 1.5 + s) * 0.012
+  p.hipsY = -0.015 - 0.012 * Math.abs(w)
+  p.hipsX = 0.042 * w
+  p.hips = [0.02, 0.1 * w, 0.055 * w]
+  p.spine = [0.03 + breathe, -0.08 * w, -0.1 * w]
+  p.head = [0.02, -0.12 * w + 0.22 * Math.sin(t * 0.27 + s * 2), 0.05 * w]
+  const l = (1 - w) / 2, r = (1 + w) / 2                  // how "free" each leg is
+  p.footL = [0.02 + 0.13 * l, 0.012 * l]
+  p.footR = [0.02 + 0.13 * r, 0.012 * r]
+  p.footX = [0.125 + 0.06 * l, -0.125 - 0.06 * r]
+  p.deckPos = [-0.48, 0, 0.1]
+  switch (Math.round(s / 1.7) % 4) {
+    case 0:      // hands jammed in the hoodie pocket
+      p.ikL = ik('spine', [0.075, 0.1, 0.1], 1, POCKET); p.ikR = ik('spine', [-0.075, 0.1, 0.1], 1, POCKET)
+      break
+    case 1:      // arms hanging stiff, away from the body
+      p.shL = [0.02, 0, 0.2]; p.elL = [-0.32, 0, 0]; p.shR = [0.04, 0, -0.2]; p.elR = [-0.28, 0, 0]
+      p.handOpen = [0.35, 0.35]
+      break
+    case 2:      // both hands resting on the hips, thumbs hooked in the belt
+      p.ikL = ik('spine', [0.2, -0.08, 0.05], 1, [1, -0.1, -0.7]); p.ikR = ik('spine', [-0.2, -0.08, 0.05], 1, [1, -0.1, -0.7])
+      p.handOpen = [0.45, 0.45]
+      break
+    default:     // one hand on the hip, the other loose
+      p.ikL = ik('spine', [0.2, -0.08, 0.05], 1, [1, -0.1, -0.7])
+      p.shR = [0.04, 0, -0.16]; p.elR = [-0.36, 0, 0]
+      p.handOpen = [0.45, 0.35]
+      break
+  }
+}
+
 function idlePose(p: Pose, d: CharacterDriver, t: number) {
+  if (RETRO) { contrappostoPose(p, d, t); return }
   const s = d.seed
   const breathe = Math.sin(t * 1.7 + s) * 0.02
   p.hips = [0, 0.08, 0.03]
@@ -235,7 +278,8 @@ function statePose(d: CharacterDriver, t: number): Pose {
       p.spine = [0.38 + 0.22 * k + breathe, 0.07 * Math.sin(t * speed * 0.7 + s), 0]
       p.head = [0.22 + 0.1 * k, 0.1 * Math.sin(t * speed * 0.6 + s), 0.05 * Math.sin(t * speed)]
       const drum = Math.max(0, Math.sin(t * (4 + 14 * k) + s)) * 0.02 * k
-      p.ikR = ik('spine', [-0.03, 0.57 + drum, 0.2], 1, [0.2, -1, 0.5])
+      // (the glTF bodies' hands reach further past the wrist than the old fists: aim lower, or it covers the face)
+      p.ikR = ik('spine', [-0.03, (RETRO ? 0.5 : 0.57) + drum, RETRO ? 0.215 : 0.2], 1, [0.2, -1, 0.5])
       p.ikL = ik('spine', [-0.06, 0.24, 0.21], 1, [0.6, -0.6, 0.3])
       p.footL = [0.04, 0]
       p.footR = [-0.06, Math.max(0, Math.sin(t * (3 + 10 * k) + s)) * 0.04 * (0.3 + k)]
@@ -308,8 +352,24 @@ function statePose(d: CharacterDriver, t: number): Pose {
 // ---------------------------------------------------------------------------------------------
 // reactions (u = seconds since the reaction started)
 
-function reactionPose(r: Reaction, p: Pose, u: number): Pose {
+function reactionPose(r: Reaction, p: Pose, u: number, d: CharacterDriver): Pose {
   switch (r) {
+    case 'request': {
+      // "gimme!": turn to the partner's board, reach an open hand toward them, beckon with it
+      const yaw = Math.max(-1.25, Math.min(1.25, d.lookYaw))
+      const left = yaw >= 0
+      const side = left ? 1 : -1
+      const beckon = 0.045 * Math.sin(u * 10)
+      const at: V3 = [Math.sin(yaw) * 0.56 + side * 0.13, 1.3 + beckon, Math.cos(yaw) * 0.56]
+      p.hips = [0, yaw * 0.12, 0]
+      p.spine = [0.03, yaw * 0.32, -side * 0.05]
+      p.head = [0.02, yaw * 0.62, 0]
+      const out = ik('root', at, 1, [side * 0.1, -1, -0.3])
+      if (left) { p.ikL = out; p.handOpen = [0.14 + 0.32 * Math.max(0, Math.sin(u * 10)), -1] }
+      else { p.ikR = out; p.handOpen = [-1, 0.14 + 0.32 * Math.max(0, Math.sin(u * 10))] }
+      p.footL = [0.08, 0]; p.footR = [-0.03, 0]; p.footX = null
+      return p
+    }
     case 'fistPump': {
       // raise the fist, then yank it down twice: "YES!"
       const y = u < 0.2 ? 0 : u > 0.95 ? 1 : 0.5 - 0.5 * Math.cos(TAU * (u - 0.2) * 2)
@@ -391,7 +451,7 @@ export function poseFor(d: CharacterDriver, t: number): Pose {
   const u = t - d.reactionAt, dur = REACTION_DUR[d.reaction]
   if (u >= dur || u < 0) { d.reaction = null; return p }
   const w = smooth(u / 0.15) * (1 - smooth(seg(u, dur - 0.35, dur)))
-  return mixPose(p, reactionPose(d.reaction, clonePose(p), u), w)
+  return mixPose(p, reactionPose(d.reaction, clonePose(p), u, d), w)
 }
 
 /** 2-bone leg IK in the sagittal plane. Returns [hip x-rotation, knee x-rotation]. */
