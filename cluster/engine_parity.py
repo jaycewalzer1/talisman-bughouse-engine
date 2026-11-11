@@ -80,16 +80,27 @@ def main(argv=None) -> int:
 
         with open(REFERENCE) as f:
             ref = json.load(f)
-        diffs = []
+        diffs, rows = [], []
         for p in ref:
             qs = evaluations(process, p)
             diffs.append(float("inf") if qs is None else abs(statistics.median(qs) - p["q"]))
+            if qs is not None:
+                rows.append((p["q"], qs))
     finally:
         process.close()
 
     bad = sum(d > args.tolerance for d in diffs)
     print(f"{len(diffs)} positions: mean diff {statistics.mean(diffs):.5f}, max {max(diffs):.5f}, "
           f"{bad} over {args.tolerance}")
+    # Enough detail to tell this machine disagreeing with itself from it disagreeing steadily with the reference.
+    spreads = [max(qs) - min(qs) for _, qs in rows]
+    signed = [statistics.median(qs) - q for q, qs in rows]
+    print(f"between repeats here: {sum(s > 1e-6 for s in spreads)} positions vary, max spread {max(spreads):.5f}")
+    print(f"here minus reference: mean {statistics.mean(signed):+.5f}, median {statistics.median(signed):+.5f}, "
+          f"{sum((statistics.median(qs) > 0) != (q > 0) for q, qs in rows)} changed sign")
+    print("worst 15 (reference, then each repeat here):")
+    for q, qs in sorted(rows, key=lambda r: -abs(statistics.median(r[1]) - r[0]))[:15]:
+        print(f"  {q:+.4f}   " + "  ".join(f"{x:+.4f}" for x in qs))
     if os.path.exists(PASSED):
         os.remove(PASSED)
     if bad > args.max_outliers:
