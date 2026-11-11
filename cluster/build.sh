@@ -9,7 +9,7 @@ echo "commit $(git rev-parse HEAD), hivemind $(git -C third_party/hivemind rev-p
 
 [ -x .venv/bin/python ] || "$PYTHON" -m venv .venv
 .venv/bin/python -m pip install --quiet torch chess einops onnx onnxruntime onnxscript onnxsim pandas polars pytest \
-  timm tensorboard rtpt numpy matplotlib
+  timm tensorboard rtpt numpy matplotlib websockets
 .venv/bin/python -m pip install --quiet --no-deps -e third_party/hivemind
 
 MODELS=third_party/hivemind/engine/models
@@ -30,6 +30,14 @@ FP16="$MODELS/hivemind-it04-crossboard-risev33-loss1.556-p82.0.onnx"
  # miss varies with the node (two missed in job 15488611 that passed in 15456719), so a failed test gets three tries.
  ctest --test-dir build-ninja --output-on-failure --repeat until-pass:3 \
    -E '^EngineTest\.RootMateScanStopsAtItsDeadline$')
+
+# The first start on a new GPU type builds the TensorRT engine file and saves it. That took longer than the 120 s a
+# player waits for the engine (job 15489984), so it is built here with a long wait.
+.venv/bin/python -c "
+import time
+from arena.players.hivemind import HivemindProcess
+t = time.monotonic(); p = HivemindProcess(timeout_s=1800); p.start(); p.close()
+print(f'engine first start took {time.monotonic() - t:.0f} s')"
 
 .venv/bin/python -m pytest arena/tests arena/tests_phase1 -q
 echo "build ok. Next: .venv/bin/python cluster/engine_parity.py check"
