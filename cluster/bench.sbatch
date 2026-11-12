@@ -17,7 +17,8 @@ PY=.venv/bin/python
 
 if [ -n "${SLURM_JOB_ID:-}" ]; then
   source cluster/env.sh
-  if [ ! -f runs/cluster/parity_passed ]; then
+  # PARITY_OPTIONAL=1 is for measuring speed and cost only. Game results from a build that failed parity don't count.
+  if [ ! -f runs/cluster/parity_passed ] && [ -z "${PARITY_OPTIONAL:-}" ]; then
     echo "parity has not passed on this build, so not spending GPU time" >&2
     exit 1
   fi
