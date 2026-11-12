@@ -63,7 +63,7 @@ def main(argv=None) -> int:
     check.add_argument("--max-outliers", type=int, default=5)
     args = ap.parse_args(argv)
 
-    process = HivemindProcess(options=REPEATABLE)
+    process = HivemindProcess(options=REPEATABLE, timeout_s=1800)  # a new node may build the engine file first
     try:
         if args.cmd == "record":
             ref = []

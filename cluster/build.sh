@@ -33,11 +33,7 @@ FP16="$MODELS/hivemind-it04-crossboard-risev33-loss1.556-p82.0.onnx"
 
 # The first start on a new GPU type builds the TensorRT engine file and saves it. That took longer than the 120 s a
 # player waits for the engine (job 15489984), so it is built here with a long wait.
-.venv/bin/python -c "
-import time
-from arena.players.hivemind import HivemindProcess
-t = time.monotonic(); p = HivemindProcess(timeout_s=1800); p.start(); p.close()
-print(f'engine first start took {time.monotonic() - t:.0f} s')"
+.venv/bin/python cluster/warm_engine.py
 
 .venv/bin/python -m pytest arena/tests arena/tests_phase1 -q
 echo "build ok. Next: .venv/bin/python cluster/engine_parity.py check"
