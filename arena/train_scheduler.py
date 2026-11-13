@@ -137,7 +137,8 @@ def main(argv=None) -> int:
         torch.save(policy.state_dict(), latest)
 
         specs = make_schedule(pool, args.pairs, seed=args.seed + iteration, base_ms=args.base_ms,
-                              channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
+                              channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies,
+                              skip_pairs=iteration * args.pairs)
         prepare_specs(specs, latest, iteration, args.iterations, trajectory_dir)
         report = run_schedule(specs, iter_dir, workers=args.workers, n_boot=200, seed=args.seed)
 

@@ -153,19 +153,25 @@ def _compute_kind(kind: str) -> str:
 
 
 def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "train", base_ms: int = 60000,
-                  increment_ms: int = 0, channel_delay_ms: int = 0, max_plies: int = 400) -> list[dict]:
-    """2 * n_pairs game specs (each opening pair twice, teams swapped), opponents rotated by group share."""
+                  increment_ms: int = 0, channel_delay_ms: int = 0, max_plies: int = 400,
+                  skip_pairs: int = 0) -> list[dict]:
+    """2 * n_pairs game specs (each opening pair twice, teams swapped), opponents rotated by group share.
+
+    skip_pairs moves the rotation that many picks along first. Training passes the pairs already played, so a short
+    iteration continues the rotation and does not meet the same first few opponents every time."""
     shares = pool.effective_shares()
     group_rr = _SmoothRR()
     member_rr = {g: _SmoothRR() for g in shares}
     pairs = paired_schedule(2 * n_pairs, seed, OPENING_SETS[openings])
     c = pool.contender
     specs = []
-    for k in range(n_pairs):
+    for k in range(-skip_pairs, n_pairs):
         group = group_rr.pick(shares)
         members = {o.name: o for o in pool.members(group)}
         weights = {n: (1.0 if group == "snapshot" else o.weight) for n, o in members.items()}
         opp = members[member_rr[group].pick(weights)]
+        if k < 0:
+            continue
         for _ in range(2):
             pair, swap = next(pairs)
             contender_team = "T2" if swap else "T1"

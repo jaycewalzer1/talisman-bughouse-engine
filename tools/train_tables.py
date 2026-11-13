@@ -72,6 +72,11 @@ def main() -> None:
         print(line(f"won,  {title}", [r for r in part if r["won"]]))
         print(line(f"lost, {title}", [r for r in part if r["score"] == 0.0]))
 
+    print(f"\n== won games against lost games, within each opponent (all iterations)\n{HEADER}")
+    for name in sorted({r["opponent"] for r in rows}):
+        print(line(f"won,  {name}"[:26], [r for r in rows if r["opponent"] == name and r["won"]]))
+        print(line(f"lost, {name}"[:26], [r for r in rows if r["opponent"] == name and r["score"] == 0.0]))
+
     stock = [r for r in rows if r["opponent"] == "stock-centralized"]
     print(f"\n== against stock-centralized only, blocks of 10 iterations\n{HEADER}")
     for start in range(1, last + 1, 10):
