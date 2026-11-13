@@ -55,3 +55,32 @@ waits until the 16 features have a measured baseline to compare against.
 
 Add `--resume` to continue a run. Results are in `<out>/train_log.jsonl`, the current policy in `<out>/latest.pt`.
 Players are kind `agent`, setup `sharing`.
+
+## Feature groups (added after the first 40-iteration run)
+
+That run showed no learning: waits are rare, one win or loss is a thin signal, and the policy had little to tell a
+good wait from a bad one. Four optional groups address that. All are off by default and turned on with
+`--features`; every extra engine search they need comes out of the move's node budget, so total nodes stay equal to
+stock's. Their inputs sit after the 32 base inputs and are 0 while a group is off, so every run has the same network
+shape and runs can be combined later.
+
+| Group | Adds | Extra searches |
+|---|---|---|
+| `tempo` | Legal move count, in check, gap between the engine's first and second choice in the quick look | None |
+| `mate` | Per piece: eval gain from holding one more, forced mate or not, and whether the partner can capture one | Up to 2, only for pieces that could be dropped with check and could arrive |
+| `danger` | Per piece: eval lost if our opponent got one more. Above 0.25 it sends the partner `hold_X` | Up to 1, same filter |
+| `serve` | A new decision: when the partner asked for a piece and a capture of it is within 0.4 eval of the engine's choice, play it or not | None (the long search reports 4 lines) |
+
+Training options that go with them:
+
+- `--baseline eval` credits each decision with the result minus what the engine expected at that moment (a straight
+  line fitted to the batch), instead of minus the running average.
+- `--think-logit 2` lets an untrained policy try other think budgets about a third of the time. The gate keeps its
+  strong stock starting point, because a random wait costs far more than a random think budget.
+- `--exploration 0.15` raises the starting chance of a forced wait.
+
+`cluster/launch_waves.sh` submits five runs side by side: `control`, `signal` (training options only) and one run
+per wave. `tools/compare_runs.py runs/waves/*` prints them in one table.
+
+Not built: teaching the gate from the wait probe's results (needs a probe run first), acting on `hold_X`, and a
+search that concentrates on one board (needs an engine change).

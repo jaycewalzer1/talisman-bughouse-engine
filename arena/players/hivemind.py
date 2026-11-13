@@ -94,12 +94,14 @@ class SearchResult:
     pv: list[tuple[str, str]] = field(default_factory=list)
     wall_ms: int = 0
     lines: list[str] = field(default_factory=list)
+    # With MultiPV > 1: (move_a, move_b, q) per reported line, the engine's choice first.
+    multi: list[tuple[str | None, str | None, float]] = field(default_factory=list)
 
     def move_for(self, board: str) -> str | None:
         return self.move_a if board == "A" else self.move_b
 
 
-_INFO_RE = re.compile(r"^info depth (\d+) score (cp|mate) (-?\d+) nodes (\d+)")
+_INFO_RE = re.compile(r"^info depth (\d+)(?: multipv (\d+))? score (cp|mate) (-?\d+) nodes (\d+)")
 
 
 def _parse_joint(tok: str) -> tuple[str | None, str | None] | None:
@@ -190,13 +192,15 @@ class HivemindProcess:
     # ------------------------------------------------------------------ search
 
     def search(self, fen_a: str, fen_b: str, *, team: str, nodes: int, time_advantage: bool = False,
-               require: str | None = None) -> SearchResult:
-        """Joint search for ``team`` ("T1"/"T2") from the two bracket-form FENs."""
+               require: str | None = None, multipv: int = 1) -> SearchResult:
+        """Joint search for ``team`` ("T1"/"T2") from the two bracket-form FENs. ``multipv`` > 1 also fills
+        ``SearchResult.multi`` with that many candidate lines."""
         with self._lock:
             self.start()
             self.set_option("Team", TEAM_OPTION[team])
             self.set_option("TimeAdvantage", bool(time_advantage))
             self.set_option("RequireMoveOn", require or "none")
+            self.set_option("MultiPV", int(multipv))
             if self.reset_tree:
                 self._send("ucinewgame")
             self._send(f"position fen {fen_a} | {fen_b}")
@@ -217,20 +221,24 @@ class HivemindProcess:
         joint = _parse_joint(parts[1]) if len(parts) > 1 else None
         if joint:
             res.move_a, res.move_b = joint
-        for line in reversed(lines):
+        last: dict[int, tuple[re.Match, str]] = {}  # the latest info line per MultiPV index
+        for line in lines:
             m = _INFO_RE.match(line)
-            if not m:
-                continue
-            res.depth = int(m.group(1))
-            res.nodes = int(m.group(4))
-            val = int(m.group(3))
-            if m.group(2) == "cp":
-                res.cp, res.q = val, cp_to_q(val)
-            else:
-                res.mate, res.q = val, (1.0 if val > 0 else -1.0)
-            if " pv " in line:
-                res.pv = [j for j in (_parse_joint(t) for t in line.split(" pv ", 1)[1].split()) if j]
-            break
+            if m:
+                last[int(m.group(2) or 1)] = (m, line)
+        for index in sorted(last):
+            m, line = last[index]
+            val = int(m.group(4))
+            q = cp_to_q(val) if m.group(3) == "cp" else (1.0 if val > 0 else -1.0)
+            pv = [j for j in (_parse_joint(t) for t in line.split(" pv ", 1)[1].split()) if j] if " pv " in line else []
+            if pv:
+                res.multi.append((pv[0][0], pv[0][1], q))
+            if index == min(last):
+                res.depth, res.nodes, res.q, res.pv = int(m.group(1)), int(m.group(5)), q, pv
+                if m.group(3) == "cp":
+                    res.cp = val
+                else:
+                    res.mate = val
         return res
 
     # ------------------------------------------------------------------ lifecycle
