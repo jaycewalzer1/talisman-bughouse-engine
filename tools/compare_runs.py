@@ -28,7 +28,7 @@ def cell(value, width: int, digits: int = 3) -> str:
 
 def main() -> None:
     print(f"{'run':<10} {'iters':>5} {'target early':>12} {'target late':>11} {'games':>6} {'± late':>7} "
-          f"{'wait early':>10} {'wait late':>9} {'think':>6} {'mates seen':>10} {'waited':>6} "
+          f"{'wait early':>10} {'wait late':>9} {'think early':>11} {'think late':>10} {'mates seen':>10} {'waited':>6} "
           f"{'serve offers':>12} {'served':>6}")
     for run in sys.argv[1:]:
         path = os.path.join(run, "train_log.jsonl")
@@ -44,7 +44,8 @@ def main() -> None:
         spread = 1.96 * (0.25 / late_games) ** 0.5 if late_games else None
         print(f"{os.path.basename(run):<10} {len(rows):>5} {cell(target(early)[0], 12)} {cell(late_score, 11)} "
               f"{late_games:>6} {cell(spread, 7)} {cell(mean(early, 'wait_rate'), 10)} "
-              f"{cell(mean(late, 'wait_rate'), 9)} {cell(mean(late, 'think_mean'), 6, 2)} "
+              f"{cell(mean(late, 'wait_rate'), 9)} {cell(mean(early, 'think_mean'), 11, 2)} "
+              f"{cell(mean(late, 'think_mean'), 10, 2)} "
               f"{sum(r.get('mate_seen', 0) for r in rows):>10} {sum(r.get('mate_waited', 0) for r in rows):>6} "
               f"{sum(r.get('serve_offers', 0) for r in rows):>12} {sum(r.get('served', 0) for r in rows):>6}")
 

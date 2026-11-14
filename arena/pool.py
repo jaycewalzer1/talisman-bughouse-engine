@@ -4,6 +4,8 @@
     python -m arena.pool schedule --pool arena/pools/phase1.json --pairs 20
     python -m arena.pool run      --pool arena/pools/phase1.json --pairs 20 --workers 1 --out runs/pool_smoke
     python -m arena.pool add-snapshot --pool arena/pools/phase1.json --name it01 --path runs/phase1/it01.pt
+    python -m arena.pool run      --agent --features mate,danger --policy runs/x/latest.pt \
+        --opponent stock-centralized --openings eval --pairs 800 --workers 3 --out runs/eval/x
 
 The pool (a JSON file) names one **contender** (the team being trained) and its **opponents**, each in a
 group:
@@ -22,6 +24,10 @@ weighted round-robin), so any stretch of the schedule is close to the target mix
 with the teams swapped, as in arena.run. Training schedules draw only from the training openings; the
 evaluation openings (arena.openings.EVAL_PAIRS) are held out for the final match.
 
+``run --agent`` scores one fixed scheduler policy: the contender plays as the scheduler agent with no forced
+exploration (untrained without ``--policy``), and ``--opponent`` keeps a single opponent. That is the evaluation
+that tells two policies apart; scores logged during training include exploration and a changing opponent mix.
+
 A schedule game is a normal arena.run spec with per-team players under ``teams``, so arena.run.play_game
 plays it. ``equal_compute`` marks games where both teams had the same kind and node budget.
 """
@@ -34,7 +40,7 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from arena.openings import OPENING_SETS, paired_schedule
 
@@ -133,6 +139,22 @@ class Pool:
 
 
 # ---------------------------------------------------------------------- rotation
+
+def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
+                   opponent: str | None = None) -> Pool:
+    """The pool narrowed for scoring one fixed policy. With agent (or features or policy) the contender plays as the
+    scheduler agent, untrained when policy is None. With opponent, only that opponent is played."""
+    contender, opponents = pool.contender, pool.opponents
+    if agent or features or policy:
+        contender = replace(contender, kind="agent", path=os.path.abspath(policy) if policy else None,
+                            player_kw={**contender.player_kw, "features": list(features or [])})
+    if opponent is not None:
+        opponents = [replace(o, group="target") for o in opponents if o.name == opponent]
+        if not opponents:
+            names = ", ".join(o.name for o in pool.opponents)
+            raise ValueError(f"no opponent named {opponent!r}; the pool has {names}")
+    return replace(pool, contender=contender, opponents=opponents)
+
 
 class _SmoothRR:
     """Smooth weighted round-robin: each pick goes to the key furthest below its share so far."""
@@ -288,6 +310,10 @@ def main(argv=None) -> int:
             p.add_argument("--base-ms", type=int, default=60000)
             p.add_argument("--channel-delay-ms", type=int, default=0)
             p.add_argument("--max-plies", type=int, default=400)
+            p.add_argument("--agent", action="store_true", help="the contender plays as the scheduler agent")
+            p.add_argument("--features", default="", help="comma-separated scheduler feature groups (implies --agent)")
+            p.add_argument("--policy", default=None, help="scheduler checkpoint (implies --agent); untrained if left out")
+            p.add_argument("--opponent", default=None, help="play only this opponent")
         if name == "schedule":
             p.add_argument("--out", default=None, help="write the schedule as JSON lines")
         if name == "run":
@@ -317,6 +343,16 @@ def main(argv=None) -> int:
         print(f"added snapshot {snap.name} ({snap.path}); {len(pool.members('snapshot'))} active")
         return 0
 
+    features = [f for f in args.features.split(",") if f]
+    if features:
+        from arena.players.scheduler_player import FEATURE_GROUPS
+
+        if set(features) - set(FEATURE_GROUPS):
+            ap.error(f"--features must come from {', '.join(FEATURE_GROUPS)}")
+    try:
+        pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent)
+    except ValueError as exc:
+        ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
                           channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
     if args.cmd == "schedule":

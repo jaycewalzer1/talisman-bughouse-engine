@@ -4,6 +4,7 @@
 #SBATCH -o train_%x_%j.log
 # One scheduler training run in runs/<NAME>. Settings come from the environment:
 #   NAME=waves/wave1 FEATURES=tempo BASELINE=eval EXPLORATION=0.15 THINK_LOGIT=2 sbatch -J wave1 cluster/train.sbatch
+# LR is the optimizer's step size and SNAPSHOT_EVERY how often a frozen copy joins the opponents (0 = never).
 # It continues runs/<NAME> if that run already has saved progress. It stops itself before the time limit and
 # submits its own continuation, so a run longer than 12 hours needs nothing from you.
 set -uo pipefail
@@ -17,6 +18,8 @@ PY=.venv/bin/python
 RUN_SECONDS="${RUN_SECONDS:-41400}"  # 11.5 hours, inside the 12 hour limit
 
 echo "commit $(git rev-parse HEAD)  run $OUT  features '${FEATURES:-}'  baseline ${BASELINE:-mean}"
+echo "lr ${LR:-3e-4}  think logit ${THINK_LOGIT:-6}  exploration ${EXPLORATION:-0.05}  pairs ${PAIRS:-50}  seed ${SEED:-0}"
+$PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', DEFAULT_MODEL)"
 $PY cluster/warm_engine.py || exit 1
 $PY cluster/engine_parity.py check || exit 1
 
@@ -25,6 +28,7 @@ RESUME=()
 timeout "$RUN_SECONDS" $PY -m arena.train_scheduler --out "$OUT" --iterations "$ITERATIONS" \
   --pairs "${PAIRS:-50}" --workers 3 --seed "${SEED:-0}" --features "${FEATURES:-}" \
   --baseline "${BASELINE:-mean}" --exploration "${EXPLORATION:-0.05}" --think-logit "${THINK_LOGIT:-6}" \
+  --lr "${LR:-3e-4}" --snapshot-every "${SNAPSHOT_EVERY:-20}" \
   ${RESUME[@]+"${RESUME[@]}"}
 status=$?
 

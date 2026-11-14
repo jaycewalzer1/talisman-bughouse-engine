@@ -7,7 +7,7 @@ import json
 import pytest
 
 from arena.openings import EVAL_OPENINGS, EVAL_PAIRS, TRAIN_PAIRS
-from arena.pool import Pool, TeamSpec, main, make_schedule, schedule_mix, unbuildable
+from arena.pool import Pool, TeamSpec, for_evaluation, main, make_schedule, schedule_mix, unbuildable
 
 
 def pool_dict(**over):
@@ -107,3 +107,30 @@ def test_shipped_phase1_pool_is_valid():
     assert pool.members("target")[0].name == "stock-centralized"
     assert pool.effective_shares()["target"] == pytest.approx(0.5)
     assert not unbuildable(make_schedule(pool, 10))
+
+
+def test_for_evaluation_narrows_to_one_opponent_and_an_agent_contender(tmp_path):
+    pool = Pool.from_dict(pool_dict())
+    same = for_evaluation(pool)
+    assert same.contender == pool.contender and same.opponents == pool.opponents
+
+    narrowed = for_evaluation(pool, features=["mate"], policy="x.pt", opponent="silent")
+    assert narrowed.contender.kind == "agent" and narrowed.contender.path.endswith("x.pt")
+    assert narrowed.contender.player_kw["features"] == ["mate"]
+    specs = make_schedule(narrowed, 6, openings="eval")
+    assert {s["opponent"] for s in specs} == {"silent"} and len(specs) == 12
+    assert all(s["teams"][s["contender_team"]]["kind"] == "agent" for s in specs)
+    assert pool.contender.kind == "heuristic" and len(pool.opponents) == 3  # the original is untouched
+
+    untrained = for_evaluation(pool, agent=True)
+    assert untrained.contender.kind == "agent" and untrained.contender.path is None
+    with pytest.raises(ValueError, match="no opponent named"):
+        for_evaluation(pool, opponent="nobody")
+
+    # the CLI plays only the named opponent
+    path, out = tmp_path / "pool.json", tmp_path / "run"
+    path.write_text(json.dumps(pool_dict()))
+    assert main(["run", "--pool", str(path), "--opponent", "stock", "--pairs", "2", "--boot", "50",
+                 "--out", str(out)]) == 0
+    report = json.loads((out / "summary.json").read_text())
+    assert report["mix"]["opponents"] == {"stock": 4}
