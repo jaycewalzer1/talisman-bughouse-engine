@@ -134,3 +134,16 @@ def test_for_evaluation_narrows_to_one_opponent_and_an_agent_contender(tmp_path)
                  "--out", str(out)]) == 0
     report = json.loads((out / "summary.json").read_text())
     assert report["mix"]["opponents"] == {"stock": 4}
+
+
+def test_for_evaluation_sets_stock_setup_and_node_budgets():
+    pool = Pool.from_dict(pool_dict(contender={"name": "me", "setup": "sharing", "kind": "hivemind", "nodes": 200,
+                                               "player_kw": {"compute": "throughput", "lend": True}}))
+    central = for_evaluation(pool, setup="centralized", nodes=100, opponent="stock", opponent_nodes=50)
+    assert (central.contender.setup, central.contender.nodes, central.contender.player_kw) == ("centralized", 100, {})
+    assert [(o.name, o.nodes) for o in central.opponents] == [("stock", 50)]
+    silent = for_evaluation(pool, setup="silent")
+    assert silent.contender.player_kw == {"compute": "throughput", "lend": False} and len(silent.opponents) == 3
+    assert for_evaluation(pool, setup="sharing", lend=True).contender.player_kw["lend"] is True
+    spec = make_schedule(central, 1)[0]
+    assert spec["teams"][spec["contender_team"]]["nodes"] == 100 and spec["equal_compute"] is False

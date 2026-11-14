@@ -27,6 +27,8 @@ evaluation openings (arena.openings.EVAL_PAIRS) are held out for the final match
 ``run --agent`` scores one fixed scheduler policy: the contender plays as the scheduler agent with no forced
 exploration (untrained without ``--policy``), and ``--opponent`` keeps a single opponent. That is the evaluation
 that tells two policies apart; scores logged during training include exploration and a changing opponent mix.
+``run --setup centralized --nodes 100`` does the same for stock Hivemind in a chosen team setup and node budget,
+which is how the team setups and think budgets are compared with no scheduler involved.
 
 A schedule game is a normal arena.run spec with per-team players under ``teams``, so arena.run.play_game
 plays it. ``equal_compute`` marks games where both teams had the same kind and node budget.
@@ -141,18 +143,29 @@ class Pool:
 # ---------------------------------------------------------------------- rotation
 
 def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
-                   opponent: str | None = None) -> Pool:
-    """The pool narrowed for scoring one fixed policy. With agent (or features or policy) the contender plays as the
-    scheduler agent, untrained when policy is None. With opponent, only that opponent is played."""
+                   opponent: str | None = None, setup: str | None = None, lend: bool = False,
+                   nodes: int | None = None, opponent_nodes: int | None = None) -> Pool:
+    """The pool narrowed for scoring one fixed team against one opponent.
+
+    With agent (or features or policy) the contender plays as the scheduler agent, untrained when policy is None.
+    With setup the contender is stock Hivemind in that team setup (lend only means something for a split team).
+    nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played."""
     contender, opponents = pool.contender, pool.opponents
+    if setup is not None:
+        split = {} if setup == "centralized" else {"compute": "throughput", "lend": lend}
+        contender = replace(contender, setup=setup, kind="hivemind", player_kw=split)
     if agent or features or policy:
         contender = replace(contender, kind="agent", path=os.path.abspath(policy) if policy else None,
                             player_kw={**contender.player_kw, "features": list(features or [])})
+    if nodes is not None:
+        contender = replace(contender, nodes=nodes)
     if opponent is not None:
         opponents = [replace(o, group="target") for o in opponents if o.name == opponent]
         if not opponents:
             names = ", ".join(o.name for o in pool.opponents)
             raise ValueError(f"no opponent named {opponent!r}; the pool has {names}")
+    if opponent_nodes is not None:
+        opponents = [replace(o, nodes=opponent_nodes) for o in opponents]
     return replace(pool, contender=contender, opponents=opponents)
 
 
@@ -314,6 +327,11 @@ def main(argv=None) -> int:
             p.add_argument("--features", default="", help="comma-separated scheduler feature groups (implies --agent)")
             p.add_argument("--policy", default=None, help="scheduler checkpoint (implies --agent); untrained if left out")
             p.add_argument("--opponent", default=None, help="play only this opponent")
+            p.add_argument("--setup", default=None, choices=("centralized", "silent", "sharing"),
+                           help="the contender is stock Hivemind in this team setup")
+            p.add_argument("--lend", action="store_true", help="with --setup: a split team lends idle compute")
+            p.add_argument("--nodes", type=int, default=None, help="the contender's node budget")
+            p.add_argument("--opponent-nodes", type=int, default=None, help="the opponents' node budget")
         if name == "schedule":
             p.add_argument("--out", default=None, help="write the schedule as JSON lines")
         if name == "run":
@@ -350,7 +368,8 @@ def main(argv=None) -> int:
         if set(features) - set(FEATURE_GROUPS):
             ap.error(f"--features must come from {', '.join(FEATURE_GROUPS)}")
     try:
-        pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent)
+        pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent,
+                              setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes)
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,

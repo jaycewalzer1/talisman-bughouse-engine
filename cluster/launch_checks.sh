@@ -3,11 +3,12 @@
 #   bash cluster/launch_checks.sh learner    # can the learner unlearn a known bad habit, and at which step size?
 #   bash cluster/launch_checks.sh probe      # does waiting ever beat moving, with no learning involved?
 #   bash cluster/launch_checks.sh features   # what do the feature groups do to an untrained policy's score?
+#   bash cluster/launch_checks.sh matches    # stock only: what is each team setup worth, and which think budget wins?
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features or all}"
+WHAT="${1:?say which check: learner, probe, features, matches or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -42,5 +43,25 @@ if [ "$WHAT" = features ] || [ "$WHAT" = all ]; then
   evaluate mate   mate,danger
   evaluate serve  serve
   evaluate all    tempo,mate,danger,serve
+fi
+if [ "$WHAT" = matches ] || [ "$WHAT" = all ]; then
+  # Stock Hivemind against stock Hivemind, no scheduler. The opponent is the one-program team at 200 nodes unless
+  # the last column says otherwise. 1600 games a row; the 400-node row is shorter because its games are slow.
+  match() {  # name, setup, lend, nodes, opponent, pairs
+    NAME="match/$1" SETUP="$2" LEND="$3" NODES="$4" OPPONENT="$5" PAIRS="$6" sbatch -J "$1" cluster/eval.sbatch
+  }
+  #      name               setup        lend  nodes  opponent                 pairs
+  # what each team setup is worth at equal compute; the first row should come out at 0.50
+  match  central_200        centralized  0     200    stock-centralized        800
+  match  silent_200         silent       0     200    stock-centralized        800
+  match  sharing_200        sharing      0     200    stock-centralized        800
+  match  lend_200           sharing      1     200    stock-centralized        800
+  # which fixed think budget wins on a 60 second clock (yesterday the 100-node opponent beat us 67 to 33)
+  match  central_50         centralized  0     50     stock-centralized        800
+  match  central_100        centralized  0     100    stock-centralized        800
+  match  central_400        centralized  0     400    stock-centralized        500
+  match  lend_100           sharing      1     100    stock-centralized        800
+  match  central_50_v100    centralized  0     50     stock-centralized-100n   800
+  match  lend_100_v100      sharing      1     100    stock-centralized-100n   800
 fi
 squeue -u "$USER"
