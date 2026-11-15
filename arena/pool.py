@@ -144,16 +144,22 @@ class Pool:
 
 def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
                    opponent: str | None = None, setup: str | None = None, lend: bool = False,
-                   nodes: int | None = None, opponent_nodes: int | None = None, rule: str | None = None) -> Pool:
+                   nodes: int | None = None, opponent_nodes: int | None = None, rule: str | None = None,
+                   lend_share: float | None = None) -> Pool:
     """The pool narrowed for scoring one fixed team against one opponent.
 
     With agent (or features or policy) the contender plays as the scheduler agent, untrained when policy is None.
     rule adds one of the agent's fixed hand-written rules (arena.players.scheduler_player.RULES).
-    With setup the contender is stock Hivemind in that team setup (lend only means something for a split team).
+    With setup the contender is stock Hivemind in that team setup (lend only means something for a split team;
+    lend_share is the part of the partner's idle machine it borrows, all of it when None).
     nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played."""
     contender, opponents = pool.contender, pool.opponents
+    if lend_share is not None and (setup in (None, "centralized") or not lend or not 0.0 < lend_share <= 1.0):
+        raise ValueError("lend_share needs a split setup with lend, and a value in (0, 1]")
     if setup is not None:
         split = {} if setup == "centralized" else {"compute": "throughput", "lend": lend}
+        if lend_share is not None:
+            split["lend_share"] = lend_share
         contender = replace(contender, setup=setup, kind="hivemind", player_kw=split)
     if agent or features or policy or rule:
         contender = replace(contender, kind="agent", path=os.path.abspath(policy) if policy else None,
@@ -333,6 +339,8 @@ def main(argv=None) -> int:
             p.add_argument("--setup", default=None, choices=("centralized", "silent", "sharing"),
                            help="the contender is stock Hivemind in this team setup")
             p.add_argument("--lend", action="store_true", help="with --setup: a split team lends idle compute")
+            p.add_argument("--lend-share", type=float, default=None,
+                           help="with --setup and --lend: the part of the idle machine borrowed (default 1, all)")
             p.add_argument("--nodes", type=int, default=None, help="the contender's node budget")
             p.add_argument("--opponent-nodes", type=int, default=None, help="the opponents' node budget")
         if name == "schedule":
@@ -375,7 +383,7 @@ def main(argv=None) -> int:
     try:
         pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent,
                               setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes,
-                              rule=args.rule)
+                              rule=args.rule, lend_share=args.lend_share)
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,

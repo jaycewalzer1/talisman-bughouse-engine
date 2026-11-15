@@ -5,11 +5,12 @@
 #   bash cluster/launch_checks.sh features   # what do the feature groups do to an untrained policy's score?
 #   bash cluster/launch_checks.sh matches    # stock only: what is each team setup worth, and which think budget wins?
 #   bash cluster/launch_checks.sh rules      # hand-written: does waiting for a mating piece win, alone or when asked for?
+#   bash cluster/launch_checks.sh lend       # how much of the partner's idle machine is it best to borrow?
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches, rules or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules, lend or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -72,5 +73,14 @@ if [ "$WHAT" = rules ] || [ "$WHAT" = all ]; then
   rule none  ""
   rule wait  mate_wait   # wait up to 5 seconds for the mating piece, in silence
   rule ask   mate_ask    # the same, and ask the partner, who captures the piece if it can
+fi
+if [ "$WHAT" = lend ] || [ "$WHAT" = all ]; then
+  # Borrowing none or all of the partner's idle machine are the sharing_200 and lend_200 rows of "matches". This
+  # adds half: the partner is slowed while its machine is out instead of being made to wait for it.
+  NAME=match/half_200 SETUP=sharing LEND=1 LEND_SHARE=0.5 NODES=200 OPPONENT=stock-centralized PAIRS=800 \
+    sbatch -J half_200 cluster/eval.sbatch
+  # Untrained scheduler choosing the amount itself on every move: all about 4 times in 5, else half or none.
+  # Compare with untrained_none from "features", which always borrows all.
+  NAME=eval/untrained_lend FEATURES=lend sbatch -J lend cluster/eval.sbatch
 fi
 squeue -u "$USER"

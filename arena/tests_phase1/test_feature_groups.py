@@ -15,6 +15,9 @@ from arena.players.hivemind import HivemindProcess, SearchResult, hivemind_avail
 from arena.players.scheduler import (
     BASE_THINK_INDEX,
     FEATURE_SIZE,
+    FULL_LEND_INDEX,
+    GATE_OPTIONS,
+    LEND_SHARES,
     MOVE_INDEX,
     PIECES,
     QUIET_INDEX,
@@ -24,10 +27,19 @@ from arena.players.scheduler import (
     Features,
     SchedulerPolicy,
     exploration_prob,
+    lend_log_prob,
     serve_log_prob,
     to_tensor,
 )
-from arena.train_scheduler import behavior, eval_baseline_loss, features_from_dict, fit_eval_baseline, learn, step_log_prob
+from arena.train_scheduler import (
+    behavior,
+    eval_baseline_loss,
+    features_from_dict,
+    fit_eval_baseline,
+    learn,
+    make_optimizer,
+    step_log_prob,
+)
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
 SMOTHERED = "6rk/6pp/8/8/8/8/8/K7[] w - - 0 1"  # white mates with N@f7 if it had a knight
@@ -319,6 +331,135 @@ def test_mate_ask_partner_captures_the_piece_even_off_the_engine_lines(monkeypat
     silent = player(FakeProcess(quiet), features=("mate",), rule="mate_wait")
     assert silent.decide(obs(KNIGHT_HANGS, legal=("e2e3", "d3e4"),
                              inbox=(msg("need_N", piece="N", mate=True),))).uci == "e2e3"
+
+
+# ------------------------------------------------------------------------------------------ lending
+
+HALF = LEND_SHARES.index(0.5)
+NONE = LEND_SHARES.index(0.0)
+
+
+def free(o: Observation, partner_on_move: bool = True) -> Observation:
+    """The same moment with the partner's machine idle."""
+    from dataclasses import replace
+    return replace(o, partner_machine_free=True, to_move={"A": "A_white", "B": "B_black" if partner_on_move else "B_white"})
+
+
+def lending(monkeypatch, choice: int) -> list:
+    seen = []
+    monkeypatch.setattr(sp, "sample_lend", lambda policy, f, think, on_move, rng: (
+        seen.append((think, on_move)) or choice, torch.tensor(0.0)))
+    return seen
+
+
+def test_lend_head_starts_out_mostly_borrowing_everything():
+    probs = torch.softmax(SchedulerPolicy()(to_tensor(features())).lend, -1)
+    assert probs.argmax() == FULL_LEND_INDEX and probs[FULL_LEND_INDEX].item() == pytest.approx(0.787, abs=0.01)
+    assert sum(p * s for p, s in zip(probs.tolist(), LEND_SHARES)) == pytest.approx(0.84, abs=0.01)
+
+
+def test_lend_head_sees_the_think_budget_and_whether_the_partner_waits():
+    policy = SchedulerPolicy()
+    torch.nn.init.normal_(policy.lend.weight)
+    x = to_tensor(features())
+    base = policy(x, think_choice=BASE_THINK_INDEX).lend
+    assert not torch.equal(base, policy(x, think_choice=BASE_THINK_INDEX + 1).lend)
+    assert not torch.equal(base, policy(x, think_choice=BASE_THINK_INDEX, partner_on_move=True).lend)
+
+
+def test_a_checkpoint_from_before_the_lend_head_still_loads():
+    old = {k: v for k, v in SchedulerPolicy(think_logit=2.0).state_dict().items() if not k.startswith("lend.")}
+    policy = SchedulerPolicy()
+    with pytest.raises(RuntimeError):
+        policy.load_state_dict(old)
+    policy.load_weights(old)
+    assert float(policy.think_logit) == 2.0 and not policy.lend.weight.any()
+
+
+def test_lend_group_needs_a_team_that_lends():
+    with pytest.raises(ValueError, match="lend"):
+        player(FakeProcess(), features=("lend",))
+
+
+def test_without_the_lend_group_the_whole_machine_is_borrowed_and_nothing_is_recorded(monkeypatch):
+    force_move(monkeypatch)
+    process = FakeProcess()
+    p = player(process, lend=True)
+    d = p.decide(free(obs()))
+    assert (d.borrow, d.borrow_share, d.nodes, d.think_ms) == (True, 1.0, 200, 1000)
+    assert [s["type"] for s in p.steps] == ["decide"]
+
+
+@pytest.mark.parametrize("choice, borrow, nodes", [(NONE, False, 100), (HALF, True, 150), (FULL_LEND_INDEX, True, 200)])
+def test_lend_group_borrows_what_the_policy_picks_at_the_same_think_time(monkeypatch, choice, borrow, nodes):
+    force_move(monkeypatch)
+    seen = lending(monkeypatch, choice)
+    process = FakeProcess()
+    p = player(process, lend=True, features=("lend",))
+    d = p.decide(free(obs()))
+    assert (d.borrow, d.nodes, d.think_ms) == (borrow, nodes, 1000)
+    assert sum(c["nodes"] for c in process.calls) == nodes
+    assert d.borrow_share == (LEND_SHARES[choice] if borrow else 1.0)
+    assert seen == [(BASE_THINK_INDEX, True)]
+    assert p.steps[-1] == {**p.steps[-1], "type": "lend", "think": BASE_THINK_INDEX, "partner_on_move": True,
+                           "choice": choice}
+
+
+def test_lend_group_is_not_asked_when_the_machine_is_busy_or_on_a_wait(monkeypatch):
+    seen = lending(monkeypatch, HALF)
+    force_move(monkeypatch)
+    busy = player(FakeProcess(), lend=True, features=("lend",))
+    d = busy.decide(obs())
+    assert not d.borrow and d.nodes == 100
+    monkeypatch.setattr(sp, "sample_action", lambda *a: Action(GATE_OPTIONS.index("sit"), QUIET_INDEX,
+                                                               BASE_THINK_INDEX, torch.tensor(0.0)))
+    waiting = player(FakeProcess(), lend=True, features=("lend",))
+    assert waiting.decide(free(obs())).kind == "wait"
+    assert seen == [] and all(s["type"] != "lend" for s in busy.steps + waiting.steps)
+
+
+def test_lend_reads_whether_the_partner_is_on_move(monkeypatch):
+    force_move(monkeypatch)
+    seen = lending(monkeypatch, HALF)
+    player(FakeProcess(), lend=True, features=("lend",)).decide(free(obs(), partner_on_move=False))
+    assert seen == [(BASE_THINK_INDEX, False)]
+
+
+def test_lend_steps_replay_train_and_show_in_the_log():
+    from dataclasses import asdict
+    f = features(partner_waiting=True)
+
+    def lend(choice: int, on_move: bool) -> dict:
+        return {"type": "lend", "features": asdict(f), "think": BASE_THINK_INDEX, "partner_on_move": on_move,
+                "choice": choice}
+
+    policy = SchedulerPolicy()
+    assert step_log_prob(policy, lend(HALF, True)).item() == pytest.approx(
+        lend_log_prob(policy, f, BASE_THINK_INDEX, True, HALF).item())
+    stats = behavior([([step(0.0), lend(HALF, True), lend(FULL_LEND_INDEX, False)], 1.0)])
+    assert (stats["lend_offers"], stats["lend_mean"], stats["lend_mean_waiting"]) == (2, 0.75, 0.5)
+    assert behavior([([step(0.0)], 1.0)])["lend_mean"] is None
+
+    # Borrowing half won and borrowing all lost, every time: after training, half is likelier than at the start.
+    optimizer = make_optimizer(policy, 1e-2)
+    before = lend_log_prob(policy, f, BASE_THINK_INDEX, True, HALF).item()
+    for _ in range(20):
+        learn(policy, optimizer, [([lend(HALF, True)], 1.0), ([lend(FULL_LEND_INDEX, True)], -1.0)], 0.0)
+    assert lend_log_prob(policy, f, BASE_THINK_INDEX, True, HALF).item() > before + 0.5
+
+
+def test_a_run_saved_before_the_lend_head_continues_with_it():
+    policy = SchedulerPolicy()
+    core = [p for name, p in policy.named_parameters() if not name.startswith("lend.")]
+    old = torch.optim.Adam(core, lr=1e-3)
+    learn(policy, old, [([step(0.0)], 1.0), ([step(0.2)], -1.0)], 0.0)
+    resumed = make_optimizer(policy, 1e-3, old.state_dict())
+    assert [len(g["params"]) for g in resumed.param_groups] == [len(core), 2]
+    assert resumed.state_dict()["state"][0]["step"] == 1  # the old run's Adam state came along
+    for saved in (resumed.state_dict(), make_optimizer(policy, 1e-3).state_dict()):
+        again = make_optimizer(policy, 1e-3, saved)
+        assert sum(len(g["params"]) for g in again.param_groups) == len(core) + 2
+        learn(policy, again, [([step(0.0)], 1.0), ([step(0.2)], -1.0)], 0.0)
 
 
 # ------------------------------------------------------------------------------------------ training

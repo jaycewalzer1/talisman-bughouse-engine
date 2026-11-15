@@ -11,6 +11,7 @@ Emitted events follow docs/events.md exactly.
 from __future__ import annotations
 
 import heapq
+import math
 import time
 from dataclasses import replace
 from typing import Callable
@@ -83,6 +84,7 @@ class Simulator:
         self._inbox: dict[str, list[Message]] = {s: [] for s in SEATS}
         self._sitting: dict[str, bool] = {s: False for s in SEATS}
         self._lent_until: dict[str, int] = {s: 0 for s in SEATS}  # seat's machine lent to its partner
+        self._lent_share: dict[str, float] = {s: 0.0 for s in SEATS}  # how much of it, while lent
         self._sit_search_until: dict[str, int] = {s: 0 for s in SEATS}  # search behind a wait decision
         self._ran = False
 
@@ -266,13 +268,29 @@ class Simulator:
         return (self._status[seat] != _THINKING and self._lent_until[seat] <= self.now
                 and self._sit_search_until[seat] <= self.now)
 
+    def _lend(self, seat: str, until: int, share: float) -> None:
+        self._lent_until[seat], self._lent_share[seat] = until, share
+
+    def _own_machine_ms(self, seat: str, work_ms: int) -> int:
+        """Clock time for work_ms of search on seat's own machine. While part of the machine is lent to the
+        partner the rest runs that much slower. A machine lent whole never gets here: the decision is deferred."""
+        left = self._lent_until[seat] - self.now
+        keep = 1.0 - self._lent_share[seat]
+        if left <= 0 or keep >= 1.0 or work_ms <= 0:
+            return work_ms
+        slow_work = left * keep  # the search done by the time the lent part comes back
+        if work_ms <= slow_work:
+            return math.ceil(work_ms / keep)
+        return left + math.ceil(work_ms - slow_work)
+
     def _on_decide(self, seat: str, gen: int) -> None:
         if gen != self._gen[seat] or self._status[seat] != _PENDING:
             return
         if self.state.to_move(BOARD_OF[seat]) != seat:  # defensive; should not happen
             self._status[seat] = _IDLE
             return
-        if self._lent_until[seat] > self.now:  # our machine is searching for the partner: wait for it
+        if self._lent_until[seat] > self.now and self._lent_share[seat] >= 1.0:
+            # our whole machine is searching for the partner: wait for it
             self._push(self._lent_until[seat], _DECIDE, seat, gen)
             return
         obs = self._observe(seat)
@@ -286,14 +304,16 @@ class Simulator:
             dec = Decision(kind="wait", wait_ms=FALLBACK_WAIT_MS, messages=dec.messages, stall_reason=reason)
         if dec.borrow and not obs.partner_machine_free:
             raise ValueError(f"{seat} borrowed its partner's machine while it was busy")
+        if dec.borrow and not 0.0 < dec.borrow_share <= 1.0:
+            raise ValueError(f"{seat} borrowed {dec.borrow_share} of its partner's machine; must be in (0, 1]")
 
         self._gen[seat] += 1
         g = self._gen[seat]
         if dec.kind == "move":
-            cost = wall_ms if self.charge_wall_time else max(0, int(dec.think_ms))
+            cost = self._own_machine_ms(seat, wall_ms if self.charge_wall_time else max(0, int(dec.think_ms)))
             self._status[seat] = _THINKING
             if dec.borrow:
-                self._lent_until[PARTNER[seat]] = self.now + cost
+                self._lend(PARTNER[seat], self.now + cost, dec.borrow_share)
             self._emit(
                 "thinking",
                 seat=seat,
@@ -306,9 +326,11 @@ class Simulator:
             )
             self._push(self.now + cost, _LAND, seat, g, dec, self.now)
         else:
-            self._sit_search_until[seat] = self.now + max(0, int(dec.think_ms))
+            planned = max(0, int(dec.think_ms))
+            slowed = self._own_machine_ms(seat, planned) - planned
+            self._sit_search_until[seat] = self.now + planned + slowed
             if dec.borrow:
-                self._lent_until[PARTNER[seat]] = self._sit_search_until[seat]
+                self._lend(PARTNER[seat], self._sit_search_until[seat], dec.borrow_share)
             self._status[seat] = _WAITING
             if not self._sitting[seat]:
                 self._sitting[seat] = True
@@ -316,7 +338,7 @@ class Simulator:
             self._send(seat, dec.messages)
             # a delivery inside _send (delay 0) may have already woken us; only schedule if still waiting
             if self._status[seat] == _WAITING and self._gen[seat] == g:
-                self._push(self.now + max(1, int(dec.wait_ms)), _WAKE, seat, g)
+                self._push(self.now + max(1, int(dec.wait_ms) + slowed), _WAKE, seat, g)
 
     def _on_land(self, seat: str, gen: int, dec: Decision, started: int) -> None:
         if gen != self._gen[seat] or self._status[seat] != _THINKING:

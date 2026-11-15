@@ -327,6 +327,11 @@ def test_hivemind_player_borrows_idle_partner_machine():
     assert not d.borrow and d.nodes == 100 and d.think_ms == 1000 and stub.calls[-1]["nodes"] == 100
     p_off = HivemindPlayer("A_white", stub, nodes=100, ms_per_node=10.0)
     assert not p_off.decide(replace(obs, partner_machine_free=True)).borrow
+    half = HivemindPlayer("A_white", stub, nodes=100, ms_per_node=10.0, lend=True, lend_share=0.5)
+    d = half.decide(replace(obs, partner_machine_free=True))
+    assert (d.borrow, d.borrow_share, d.nodes, d.think_ms) == (True, 0.5, 150, 1000)
+    with pytest.raises(ValueError, match="lend_share"):
+        HivemindPlayer("A_white", stub, lend=True, lend_share=0.0)
 
 
 # ---------------------------------------------------------------------------------------------- pv_offers

@@ -10,6 +10,7 @@
 # RULE=mate_wait or mate_ask adds a fixed hand-written rule to the scheduler (it needs FEATURES to include mate).
 # Stock Hivemind in a team setup (centralized, silent or sharing; LEND=1 lends idle compute), no scheduler:
 #   NAME=match/central_100 SETUP=centralized NODES=100 sbatch -J c100 cluster/eval.sbatch
+# With LEND=1, LEND_SHARE=0.5 borrows only half of the partner's idle machine (default: all of it).
 # NODES and OPPONENT_NODES replace the node budgets (200 each). PAIRS=800 is 1600 games, about 4 hours. A job that
 # is cut off leaves no result, so keep it inside the time limit and use another SEED and NAME for more games.
 set -uo pipefail
@@ -28,7 +29,8 @@ ARGS=()
 if [ -n "${SETUP:-}" ]; then
   ARGS+=(--setup "$SETUP")
   [ "${LEND:-0}" = 1 ] && ARGS+=(--lend)
-  WHO="stock $SETUP lend ${LEND:-0}"
+  [ -n "${LEND_SHARE:-}" ] && ARGS+=(--lend-share "$LEND_SHARE")
+  WHO="stock $SETUP lend ${LEND:-0} share ${LEND_SHARE:-1}"
 else
   ARGS+=(--agent --features "${FEATURES:-}")
   [ -n "${POLICY:-}" ] && ARGS+=(--policy "$POLICY")

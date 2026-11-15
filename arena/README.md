@@ -47,7 +47,9 @@ half a machine (`--compute throughput`, the default): it searches `nodes // 2` p
 think time as the controller's `nodes`. With `--lend`, a player whose partner's machine is idle (partner
 not searching: not on move, or sitting) borrows it for one search: twice the nodes, same think time.
 The partner's machine stays busy until that search lands; if the partner has to decide meanwhile, it
-waits for its machine with its clock running. `--compute nodes` gives each player a full machine
+waits for its machine with its clock running. A player can also borrow only part of the machine
+(`Decision.borrow_share`, `lend_share` for Hivemind players): the partner then keeps the rest and is not made
+to wait, but a search it starts meanwhile runs that much slower until the machine is back. `--compute nodes` gives each player a full machine
 instead (a split team then has up to twice the controller's throughput).
 
 ## Commands

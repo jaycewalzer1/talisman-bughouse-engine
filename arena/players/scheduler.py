@@ -24,6 +24,7 @@ TALK_OPTIONS = ("quiet",) + tuple(f"need_{p}" for p in PIECES) + ("offer",)  # 7
 THINK_MULTIPLIERS = (0.25, 0.5, 1.0, 2.0, 4.0)  # 5 options, times the player's base node budget
 END_WAIT_OPTIONS = ("keep_waiting", "stop")  # 2 options
 SERVE_OPTIONS = ("own_move", "serve")  # play the engine's move, or the capture the partner asked for
+LEND_SHARES = (0.0, 0.5, 1.0)  # 3 options: how much of the partner's idle machine a move's search borrows
 BASE_THINK_INDEX = THINK_MULTIPLIERS.index(1.0)
 
 START_EXPLORATION = 0.05
@@ -37,6 +38,10 @@ STOP_INDEX = END_WAIT_OPTIONS.index("stop")
 # Added to the option stock would pick. e^6 makes that option about 98.5% likely even against six others, so an
 # untrained seat rarely waits by accident. The tests only need about 4.8, which would mean 1 random wait in 20.
 STOCK_LOGIT = 6.0
+# Stock borrows the whole idle machine every time. The lend head starts out preferring that by e^2 only, so about
+# 1 choice in 5 tries half or none: a head that never tries the other options cannot learn when they are better.
+LEND_LOGIT = 2.0
+FULL_LEND_INDEX = LEND_SHARES.index(1.0)
 HIDDEN_SIZE = 64
 
 
@@ -186,6 +191,7 @@ class Heads:
     think: torch.Tensor  # (len(THINK_MULTIPLIERS),)
     end_wait: torch.Tensor  # (len(END_WAIT_OPTIONS),)
     serve: torch.Tensor | None = None  # (len(SERVE_OPTIONS),)
+    lend: torch.Tensor | None = None  # (len(LEND_SHARES),)
 
 
 def _stock_gate(x: torch.Tensor) -> torch.Tensor:
@@ -203,9 +209,9 @@ def _stock_gate(x: torch.Tensor) -> torch.Tensor:
     return logits
 
 
-def _favor(size: int, index: int) -> torch.Tensor:
+def _favor(size: int, index: int, logit: float = STOCK_LOGIT) -> torch.Tensor:
     logits = torch.zeros(size)
-    logits[index] = STOCK_LOGIT
+    logits[index] = logit
     return logits
 
 
@@ -218,7 +224,11 @@ class SchedulerPolicy(nn.Module):
 
     think_logit is how strongly an untrained policy sticks to the normal think budget. It is saved with the
     weights. The serve head has no starting preference: it is only asked when a capture the partner wants is
-    close to the engine's own choice."""
+    close to the engine's own choice.
+
+    The lend head is only asked on a move while the partner's machine is idle. Besides the summary it sees the
+    think budget just chosen (think_choice, one-hot: a longer search keeps the machine longer) and whether the
+    partner is itself on move, which with an idle machine means it is waiting."""
 
     def __init__(self, think_logit: float = STOCK_LOGIT) -> None:
         super().__init__()
@@ -230,15 +240,21 @@ class SchedulerPolicy(nn.Module):
         self.think = nn.Linear(HIDDEN_SIZE, len(THINK_MULTIPLIERS))
         self.end_wait = nn.Linear(HIDDEN_SIZE, len(END_WAIT_OPTIONS))
         self.serve = nn.Linear(HIDDEN_SIZE, len(SERVE_OPTIONS))
-        for head in (self.gate, self.talk, self.think, self.end_wait, self.serve):
+        self.lend = nn.Linear(HIDDEN_SIZE + len(THINK_MULTIPLIERS) + 1, len(LEND_SHARES))
+        for head in (self.gate, self.talk, self.think, self.end_wait, self.serve, self.lend):
             nn.init.zeros_(head.weight)
             nn.init.zeros_(head.bias)
 
-    def forward(self, x: torch.Tensor, gate_choice: int | None = None) -> Heads:
+    def forward(self, x: torch.Tensor, gate_choice: int | None = None, think_choice: int | None = None,
+                partner_on_move: bool = False) -> Heads:
         summary = self.body(x)
         chosen = torch.zeros(len(GATE_OPTIONS))
         if gate_choice is not None:
             chosen[gate_choice] = 1.0
+        lend_sees = torch.zeros(len(THINK_MULTIPLIERS) + 1)
+        if think_choice is not None:
+            lend_sees[think_choice] = 1.0
+        lend_sees[-1] = float(partner_on_move)
         think_start = torch.zeros(len(THINK_MULTIPLIERS))
         think_start[BASE_THINK_INDEX] = self.think_logit
         return Heads(
@@ -247,7 +263,14 @@ class SchedulerPolicy(nn.Module):
             think=think_start + self.think(summary),
             end_wait=_favor(len(END_WAIT_OPTIONS), STOP_INDEX) + self.end_wait(summary),
             serve=self.serve(summary),
+            lend=_favor(len(LEND_SHARES), FULL_LEND_INDEX, LEND_LOGIT) + self.lend(torch.cat([summary, lend_sees])),
         )
+
+    def load_weights(self, state: dict) -> None:
+        """Load saved weights. A checkpoint from before the lend head existed has none for it; the head then
+        keeps its starting preference, and the rest of the policy plays as it was saved."""
+        fresh = self.state_dict()
+        self.load_state_dict({**{k: v for k, v in fresh.items() if k.startswith("lend.")}, **state})
 
 
 def plausible_wait(f: Features) -> bool:
@@ -338,6 +361,21 @@ def sample_serve(policy: SchedulerPolicy, f: Features, rng: torch.Generator) -> 
     of its own, like end_wait."""
     choice = _draw(torch.softmax(policy(to_tensor(f)).serve, -1), rng)
     return choice, serve_log_prob(policy, f, choice)
+
+
+def lend_log_prob(policy: SchedulerPolicy, f: Features, think: int, partner_on_move: bool,
+                  choice: int) -> torch.Tensor:
+    heads = policy(to_tensor(f), think_choice=think, partner_on_move=partner_on_move)
+    return torch.log_softmax(heads.lend, -1)[choice]
+
+
+def sample_lend(policy: SchedulerPolicy, f: Features, think: int, partner_on_move: bool,
+                rng: torch.Generator) -> tuple[int, torch.Tensor]:
+    """On a move with the partner's machine idle: index into LEND_SHARES and its log probability. A decision of
+    its own, like end_wait and serve."""
+    heads = policy(to_tensor(f), think_choice=think, partner_on_move=partner_on_move)
+    choice = _draw(torch.softmax(heads.lend, -1), rng)
+    return choice, lend_log_prob(policy, f, think, partner_on_move, choice)
 
 
 def plan_nodes(base_nodes: int, think_index: int, quick_nodes: int) -> int:

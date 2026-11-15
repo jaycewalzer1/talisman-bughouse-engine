@@ -9,7 +9,7 @@ resume), pool.json (the pool plus snapshots), train_log.jsonl (one line per iter
 iteration's games). The pool file passed with --pool is never modified.
 
 --features turns on the player's optional feature groups (arena/players/scheduler_player.py: tempo, mate, danger,
-serve). --baseline eval judges each decision against what the engine expected at that moment instead of against
+serve, lend). --baseline eval judges each decision against what the engine expected at that moment instead of against
 the average result, which takes most of the luck out of the reward.
 """
 
@@ -26,6 +26,7 @@ from dataclasses import replace
 import torch
 
 from arena.players.scheduler import (
+    LEND_SHARES,
     MOVE_INDEX,
     QUIET_INDEX,
     SERVE_OPTIONS,
@@ -36,6 +37,7 @@ from arena.players.scheduler import (
     SchedulerPolicy,
     action_log_prob,
     end_wait_log_prob,
+    lend_log_prob,
     reinforce_loss,
     serve_log_prob,
     team_reward,
@@ -58,6 +60,8 @@ def step_log_prob(policy: SchedulerPolicy, step: dict) -> torch.Tensor:
         return end_wait_log_prob(policy, f, step["choice"])
     if step["type"] == "serve":
         return serve_log_prob(policy, f, step["choice"])
+    if step["type"] == "lend":
+        return lend_log_prob(policy, f, step["think"], step["partner_on_move"], step["choice"])
     return action_log_prob(policy, f, step["gate"], step["talk"], step["think"], step["epsilon"])
 
 
@@ -136,6 +140,11 @@ def behavior(games: list[tuple[list[dict], float]]) -> dict:
     moves = [s for s in decides if s["gate"] == MOVE_INDEX]
     serves = [s for steps, _ in games for s in steps if s["type"] == "serve"]
     mates = [s for s in decides if s["features"].get("mate_with")]
+    lends = [s for steps, _ in games for s in steps if s["type"] == "lend"]
+    lends_waiting = [s for s in lends if s["partner_on_move"]]
+
+    def share(steps: list[dict]) -> float | None:
+        return round(sum(LEND_SHARES[s["choice"]] for s in steps) / len(steps), 3) if steps else None
     return {"decisions": len(decides), "wait_rate": round(sum(s["gate"] != MOVE_INDEX for s in decides) / n, 4),
             "talk_rate": round(sum(s["talk"] != QUIET_INDEX for s in decides) / n, 4),
             "end_waits": sum(s["type"] == "end_wait" for steps, _ in games for s in steps),
@@ -144,7 +153,27 @@ def behavior(games: list[tuple[list[dict], float]]) -> dict:
             # decisions where one more piece gave a forced mate, and how often the policy then waited
             "mate_seen": len(mates), "mate_waited": sum(s["gate"] != MOVE_INDEX for s in mates),
             # chances to play a capture the partner asked for, and how often it did
-            "serve_offers": len(serves), "served": sum(SERVE_OPTIONS[s["choice"]] == "serve" for s in serves)}
+            "serve_offers": len(serves), "served": sum(SERVE_OPTIONS[s["choice"]] == "serve" for s in serves),
+            # moves where the partner's machine was idle, and the average part of it borrowed (untrained: 0.84);
+            # the last one counts only the moves where the partner was waiting
+            "lend_offers": len(lends), "lend_mean": share(lends), "lend_mean_waiting": share(lends_waiting)}
+
+
+def make_optimizer(policy: SchedulerPolicy, lr: float, saved: dict | None = None) -> torch.optim.Optimizer:
+    """Adam over the whole policy. saved is an optimizer state to continue from; a run saved before the lend head
+    existed has no entry for it, so the head joins as a group of its own after the rest is restored."""
+    lend = list(policy.lend.parameters())
+    core = [p for name, p in policy.named_parameters() if not name.startswith("lend.")]
+    if saved is None:
+        return torch.optim.Adam(core + lend, lr=lr)
+    sizes = [len(g["params"]) for g in saved["param_groups"]]
+    optimizer = torch.optim.Adam(core if sizes[0] == len(core) else core + lend, lr=lr)
+    if sizes == [len(core), len(lend)]:
+        optimizer.add_param_group({"params": lend})
+    optimizer.load_state_dict(saved)
+    if sizes == [len(core)]:
+        optimizer.add_param_group({"params": lend})
+    return optimizer
 
 
 def main(argv=None) -> int:
@@ -180,13 +209,13 @@ def main(argv=None) -> int:
     latest = os.path.abspath(os.path.join(args.out, "latest.pt"))
     torch.manual_seed(args.seed)
     policy = SchedulerPolicy(think_logit=args.think_logit)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
+    optimizer = make_optimizer(policy, args.lr)
     start, baseline = 0, 0.0
     pool = Pool.load(args.pool)
     if args.resume:
         state = torch.load(state_path, weights_only=True)
-        policy.load_state_dict(state["policy"])
-        optimizer.load_state_dict(state["optimizer"])
+        policy.load_weights(state["policy"])
+        optimizer = make_optimizer(policy, args.lr, state["optimizer"])
         start, baseline = int(state["iteration"]), float(state["baseline"])
         pool = Pool.load(pool_path)
     # Snapshots copy the contender's player settings, so a frozen copy plays with the features it was trained with.

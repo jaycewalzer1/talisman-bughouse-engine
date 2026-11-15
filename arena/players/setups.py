@@ -96,8 +96,9 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         if compute == "throughput":
             ms *= 2
         comm = "none" if setup == "silent" else "share"
+        share = float(kw.get("lend_share") or 1.0)  # the part of the partner's idle machine a search borrows
         return {s: HivemindPlayer(s, HivemindProcess(binary, model, **pkw), nodes=half, ms_per_node=ms,
-                                  comm=comm, lend=lend, **skw) for s in seats}
+                                  comm=comm, lend=lend, lend_share=share, **skw) for s in seats}
 
     if kind == "agent":  # imported here so that only agent games need torch
         from arena.players.scheduler_player import agent_team

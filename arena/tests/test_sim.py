@@ -472,6 +472,38 @@ def test_borrowed_machine_defers_partner_until_returned():
     assert of(ev, "move", seat="B_black")[0]["clocks"]["B_black"] == 60000 - 300
 
 
+def test_part_of_a_machine_lent_slows_the_partner_instead_of_deferring_it():
+    # t=0: A_white borrows half of B_black's machine for 300 ms. B_white moves at 100, so B_black starts its
+    # 100 ms search at 100 on the half it kept: that takes 200 ms.
+    sim, players, _ = make(max_plies=3, scripts={
+        "A_white": lambda obs: mv(obs.legal_moves[0], think=300, borrow=obs.partner_machine_free, borrow_share=0.5),
+    })
+    sim.run()
+    check_stream(sim.events)
+    assert players["B_black"].observations[0].now_ms == 100
+    start = of(sim.events, "thinking", phase="start", seat="B_black")[0]
+    assert (start["ts"], start["think_ms"]) == (100, 200)
+    assert of(sim.events, "move", seat="B_black")[0]["ts"] == 300
+
+
+def test_a_search_that_outlasts_the_loan_speeds_up_when_the_machine_returns():
+    # As above, but B_black wants 150 ms of search: 100 of it done at half speed by 300, the last 50 at full speed.
+    sim, _, _ = make(max_plies=3, scripts={
+        "A_white": lambda obs: mv(obs.legal_moves[0], think=300, borrow=obs.partner_machine_free, borrow_share=0.5),
+        "B_black": lambda obs: mv(obs.legal_moves[0], think=150),
+    })
+    sim.run()
+    assert of(sim.events, "thinking", phase="start", seat="B_black")[0]["think_ms"] == 250
+    assert of(sim.events, "move", seat="B_black")[0]["ts"] == 350
+
+
+def test_borrowing_none_of_a_machine_raises():
+    sim, _, _ = make(max_plies=3, scripts={
+        "A_white": lambda obs: mv(obs.legal_moves[0], borrow=True, borrow_share=0.0)})
+    with pytest.raises(ValueError, match="borrowed 0.0"):
+        sim.run()
+
+
 def test_borrowing_a_busy_machine_raises():
     # A_white thinks 100 on its own machine; B_black is to move at 50 and tries to borrow it.
     sim, players, _ = make(max_plies=10, scripts={

@@ -59,7 +59,8 @@ Players are kind `agent`, setup `sharing`.
 ## Feature groups (added after the first 40-iteration run)
 
 That run showed no learning: waits are rare, one win or loss is a thin signal, and the policy had little to tell a
-good wait from a bad one. Four optional groups address that. All are off by default and turned on with
+good wait from a bad one. The first four optional groups address that; the fifth, `lend`, is a separate decision
+about compute. All are off by default and turned on with
 `--features`; every extra engine search they need comes out of the move's node budget, so total nodes stay equal to
 stock's. Their inputs sit after the 32 base inputs and are 0 while a group is off, so every run has the same network
 shape and runs can be combined later.
@@ -70,6 +71,7 @@ shape and runs can be combined later.
 | `mate` | Per piece: eval gain from holding one more, forced mate or not, and whether the partner can capture one | Up to 2, only for pieces that could be dropped with check and could arrive |
 | `danger` | Per piece: eval lost if our opponent got one more. Above 0.25 it sends the partner `hold_X` | Up to 1, same filter |
 | `serve` | A new decision: when the partner asked for a piece and a capture of it is within 0.4 eval of the engine's choice, play it or not | None (the long search reports 4 lines) |
+| `lend` | A new decision on each move while the partner's machine is idle: borrow none, half or all of it for the search. It also sees the think budget just chosen and whether the partner is waiting. Starts at all about 4 times in 5; without the group a lending team always borrows all | None |
 
 Training options that go with them:
 

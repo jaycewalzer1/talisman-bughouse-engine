@@ -3,7 +3,8 @@
     python tools/compare_runs.py runs/waves/*
 
 "early" and "late" are the first and last third of the iterations done so far. target is the score against the
-main opponent only (--target in training), the one number whose opponent never changes.
+main opponent only (--target in training), the one number whose opponent never changes. lend is the average part
+of the partner's idle machine borrowed on a move (only with the lend feature group; an untrained policy is at 0.84).
 """
 
 import json
@@ -29,7 +30,7 @@ def cell(value, width: int, digits: int = 3) -> str:
 def main() -> None:
     print(f"{'run':<10} {'iters':>5} {'target early':>12} {'target late':>11} {'games':>6} {'± late':>7} "
           f"{'wait early':>10} {'wait late':>9} {'think early':>11} {'think late':>10} {'mates seen':>10} {'waited':>6} "
-          f"{'serve offers':>12} {'served':>6}")
+          f"{'serve offers':>12} {'served':>6} {'lend early':>10} {'lend late':>9}")
     for run in sys.argv[1:]:
         path = os.path.join(run, "train_log.jsonl")
         if not os.path.exists(path):
@@ -47,7 +48,8 @@ def main() -> None:
               f"{cell(mean(late, 'wait_rate'), 9)} {cell(mean(early, 'think_mean'), 11, 2)} "
               f"{cell(mean(late, 'think_mean'), 10, 2)} "
               f"{sum(r.get('mate_seen', 0) for r in rows):>10} {sum(r.get('mate_waited', 0) for r in rows):>6} "
-              f"{sum(r.get('serve_offers', 0) for r in rows):>12} {sum(r.get('served', 0) for r in rows):>6}")
+              f"{sum(r.get('serve_offers', 0) for r in rows):>12} {sum(r.get('served', 0) for r in rows):>6} "
+              f"{cell(mean(early, 'lend_mean'), 10, 2)} {cell(mean(late, 'lend_mean'), 9, 2)}")
 
 
 if __name__ == "__main__":

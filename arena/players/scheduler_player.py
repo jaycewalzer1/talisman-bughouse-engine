@@ -31,6 +31,7 @@ from arena.players.hivemind import (
 from arena.players.scheduler import (
     END_WAIT_OPTIONS,
     GATE_OPTIONS,
+    LEND_SHARES,
     MOVE_INDEX,
     PIECES,
     SERVE_OPTIONS,
@@ -44,6 +45,7 @@ from arena.players.scheduler import (
     plausible_wait,
     sample_action,
     sample_end_wait,
+    sample_lend,
     sample_serve,
 )
 
@@ -58,7 +60,9 @@ REQUEST_WINDOW_MS = 3000
 #           capture one
 #   danger  what one more piece in our opponent's pocket would cost us; sends the partner "hold_X"
 #   serve   when the partner asked for a piece: may play a capture of it that is close to the engine's choice
-FEATURE_GROUPS = ("tempo", "mate", "danger", "serve")
+#   lend    on each move while the partner's machine is idle: borrow none, half or all of it for the search.
+#           Needs a team that lends (lend=True); without this group such a team always borrows all of it
+FEATURE_GROUPS = ("tempo", "mate", "danger", "serve", "lend")
 MAX_GAIN_PROBES = 2  # extra searches per decision for "mate"
 HOLD_THRESHOLD = 0.25  # eval we would lose before telling the partner to hold a piece
 HOLD_RESEND_MS = 5000
@@ -76,7 +80,7 @@ def load_policy(path: str | None) -> SchedulerPolicy:
     """A checkpoint's policy, or a fresh one (which plays like stock) when path is None."""
     policy = SchedulerPolicy()
     if path:
-        policy.load_state_dict(torch.load(path, weights_only=True))
+        policy.load_weights(torch.load(path, weights_only=True))
     return policy.eval()
 
 
@@ -104,6 +108,8 @@ class SchedulerPlayer:
         if unknown:
             raise ValueError(f"unknown scheduler features {sorted(unknown)}; choose from {FEATURE_GROUPS}")
         self.features = frozenset(features)
+        if "lend" in self.features and not lend:
+            raise ValueError("the 'lend' feature group needs a team that lends (lend=True)")
         if rule and rule not in RULES:
             raise ValueError(f"unknown scheduler rule {rule!r}; choose from {RULES}")
         if rule and "mate" not in self.features:
@@ -282,6 +288,7 @@ class SchedulerPlayer:
         ahead = edge > 0
         may_sit = ahead and self._sits < self.max_consecutive_sits
         borrow = self.lend and obs.partner_machine_free
+        share = 1.0  # the part of the partner's machine a borrowing search uses
         base = self.nodes * 2 if borrow else self.nodes
         rate = self.ms_per_node / (2 if borrow else 1)
 
@@ -338,6 +345,12 @@ class SchedulerPlayer:
             return Decision(kind="wait", think_ms=think, wait_ms=think + WAIT_RECHECK_MS, nodes=looked,
                             eval=quick.q, messages=msgs, stall_reason=self._stall_reason, borrow=borrow)
 
+        if borrow and "lend" in self.features:
+            # The policy picks how much of the partner's machine this search uses. The think time stays the same
+            # whatever it picks; what changes is the nodes we get and how much the partner is slowed meanwhile.
+            share = self._lend_share(obs, f, action.think)
+            borrow = share > 0
+            base, rate = int(round(self.nodes * (1 + share))), self.ms_per_node / (1 + share)
         long_nodes = plan_nodes(base, action.think, looked)
         if not asked_captures:
             asked = None
@@ -364,7 +377,17 @@ class SchedulerPlayer:
         self._rule_waited = False
         spent = looked + long_nodes
         return Decision(kind="move", uci=move, think_ms=int(round(spent * rate)), nodes=spent, eval=res.q,
-                        messages=msgs, borrow=borrow)
+                        messages=msgs, borrow=borrow, borrow_share=share if borrow else 1.0)
+
+    def _lend_share(self, obs: Observation, f: Features, think: int) -> float:
+        """With the "lend" group: the part of the partner's idle machine this move's search borrows."""
+        partner = PARTNER[self.seat]
+        on_move = obs.to_move[BOARD_OF[partner]] == partner  # its machine is idle, so it is waiting
+        with torch.no_grad():
+            choice, _ = sample_lend(self.policy, f, think, on_move, self.rng)
+        self.steps.append({"type": "lend", "features": asdict(f), "think": think, "partner_on_move": on_move,
+                           "choice": choice})
+        return LEND_SHARES[choice]
 
     def _serve(self, obs: Observation, f: Features, res: SearchResult, move: str, wanted_captures: list[str]) -> str:
         """The move to play when a capture the partner asked for is legal: the engine's choice, or the best such

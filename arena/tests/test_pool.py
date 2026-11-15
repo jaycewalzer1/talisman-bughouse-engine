@@ -145,5 +145,10 @@ def test_for_evaluation_sets_stock_setup_and_node_budgets():
     silent = for_evaluation(pool, setup="silent")
     assert silent.contender.player_kw == {"compute": "throughput", "lend": False} and len(silent.opponents) == 3
     assert for_evaluation(pool, setup="sharing", lend=True).contender.player_kw["lend"] is True
+    half = for_evaluation(pool, setup="sharing", lend=True, lend_share=0.5)
+    assert half.contender.player_kw == {"compute": "throughput", "lend": True, "lend_share": 0.5}
+    for bad in (dict(setup="sharing"), dict(setup="centralized", lend=True), dict(lend=True)):
+        with pytest.raises(ValueError, match="lend_share"):
+            for_evaluation(pool, lend_share=0.5, **bad)
     spec = make_schedule(central, 1)[0]
     assert spec["teams"][spec["contender_team"]]["nodes"] == 100 and spec["equal_compute"] is False

@@ -13,7 +13,7 @@ echo "== queue"
 squeue -u "$USER" -o "%.10i %.16j %.3t %.10M %R"
 
 echo; echo "== team setups at 200 nodes, against one program at 200 nodes (first row should be 0.50)"
-$PY tools/compare_evals.py $M/central_200 $M/silent_200 $M/sharing_200 $M/lend_200
+$PY tools/compare_evals.py $M/central_200 $M/silent_200 $M/sharing_200 $M/half_200 $M/lend_200
 
 echo; echo "== think budgets, against one program at 200 nodes"
 $PY tools/compare_evals.py $M/central_200 $M/central_50 $M/central_100 $M/central_400 $M/lend_100
@@ -26,6 +26,9 @@ $PY tools/compare_evals.py $E/untrained_none $E/untrained_tempo $E/untrained_mat
 
 echo; echo "== hand-written mate rules (first row: same mate probes, no rule)"
 $PY tools/compare_evals.py $E/rule_none $E/rule_wait $E/rule_ask
+
+echo; echo "== untrained scheduler: always borrows the whole idle machine, or picks none, half or all itself"
+$PY tools/compare_evals.py $E/untrained_none $E/untrained_lend
 
 echo; echo "== learner check (wave1 is yesterday's run at the old step size)"
 learner=(runs/learner/*)

@@ -365,13 +365,16 @@ class HivemindPlayer:
     Lending (``lend=True``): when the partner's machine is idle (``Observation.partner_machine_free``),
     the search runs on both machines: twice the nodes at twice the rate, so the same think time. Only
     meaningful when ``ms_per_node`` models half a machine (``compute="throughput"`` in setups).
+    ``lend_share`` below 1 borrows only that part of the partner's machine (0.5: one and a half times the nodes).
     """
 
     kind = "hivemind"
 
     def __init__(self, seat: str, process: HivemindProcess, nodes: int = 200, ms_per_node: float = MS_PER_NODE,
                  *, comm: str = "none", max_consecutive_sits: int = 2, sit_ms: int = 1000,
-                 request_window_ms: int = 3000, lend: bool = False) -> None:
+                 request_window_ms: int = 3000, lend: bool = False, lend_share: float = 1.0) -> None:
+        if not 0.0 < lend_share <= 1.0:
+            raise ValueError(f"lend_share must be in (0, 1], got {lend_share}")
         self.seat = seat
         self.process = process
         self.nodes = int(nodes)
@@ -381,6 +384,7 @@ class HivemindPlayer:
         self.sit_ms = sit_ms
         self.request_window_ms = request_window_ms
         self.lend = lend
+        self.lend_share = float(lend_share)
         self.name = f"Hivemind-{seat}-{comm}-{self.nodes}n" + ("-lend" if lend else "")
         self._sits = 0
         self._partner_requests: dict[str, int] = {}
@@ -422,10 +426,11 @@ class HivemindPlayer:
         may_sit = (ahead or self._sit_until > obs.now_ms) and not self._force_move \
             and self._sits < self.max_consecutive_sits
         borrow = self.lend and obs.partner_machine_free
-        nodes = self.nodes * 2 if borrow else self.nodes
+        machines = 1 + self.lend_share if borrow else 1  # ours, plus the borrowed part of the partner's
+        nodes = int(round(self.nodes * machines))
         res = self.process.search(obs.fens["A"], obs.fens["B"], team=team, nodes=nodes,
                                   time_advantage=ahead, require=None if may_sit else board)
-        think = int(round(nodes * self.ms_per_node / (2 if borrow else 1)))
+        think = int(round(nodes * self.ms_per_node / machines))
         return self._finish(obs, res, think, edge, nodes, borrow)
 
     def _finish(self, obs: Observation, res: SearchResult, think: int, edge: int, nodes: int,
@@ -459,7 +464,7 @@ class HivemindPlayer:
                     msgs.append(self._status(None, res, needs))
             return Decision(kind="wait", think_ms=think, wait_ms=think + self.sit_ms, nodes=nodes, eval=res.q,
                             messages=tuple(msgs), stall_reason="time_advantage" if edge > 0 else "engine_pass",
-                            borrow=borrow)
+                            borrow=borrow, borrow_share=self.lend_share)
         if move is None:  # engine move not legal in the arena (e.g. rules mismatch): 1-ply fallback
             b = parse_board(obs.fens[board])
             move = evaluate_moves(b, list(obs.legal_moves), wanted=None, rng=random.Random(obs.ply))[0].uci
@@ -468,7 +473,7 @@ class HivemindPlayer:
         if self.comm == "share":
             msgs.append(self._status(move, res, needs))
         return Decision(kind="move", uci=move, think_ms=think, nodes=nodes, eval=res.q, messages=tuple(msgs),
-                        borrow=borrow)
+                        borrow=borrow, borrow_share=self.lend_share)
 
     def _status(self, move: str | None, res: SearchResult, needs: list[str]) -> Message:
         q = res.q if res.q is not None else 0.0

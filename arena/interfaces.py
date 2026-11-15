@@ -105,6 +105,9 @@ class Decision:
     # Observation.partner_machine_free). The partner's machine stays busy for think_ms; a partner that
     # must decide meanwhile is deferred until it is returned.
     borrow: bool = False
+    # With borrow: the part of the partner's machine used, in (0, 1]. Below 1 the partner keeps the rest, so it
+    # is not deferred; a search it starts meanwhile runs that much slower until the machine is returned.
+    borrow_share: float = 1.0
 
 
 class Player(Protocol):
