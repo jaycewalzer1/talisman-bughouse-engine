@@ -2,7 +2,8 @@
 
 Each decision runs the quick look, samples gate, talk and think, then either waits or runs the long search and
 plays its move. ``features`` turns on optional inputs and decisions (FEATURE_GROUPS); every extra engine probe
-they need is paid for out of the same node budget as the move. Sampling does not keep gradients: with ``trajectory_prefix`` the player records every decision
+they need is paid for out of the same node budget as the move. ``rule`` adds a fixed hand-written behaviour on top
+of the policy (RULES), to measure an idea before training on it. Sampling does not keep gradients: with ``trajectory_prefix`` the player records every decision
 to ``<prefix>_<seat>.json`` on close, and arena/train_scheduler.py recomputes the log probabilities from those.
 """
 
@@ -64,6 +65,12 @@ HOLD_RESEND_MS = 5000
 SERVE_LINES = 4  # candidate moves the long search reports when a capture the partner wants is legal
 SERVE_MAX_COST = 0.4  # a capture further than this from the engine's choice is never offered to the policy
 
+# Fixed rules, for evaluation only: they test an idea by hand before any learning. Both need the "mate" group.
+#   mate_wait  when one more piece gives a forced mate and the partner could capture one, wait for it in silence
+#   mate_ask   the same, and ask the partner for it; a partner under this rule captures that piece if it can
+RULES = ("mate_wait", "mate_ask")
+MATE_WAIT_MS = 5000  # the longest a rule waits for the mating piece, once per move
+
 
 def load_policy(path: str | None) -> SchedulerPolicy:
     """A checkpoint's policy, or a fresh one (which plays like stock) when path is None."""
@@ -80,7 +87,8 @@ class SchedulerPlayer:
                  ms_per_node: float = MS_PER_NODE, *, quick_nodes: int = QUICK_NODES, max_consecutive_sits: int = 2,
                  lend: bool = False, train_step: int = 0, total_steps: int = 0, seed: int = 0,
                  trajectory_prefix: str | None = None, features: tuple[str, ...] = (),
-                 start_exploration: float = START_EXPLORATION, probe_nodes: int | None = None) -> None:
+                 start_exploration: float = START_EXPLORATION, probe_nodes: int | None = None,
+                 rule: str | None = None) -> None:
         self.seat = seat
         self.process = process
         self.policy = policy
@@ -96,6 +104,16 @@ class SchedulerPlayer:
         if unknown:
             raise ValueError(f"unknown scheduler features {sorted(unknown)}; choose from {FEATURE_GROUPS}")
         self.features = frozenset(features)
+        if rule and rule not in RULES:
+            raise ValueError(f"unknown scheduler rule {rule!r}; choose from {RULES}")
+        if rule and "mate" not in self.features:
+            raise ValueError(f"rule {rule!r} needs the 'mate' feature group")
+        if rule and trajectory_prefix:
+            raise ValueError("a rule overrides the policy, so its games cannot be recorded for training")
+        self.rule = rule or None
+        self._rule_wait_until: int | None = None  # while a rule wait is running: when it gives up
+        self._rule_waited = False  # a rule waits at most once per move
+        self._mate_request: tuple[str, int] | None = None  # (piece, when) the partner last asked for to mate
         self.start_exploration = float(start_exploration)
         self.probe_nodes = int(probe_nodes if probe_nodes is not None else quick_nodes)
         self._last_hold: tuple[str | None, int] = (None, -HOLD_RESEND_MS)
@@ -209,6 +227,10 @@ class SchedulerPlayer:
 
     def decide(self, obs: Observation) -> Decision:
         self.comm.update(obs)
+        if self.rule == "mate_ask":
+            for m in obs.inbox:
+                if m.token.startswith("need_") and m.payload.get("mate"):
+                    self._mate_request = (m.payload.get("piece", m.token[5:]), obs.now_ms)
         if not obs.legal_moves:
             return Decision(kind="wait", wait_ms=200, stall_reason="no_moves")
         holding = self._holding(obs)
@@ -216,10 +238,37 @@ class SchedulerPlayer:
             self.comm.clear_offer()
         if self._waiting and self._waiting_for in holding:  # the piece arrived, which ends the wait
             self._waiting = False
+            self._rule_wait_until = None
+        if self._waiting and self._rule_wait_until is not None:
+            # Any event wakes a waiting seat. A rule wait goes on until the piece arrives, the time is up, or the
+            # partner can no longer capture one.
+            if obs.now_ms < self._rule_wait_until and self._partner_can_capture(obs, self._waiting_for):
+                return Decision(kind="wait", wait_ms=self._rule_wait_until - obs.now_ms, stall_reason="mate_piece")
+            self._rule_wait_until = None
+            self._waiting = False
         if self._waiting and self._keep_waiting(obs, holding):
             return Decision(kind="wait", wait_ms=WAIT_RECHECK_MS, stall_reason=self._stall_reason)
         self._waiting = False
         return self._decide(obs, holding)
+
+    def _partner_can_capture(self, obs: Observation, piece: str | None) -> bool:
+        partner = PARTNER[self.seat]
+        return bool(piece) and piece in capturable(parse_board(obs.fens[BOARD_OF[partner]]), seat_color(partner))
+
+    def _mate_target(self, f: Features) -> str | None:
+        """Under a rule: the piece worth waiting for, which gives a forced mate and which the partner could capture
+        (now, or once its opponent has moved). None when there is none or this move has already waited."""
+        if not self.rule or self._rule_waited or len(f.supply) != len(PIECES):
+            return None
+        ready = [p for p in f.mate_with if f.supply[PIECES.index(p)] > 0]
+        return max(ready, key=lambda p: f.supply[PIECES.index(p)]) if ready else None
+
+    def _mate_asked(self, obs: Observation) -> str | None:
+        """Under mate_ask: the piece the partner asked for to give mate, while the request is fresh."""
+        if self._mate_request is None or obs.now_ms - self._mate_request[1] > MATE_WAIT_MS:
+            self._mate_request = None
+            return None
+        return self._mate_request[0]
 
     def _keep_waiting(self, obs: Observation, holding: tuple[str, ...]) -> bool:
         f = self._features(obs, holding)
@@ -261,6 +310,22 @@ class SchedulerPlayer:
             action = sample_action(self.policy, f, epsilon, self.rng)
         self.steps.append({"type": "decide", "features": asdict(f), "gate": action.gate, "talk": action.talk,
                            "think": action.think, "epsilon": epsilon})
+        asked = self._mate_asked(obs)
+        asked_captures = captures_of(parse_board(fen), list(obs.legal_moves), asked) if asked else []
+        # Answering the partner's request ends the game sooner than waiting for a piece of our own.
+        target = None if asked_captures else self._mate_target(f)
+        if target is not None:  # the rule overrides whatever the policy sampled
+            self._waiting, self._waiting_for, self._rule_waited = True, target, True
+            self._stall_reason = "mate_piece"
+            think = int(round(looked * rate))
+            self._rule_wait_until = obs.now_ms + think + MATE_WAIT_MS
+            ask: tuple[Message, ...] = ()
+            if self.rule == "mate_ask" and obs.now_ms != self._last_sent_ms:
+                ask = (self._msg(f"need_{target}", f"need {target} to mate", piece=target, mate=True,
+                                 deadlineTs=self._rule_wait_until),)
+                self._last_sent_ms = obs.now_ms
+            return Decision(kind="wait", think_ms=think, wait_ms=think + MATE_WAIT_MS, nodes=looked, eval=quick.q,
+                            messages=ask, stall_reason="mate_piece", borrow=borrow)
         msgs = self._messages(obs, action.gate, action.talk, offers, self._hold_message(obs, f.danger))
 
         if action.gate != MOVE_INDEX:
@@ -274,21 +339,29 @@ class SchedulerPlayer:
                             eval=quick.q, messages=msgs, stall_reason=self._stall_reason, borrow=borrow)
 
         long_nodes = plan_nodes(base, action.think, looked)
-        wanted = self.comm.requested_piece if "serve" in self.features else None
-        wanted_captures = captures_of(parse_board(fen), list(obs.legal_moves), wanted) if wanted else []
+        if not asked_captures:
+            asked = None
+        wanted = asked or (self.comm.requested_piece if "serve" in self.features else None)
+        wanted_captures = asked_captures or (captures_of(parse_board(fen), list(obs.legal_moves), wanted)
+                                             if wanted else [])
         res = self._search(obs, long_nodes, ahead, self._board, SERVE_LINES if wanted_captures else 1)
         move = _legalize(res.move_for(self._board), list(obs.legal_moves))
         if move is None:  # engine move not legal in the arena (e.g. rules mismatch): 1-ply fallback
             b = parse_board(fen)
             move = evaluate_moves(b, list(obs.legal_moves), wanted=None, rng=random.Random(obs.ply))[0].uci
         if wanted_captures:
-            move = self._serve(obs, f, res, move, wanted_captures)
+            if asked:
+                move = self._serve_mate(obs, res, move, wanted_captures)
+            else:
+                move = self._serve(obs, f, res, move, wanted_captures)
             if move in wanted_captures:  # tell the partner it is coming, as stock does
                 self.comm.requested_piece = None
+                self._mate_request = None
                 if msgs or obs.now_ms != self._last_sent_ms:
                     msgs += (self._msg(f"have_{wanted}", f"{wanted} coming", piece=wanted, plies=0),)
                     self._last_sent_ms = obs.now_ms
         self._sits = 0
+        self._rule_waited = False
         spent = looked + long_nodes
         return Decision(kind="move", uci=move, think_ms=int(round(spent * rate)), nodes=spent, eval=res.q,
                         messages=msgs, borrow=borrow)
@@ -312,6 +385,19 @@ class SchedulerPlayer:
             choice, _ = sample_serve(self.policy, f, self.rng)
         self.steps.append({"type": "serve", "features": asdict(f), "choice": choice})
         return capture if SERVE_OPTIONS[choice] == "serve" else move
+
+    def _serve_mate(self, obs: Observation, res: SearchResult, move: str, wanted_captures: list[str]) -> str:
+        """Under mate_ask, the capture to play when the partner needs that piece to mate: the engine's own move if
+        it is one, else the best such capture among its candidate lines, else the best by a one-move look."""
+        if move in wanted_captures:
+            return move
+        legal = list(obs.legal_moves)
+        options = [(line_q, _legalize(a if self._board == "A" else b, legal)) for a, b, line_q in res.multi[1:]]
+        options = [(line_q, uci) for line_q, uci in options if uci in wanted_captures]
+        if options:
+            return max(options)[1]
+        board = parse_board(obs.fens[self._board])
+        return evaluate_moves(board, wanted_captures, wanted=None, rng=random.Random(obs.ply))[0].uci
 
     def _search(self, obs: Observation, nodes: int, ahead: bool, require: str | None, multipv: int = 1) -> SearchResult:
         self._nodes_used += nodes
@@ -371,7 +457,7 @@ def agent_team(team: str, setup: str, *, seed: int, nodes: int, **kw) -> dict:
     if lend and compute != "throughput":
         raise ValueError("lend needs compute='throughput' (each player must be half a machine)")
     skw = {k: kw[k] for k in ("max_consecutive_sits", "train_step", "total_steps", "trajectory_prefix", "quick_nodes",
-                              "start_exploration", "probe_nodes") if kw.get(k) is not None}
+                              "start_exploration", "probe_nodes", "rule") if kw.get(k) is not None}
     skw["features"] = tuple(kw.get("features") or ())
     return {s: SchedulerPlayer(s, HivemindProcess(binary, model, **pkw), policy, nodes=max(1, nodes // 2),
                                ms_per_node=ms, lend=lend, seed=seed * 7 + SEATS.index(s), **skw)

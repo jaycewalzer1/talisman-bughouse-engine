@@ -24,6 +24,9 @@ $PY tools/compare_evals.py $M/central_50_v100 $M/lend_100_v100
 echo; echo "== untrained scheduler, feature groups on and off"
 $PY tools/compare_evals.py $E/untrained_none $E/untrained_tempo $E/untrained_mate $E/untrained_serve $E/untrained_all
 
+echo; echo "== hand-written mate rules (first row: same mate probes, no rule)"
+$PY tools/compare_evals.py $E/rule_none $E/rule_wait $E/rule_ask
+
 echo; echo "== learner check (wave1 is yesterday's run at the old step size)"
 learner=(runs/learner/*)
 if [ "${#learner[@]}" -gt 0 ]; then $PY tools/compare_runs.py "${learner[@]}" runs/waves/wave1; else echo "not started"; fi

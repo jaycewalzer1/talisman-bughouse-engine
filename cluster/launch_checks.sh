@@ -4,11 +4,12 @@
 #   bash cluster/launch_checks.sh probe      # does waiting ever beat moving, with no learning involved?
 #   bash cluster/launch_checks.sh features   # what do the feature groups do to an untrained policy's score?
 #   bash cluster/launch_checks.sh matches    # stock only: what is each team setup worth, and which think budget wins?
+#   bash cluster/launch_checks.sh rules      # hand-written: does waiting for a mating piece win, alone or when asked for?
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -63,5 +64,13 @@ if [ "$WHAT" = matches ] || [ "$WHAT" = all ]; then
   match  lend_100           sharing      1     100    stock-centralized        800
   match  central_50_v100    centralized  0     50     stock-centralized-100n   800
   match  lend_100_v100      sharing      1     100    stock-centralized-100n   800
+fi
+if [ "$WHAT" = rules ] || [ "$WHAT" = all ]; then
+  # Untrained scheduler with the mate inputs on, 1600 games against stock each. The first row is the comparison:
+  # it pays for the same mate probes and does nothing with them.
+  rule() { NAME="eval/rule_$1" FEATURES=mate RULE="$2" sbatch -J "rule_$1" cluster/eval.sbatch; }
+  rule none  ""
+  rule wait  mate_wait   # wait up to 5 seconds for the mating piece, in silence
+  rule ask   mate_ask    # the same, and ask the partner, who captures the piece if it can
 fi
 squeue -u "$USER"

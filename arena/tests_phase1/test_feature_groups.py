@@ -248,6 +248,79 @@ def test_a_capture_that_costs_too_much_is_never_offered(monkeypatch):
     assert d.uci == "e2e3" and all(s["type"] != "serve" for s in p.steps)
 
 
+# ------------------------------------------------------------------------------------------ fixed rules
+
+def mate_answer(fen_a, multipv):
+    if "[N]" in fen_a:
+        return SearchResult("N@f7", None, 1.0, None, 1, 1, 1)
+    return SearchResult("a1b1", None, 0.1, 10, None, 1, 1)
+
+
+def test_a_rule_needs_the_mate_group_and_cannot_be_recorded():
+    with pytest.raises(ValueError, match="unknown scheduler rule"):
+        player(FakeProcess(), features=("mate",), rule="hope")
+    with pytest.raises(ValueError, match="needs the 'mate' feature group"):
+        player(FakeProcess(), rule="mate_wait")
+    with pytest.raises(ValueError, match="cannot be recorded"):
+        player(FakeProcess(), features=("mate",), rule="mate_wait", trajectory_prefix="x")
+
+
+def test_mate_wait_sits_in_silence_until_the_piece_arrives(monkeypatch):
+    force_move(monkeypatch)
+    process = FakeProcess(mate_answer)
+    p = player(process, features=("mate",), rule="mate_wait")
+    d = p.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",)))
+    # quick look and one probe (16 nodes each, 10 ms a node), then up to MATE_WAIT_MS more; no long search yet
+    assert (d.kind, d.stall_reason, d.messages) == ("wait", "mate_piece", ())
+    assert d.think_ms == 320 and d.wait_ms == 320 + sp.MATE_WAIT_MS and len(process.calls) == 2
+    # any event wakes a waiting seat: it goes on waiting for what is left of the time
+    again = p.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",), now=3000))
+    assert again.kind == "wait" and again.wait_ms == 1000 + 320 + sp.MATE_WAIT_MS - 3000 and len(process.calls) == 2
+    # the knight lands in the pocket: the wait ends and the engine plays
+    with_knight = add_to_pocket(SMOTHERED, chess.WHITE, "N")
+    done = p.decide(obs(with_knight, START, legal=("N@f7", "a1b1"), now=3500))
+    assert done.kind == "move" and done.uci == "N@f7"
+
+
+def test_mate_wait_gives_up_when_time_is_up_or_the_piece_is_gone(monkeypatch):
+    force_move(monkeypatch)
+    p = player(FakeProcess(mate_answer), features=("mate",), rule="mate_wait")
+    assert p.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",))).kind == "wait"
+    late = p.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",), now=1000 + 320 + sp.MATE_WAIT_MS))
+    assert late.kind == "move"  # and it does not wait a second time on the same move
+    q = player(FakeProcess(mate_answer), features=("mate",), rule="mate_wait")
+    assert q.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",))).kind == "wait"
+    assert q.decide(obs(SMOTHERED, START, legal=("a1b1",), now=2000)).kind == "move"  # nothing left to capture
+    # after its move the rule may wait again
+    assert q.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",), now=9000)).kind == "wait"
+
+
+def test_mate_ask_tells_the_partner_which_piece_mates(monkeypatch):
+    force_move(monkeypatch)
+    p = player(FakeProcess(mate_answer), features=("mate",), rule="mate_ask")
+    d = p.decide(obs(SMOTHERED, BLACK_TAKES_KNIGHT, legal=("a1b1",)))
+    assert d.kind == "wait" and [m.token for m in d.messages] == ["need_N"]
+    assert d.messages[0].payload["mate"] is True and d.messages[0].payload["piece"] == "N"
+
+
+def test_mate_ask_partner_captures_the_piece_even_off_the_engine_lines(monkeypatch):
+    force_move(monkeypatch)
+    quiet = lambda fen_a, multipv: SearchResult("e2e3", None, 0.1, 10, None, 1, 1)  # noqa: E731
+    p = player(FakeProcess(quiet), features=("mate",), rule="mate_ask")
+    d = p.decide(obs(KNIGHT_HANGS, legal=("e2e3", "d3e4"), inbox=(msg("need_N", piece="N", mate=True),)))
+    assert d.uci == "d3e4" and [m.token for m in d.messages] == ["have_N"]
+    # an ordinary request is not served by this rule, and neither is a mate request that has gone stale
+    plain = player(FakeProcess(quiet), features=("mate",), rule="mate_ask")
+    assert plain.decide(obs(KNIGHT_HANGS, legal=("e2e3", "d3e4"), inbox=(msg("need_N", piece="N"),))).uci == "e2e3"
+    stale = player(FakeProcess(quiet), features=("mate",), rule="mate_ask")
+    stale.decide(obs(START, legal=("e2e3",), inbox=(msg("need_N", piece="N", mate=True),)))
+    assert stale.decide(obs(KNIGHT_HANGS, legal=("e2e3", "d3e4"), now=1000 + sp.MATE_WAIT_MS + 1)).uci == "e2e3"
+    # the silent rule ignores mate requests altogether
+    silent = player(FakeProcess(quiet), features=("mate",), rule="mate_wait")
+    assert silent.decide(obs(KNIGHT_HANGS, legal=("e2e3", "d3e4"),
+                             inbox=(msg("need_N", piece="N", mate=True),))).uci == "e2e3"
+
+
 # ------------------------------------------------------------------------------------------ training
 
 def step(eval_: float, **kw) -> dict:

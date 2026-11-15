@@ -7,6 +7,7 @@
 # Scheduler: without POLICY it is untrained, which plays like stock plus whatever the feature groups do on their own.
 #   NAME=eval/untrained_none sbatch -J none cluster/eval.sbatch
 #   NAME=eval/wave2 FEATURES=mate,danger POLICY=runs/waves/wave2/latest.pt sbatch -J wave2 cluster/eval.sbatch
+# RULE=mate_wait or mate_ask adds a fixed hand-written rule to the scheduler (it needs FEATURES to include mate).
 # Stock Hivemind in a team setup (centralized, silent or sharing; LEND=1 lends idle compute), no scheduler:
 #   NAME=match/central_100 SETUP=centralized NODES=100 sbatch -J c100 cluster/eval.sbatch
 # NODES and OPPONENT_NODES replace the node budgets (200 each). PAIRS=800 is 1600 games, about 4 hours. A job that
@@ -31,7 +32,8 @@ if [ -n "${SETUP:-}" ]; then
 else
   ARGS+=(--agent --features "${FEATURES:-}")
   [ -n "${POLICY:-}" ] && ARGS+=(--policy "$POLICY")
-  WHO="scheduler features '${FEATURES:-}' policy ${POLICY:-untrained}"
+  [ -n "${RULE:-}" ] && ARGS+=(--rule "$RULE")
+  WHO="scheduler features '${FEATURES:-}' policy ${POLICY:-untrained} rule ${RULE:-none}"
 fi
 [ -n "${NODES:-}" ] && ARGS+=(--nodes "$NODES")
 [ -n "${OPPONENT_NODES:-}" ] && ARGS+=(--opponent-nodes "$OPPONENT_NODES")

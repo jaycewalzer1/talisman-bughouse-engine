@@ -144,19 +144,21 @@ class Pool:
 
 def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
                    opponent: str | None = None, setup: str | None = None, lend: bool = False,
-                   nodes: int | None = None, opponent_nodes: int | None = None) -> Pool:
+                   nodes: int | None = None, opponent_nodes: int | None = None, rule: str | None = None) -> Pool:
     """The pool narrowed for scoring one fixed team against one opponent.
 
     With agent (or features or policy) the contender plays as the scheduler agent, untrained when policy is None.
+    rule adds one of the agent's fixed hand-written rules (arena.players.scheduler_player.RULES).
     With setup the contender is stock Hivemind in that team setup (lend only means something for a split team).
     nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played."""
     contender, opponents = pool.contender, pool.opponents
     if setup is not None:
         split = {} if setup == "centralized" else {"compute": "throughput", "lend": lend}
         contender = replace(contender, setup=setup, kind="hivemind", player_kw=split)
-    if agent or features or policy:
+    if agent or features or policy or rule:
         contender = replace(contender, kind="agent", path=os.path.abspath(policy) if policy else None,
-                            player_kw={**contender.player_kw, "features": list(features or [])})
+                            player_kw={**contender.player_kw, "features": list(features or []),
+                                       **({"rule": rule} if rule else {})})
     if nodes is not None:
         contender = replace(contender, nodes=nodes)
     if opponent is not None:
@@ -326,6 +328,7 @@ def main(argv=None) -> int:
             p.add_argument("--agent", action="store_true", help="the contender plays as the scheduler agent")
             p.add_argument("--features", default="", help="comma-separated scheduler feature groups (implies --agent)")
             p.add_argument("--policy", default=None, help="scheduler checkpoint (implies --agent); untrained if left out")
+            p.add_argument("--rule", default=None, help="a fixed scheduler rule: mate_wait or mate_ask (implies --agent)")
             p.add_argument("--opponent", default=None, help="play only this opponent")
             p.add_argument("--setup", default=None, choices=("centralized", "silent", "sharing"),
                            help="the contender is stock Hivemind in this team setup")
@@ -367,9 +370,12 @@ def main(argv=None) -> int:
 
         if set(features) - set(FEATURE_GROUPS):
             ap.error(f"--features must come from {', '.join(FEATURE_GROUPS)}")
+    if args.rule and "mate" not in features:
+        ap.error("--rule needs --features to include mate")
     try:
         pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent,
-                              setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes)
+                              setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes,
+                              rule=args.rule)
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
