@@ -1,5 +1,7 @@
 #!/bin/bash
-# Builds the TensorRT engine and the Python env, then runs the C++ and arena tests. Run on a GPU node.
+# Builds the TensorRT engines (stock build-ninja/hivemind and the clock build build-clock/hivemind-clock), the Python
+# env and the spec v2 clock network, then runs the C++ and arena tests and the clock engine's think_gain check.
+# Run on a GPU node.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source cluster/env.sh
@@ -31,9 +33,29 @@ FP16="$MODELS/hivemind-it04-crossboard-risev33-loss1.556-p82.0.onnx"
  ctest --test-dir build-ninja --output-on-failure --repeat until-pass:3 \
    -E '^EngineTest\.RootMateScanStopsAtItsDeadline$')
 
+# The custom-engine loop (iterate.sh, selfplay.sbatch, think_labels.py: --binary hivemind-clock) runs the clock build:
+# 43 planes per board (spec v2), think_gain output. Under TensorRT it loads only 86-channel (v2) networks.
+(cd third_party/hivemind/engine
+ cmake --preset ninja-release -B build-clock -DHIVEMIND_CLOCK_PLANES=ON -DHIVEMIND_BACKEND=tensorrt \
+   -DTensorRT_DIR="$TensorRT_DIR" -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_TOOLKIT_ROOT_DIR" -DHIVEMIND_USE_CCACHE=OFF \
+   -DHIVEMIND_NATIVE_ARCH=OFF
+ cmake --build build-clock --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
+ ctest --test-dir build-clock --output-on-failure --repeat until-pass:3 \
+   -E '^EngineTest\.RootMateScanStopsAtItsDeadline$')
+
+# The v2 clock network (models/ is not in git): it04's checkpoint widened by make_clock_net.py.
+CLOCK_V2="$MODELS/hivemind-clock-v2-fp32.onnx"
+if [ ! -f "$CLOCK_V2" ]; then
+  .venv/bin/python third_party/hivemind/tools/fetch_network.py --variant checkpoint
+  .venv/bin/python third_party/hivemind/tools/make_clock_net.py --check
+fi
+
 # The first start on a new GPU type builds the TensorRT engine file and saves it. That took longer than the 120 s a
 # player waits for the engine (job 15489984), so it is built here with a long wait.
 .venv/bin/python cluster/warm_engine.py
+.venv/bin/python cluster/warm_engine.py --binary hivemind-clock --model "$CLOCK_V2"
+# think_gain on the GPU path: every position must print 'info string think_gain' and match Python ONNX Runtime.
+.venv/bin/python cluster/check_clock_engine.py --model "$CLOCK_V2"
 
 .venv/bin/python -m pytest arena/tests arena/tests_phase1 -q
 echo "build ok. Next: .venv/bin/python cluster/engine_parity.py check"

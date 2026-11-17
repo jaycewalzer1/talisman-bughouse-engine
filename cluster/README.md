@@ -40,11 +40,16 @@ per GPU-hour, or if GPU utilization stays low.
 
 `docs/custom_engine_spec.md`. Needs the `hivemind-clock` build (set `HIVEMIND_CLOCK_BINARY` if it is not at
 `third_party/hivemind/engine/build-clock/hivemind-clock`) and the widened network from `tools/make_clock_net.py` in the
-hivemind repo (`engine/models/hivemind-clock-fp32.onnx` and `hivemind-clock.tar`).
+hivemind repo (spec v2: `engine/models/hivemind-clock-v2-fp32.onnx` and `hivemind-clock-v2.tar`). `cluster/build.sh`
+builds both (TensorRT, `-B build-clock -DHIVEMIND_CLOCK_PLANES=ON`), warms the clock engine and runs
+`cluster/check_clock_engine.py`, which needs every position to print `info string think_gain` and to match Python
+ONNX Runtime. The v1 files `hivemind-clock*` (41 channels per board) load only with the ONNX Runtime backend (the Mac,
+elapsed planes dropped); the TensorRT build rejects any input width but 86, so the cluster needs the v2 files.
 
 ```bash
-NAME=custom/sp/it01 MODEL=third_party/hivemind/engine/models/hivemind-clock-fp32.onnx sbatch --array=0-7 cluster/selfplay.sbatch
+NAME=custom/sp/it01 MODEL=third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx sbatch --array=0-7 cluster/selfplay.sbatch
 RUN=main ITERS=3 STOCK_NODES=100 sbatch cluster/iterate.sh    # generate -> convert -> train -> export -> gate
+RUN=main THINK_LABELS=1 sbatch cluster/iterate.sh             # + think_gain labels (N = THINK_NODES, 200 default)
 ```
 
 `iterate.sh` keeps a marker per finished step, so resubmitting with the same `RUN` continues. Set `STOCK_NODES` to
