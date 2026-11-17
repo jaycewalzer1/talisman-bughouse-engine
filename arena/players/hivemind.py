@@ -27,8 +27,8 @@ Spike findings (2026-10-29, macOS M4 Max, ONNX Runtime CPU backend, ``build-ninj
 * ``TimeAdvantage true|false`` is a network input plane (team may sit); it swings the root eval a lot
   (startpos-like: about -270 cp with false, +250 cp with true), so we set it every search from the clocks.
 * After ``bestmove`` the engine keeps searching in the background ("permanent brain") until the next
-  ``position``/``go``/``stop``. We send ``stop`` right after ``bestmove`` so no free compute leaks
-  between decisions, and by default ``ucinewgame`` before every search (clears tree reuse and the
+  ``position``/``go``/``stop``. We send ``stop`` right after ``bestmove`` (without waiting for it) so no free
+  compute leaks between decisions, and by default ``ucinewgame`` before every search (clears tree reuse and the
   transposition table) so every decision gets exactly its node budget.
 * Timing: ``go nodes N`` overshoots by about one batch per thread (100 -> ~146 nodes, 200 -> ~241,
   400 -> ~441). ``measure_ms_per_node`` (startpos, incl. ucinewgame/isready round trips), wall ms per
@@ -56,7 +56,7 @@ from dataclasses import dataclass, field
 
 import chess
 
-from arena.interfaces import BOARD_OF, PARTNER, TEAM_OF, Decision, Message, Observation
+from arena.interfaces import BOARD_OF, OPPONENT, PARTNER, SEATS, TEAM_OF, Decision, Message, Observation
 from arena.recorder import RecordedSample
 from arena.players.heuristic import (
     LETTER,
@@ -139,15 +139,20 @@ THINK_GAIN_PREFIX = "info string think_gain "
 CLOCK_SEATS = ("A_white", "A_black", "B_white", "B_black")  # order of the ``clocks`` suffix
 
 
-def position_command(fen_a: str, fen_b: str, clocks: dict | None = None, elapsed: dict | None = None) -> str:
+def position_command(fen_a: str, fen_b: str, clocks: dict | None = None, elapsed: dict | None = None,
+                     pace: dict | None = None) -> str:
     """``position fen <A> | <B>``, with ``clocks <aw> <ab> <bw> <bb>`` (remaining ms, >= 0) when clocks are given,
     and then ``elapsed <ea> <eb>`` (ms since the last move landed on board A / B, >= 0; spec v2 A) when elapsed
-    times are given too. Elapsed times without clocks are not sent (the suffix extends the clocks suffix)."""
+    times are given too. Elapsed times without clocks are not sent (the suffix extends the clocks suffix).
+    ``pace`` ({seat: ms}, spec v3 contract 1) appends ``pace <paw> <pab> <pbw> <pbb>``, each seat's expected move
+    time, again only with clocks. An engine that does not parse it skips the unknown tokens."""
     cmd = f"position fen {fen_a} | {fen_b}"
     if clocks is not None:
         cmd += " clocks " + " ".join(str(max(0, int(clocks[s]))) for s in CLOCK_SEATS)
         if elapsed is not None:
             cmd += " elapsed " + " ".join(str(max(0, int(elapsed[b]))) for b in ("A", "B"))
+        if pace is not None:
+            cmd += " pace " + " ".join(str(max(0, int(round(pace[s])))) for s in CLOCK_SEATS)
     return cmd
 
 
@@ -261,14 +266,15 @@ class HivemindProcess:
     def search(self, fen_a: str, fen_b: str, *, team: str, nodes: int, time_advantage: bool = False,
                require: str | None = None, multipv: int = 1, clocks: dict | None = None, sample: bool = False,
                options: dict | None = None, require_option: bool = True,
-               elapsed: dict | None = None) -> SearchResult:
+               elapsed: dict | None = None, pace: dict | None = None) -> SearchResult:
         """Joint search for ``team`` ("T1"/"T2") from the two bracket-form FENs. ``multipv`` > 1 also fills
         ``SearchResult.multi`` with that many candidate lines.
 
         Custom-engine extras, all off by default: ``clocks`` ({seat: ms}) adds the ``clocks`` suffix to
         ``position``; ``sample`` searches with ``go nodes N sample`` and fills ``SearchResult.sample``; ``options``
         are set before the search (e.g. FreePass, TreeMoveMs); ``require_option=False`` never sends RequireMoveOn;
-        ``elapsed`` ({"A": ms, "B": ms}, with ``clocks`` only) adds ``elapsed <ea> <eb>`` (spec v2 A)."""
+        ``elapsed`` ({"A": ms, "B": ms}, with ``clocks`` only) adds ``elapsed <ea> <eb>`` (spec v2 A); ``pace``
+        ({seat: ms}, with ``clocks`` only) adds ``pace <4 ms>`` (spec v3)."""
         with self._lock:
             self.start()
             self.set_option("Team", TEAM_OPTION[team])
@@ -280,15 +286,17 @@ class HivemindProcess:
                 self.set_option(k, v)
             if self.reset_tree:
                 self._send("ucinewgame")
-            self._send(position_command(fen_a, fen_b, clocks, elapsed))
+            self._send(position_command(fen_a, fen_b, clocks, elapsed, pace))
             self._sync()  # drains stale output (late info strings) before the search
             lines: list[str] = []
             t0 = time.perf_counter()
             self._send(f"go nodes {max(1, int(nodes))}" + (" sample" if sample else ""))
             best = self._wait_for(lambda l: l.startswith("bestmove"), collect=lines)
             wall_ms = int((time.perf_counter() - t0) * 1000)
-            self._send("stop")  # end the permanent-brain background search
-            self._sync()
+            # End the permanent-brain background search. No isready round trip here (spec v3 WP-C): the engine
+            # handles commands in order, so the stop is done before the next setoption, and the isready before
+            # the next 'go' drains any late output.
+            self._send("stop")
         res = self._parse(lines, best, wall_ms)
         if sample and res.sample is None and not res.no_root:
             raise RuntimeError("hivemind did not print 'info string sample' (needs the hivemind-clock build)")
@@ -384,6 +392,22 @@ def measure_ms_per_node(nodes: int = 200, repeats: int = 3, **kw) -> float:
 
 # ---------------------------------------------------------------------------------------------- players
 
+CHARGE_MODES = ("requested", "searched")
+
+
+def _check_charge(charge: str) -> str:
+    if charge not in CHARGE_MODES:
+        raise ValueError(f"charge must be one of {CHARGE_MODES}, got {charge!r}")
+    return charge
+
+
+def charged_nodes(charge: str, requested: int, res: SearchResult) -> int:
+    """Nodes to charge for one search: the requested budget, or with ``charge="searched"`` the nodes the engine
+    reports (``res.nodes``; the requested budget when it reported none)."""
+    if charge == "searched" and res.nodes > 0:
+        return int(res.nodes)
+    return int(requested)
+
 def _legalize(uci: str | None, legal: list[str]) -> str | None:
     """Map an engine move onto the observation's legal list (castling king->rook to king->target)."""
     if uci is None:
@@ -453,15 +477,20 @@ class HivemindPlayer:
     the search runs on both machines: twice the nodes at twice the rate, so the same think time. Only
     meaningful when ``ms_per_node`` models half a machine (``compute="throughput"`` in setups).
     ``lend_share`` below 1 borrows only that part of the partner's machine (0.5: one and a half times the nodes).
+
+    ``charge="searched"`` (spec v3 WP-C; default ``"requested"``) charges the nodes the engine reports having
+    searched instead of the requested budget (``go nodes N`` overshoots by about a batch per thread).
     """
 
     kind = "hivemind"
 
     def __init__(self, seat: str, process: HivemindProcess, nodes: int = 200, ms_per_node: float = MS_PER_NODE,
                  *, comm: str = "none", max_consecutive_sits: int = 2, sit_ms: int = 1000,
-                 request_window_ms: int = 3000, lend: bool = False, lend_share: float = 1.0) -> None:
+                 request_window_ms: int = 3000, lend: bool = False, lend_share: float = 1.0,
+                 charge: str = "requested") -> None:
         if not 0.0 < lend_share <= 1.0:
             raise ValueError(f"lend_share must be in (0, 1], got {lend_share}")
+        self.charge = _check_charge(charge)
         self.seat = seat
         self.process = process
         self.nodes = int(nodes)
@@ -517,8 +546,9 @@ class HivemindPlayer:
         nodes = int(round(self.nodes * machines))
         res = self.process.search(obs.fens["A"], obs.fens["B"], team=team, nodes=nodes,
                                   time_advantage=ahead, require=None if may_sit else board)
-        think = int(round(nodes * self.ms_per_node / machines))
-        return self._finish(obs, res, think, edge, nodes, borrow)
+        charged = charged_nodes(self.charge, nodes, res)
+        think = int(round(charged * self.ms_per_node / machines))
+        return self._finish(obs, res, think, edge, charged, borrow)
 
     def _finish(self, obs: Observation, res: SearchResult, think: int, edge: int, nodes: int,
                 borrow: bool = False) -> Decision:
@@ -578,6 +608,22 @@ _SAMPLE_SEQ = itertools.count()  # orders recorded samples that share a timestam
 SAMPLE_TEAM_OFFSET = 16  # TrainingSample: gameId u64, nodes u32, macroPly u16, movesLeft u16, then team u8
 SAMPLE_TEAM_BYTE = {"T1": 0, "T2": 1}  # engine Team white = our T1 = selfplay.cc team 0
 
+# Exploration options (spec v3 WP-C, engine side WP-E E3). The OpeningNoise* options exist in the fork's uci.cc
+# (OpeningNoisePlies is capped at 200 board plies there). The all-game noise switch and the move temperature are
+# WP-E's; their names live here so integration can change them in one place. uci.cc ignores unknown option
+# names silently, so sending them to an engine without them is harmless.
+NOISE_ALL_GAME_OPTION = "OpeningNoiseAllGame"
+TEMPERATURE_OPTION = "MoveTemperaturePermille"
+NOISE_ALPHA_PERMILLE = 300  # stock selfplay.h: Dirichlet alpha 0.3, epsilon 0.25
+NOISE_EPSILON_PERMILLE = 250
+NOISE_PLIES = 200
+
+# Per-seat pace mixture (spec v3 WP-C): (weight, factor). A seat's factor is drawn once per game; every search
+# then multiplies it by a mean-1 log-normal draw and adds an exponential lag.
+DEFAULT_PACE_MIXTURE = ((0.25, 0.6), (0.5, 1.0), (0.25, 1.6))
+DEDUPE_MODES = ("position", "bucket")
+NO_ROOT_MODES = ("wait", "heuristic")
+
 
 def _pair(value, name: str) -> tuple[float, float] | None:
     if value is None:
@@ -586,6 +632,41 @@ def _pair(value, name: str) -> tuple[float, float] | None:
     if not 0 < lo <= hi:
         raise ValueError(f"{name} must be (lo, hi) with 0 < lo <= hi, got {value}")
     return lo, hi
+
+
+def _mixture(value) -> tuple[tuple[float, float], ...] | None:
+    if value is None:
+        return None
+    mix = tuple((float(w), float(f)) for w, f in value)
+    if not mix or any(w < 0 or f <= 0 for w, f in mix) or sum(w for w, _ in mix) <= 0:
+        raise ValueError(f"pace_mixture must be (weight >= 0, factor > 0) pairs with a positive total, got {value}")
+    return mix
+
+
+def fen_plies(fen: str) -> int | None:
+    """Half-moves played on one board, from the FEN's fullmove number and side to move (None if unreadable)."""
+    parts = fen.split()
+    try:
+        return 2 * (int(parts[5]) - 1) + (1 if parts[1] == "b" else 0)
+    except (IndexError, ValueError):
+        return None
+
+
+class ControllerSample(RecordedSample):
+    """A ``RecordedSample`` plus the spec v3 sidecar fields (shared contract 2) in ``extra``, merged into ``meta``.
+    A subclass, so arena/recorder.py needs no change to carry them; ``extra`` is a dict filled in place later
+    (``sit_ms`` once the seat moves or the game ends)."""
+
+    def meta(self, game_id: int) -> dict:
+        out = super().meta(game_id)
+        out.update(getattr(self, "extra", None) or {})
+        return out
+
+
+def make_sample(extra: dict, **fields) -> ControllerSample:
+    s = ControllerSample(**fields)
+    s.extra = extra
+    return s
 
 
 class HivemindTeamController:
@@ -623,19 +704,74 @@ class HivemindTeamController:
     ``think_head=True`` (off by default): before each new search a ``quick_nodes`` (16) look reads the root
     ``think_gain`` p for the seat's board, and the move's node budget becomes clock budget x (0.5 + 1.5 p),
     clamped to ``min_nodes..max_nodes``, with the quick look's nodes charged to that same budget. A network
-    without the head prints no think_gain: then the clock budget is used unchanged (``think_head_missing``)."""
+    without the head prints no think_gain: then the clock budget is used unchanged (``think_head_missing``).
+
+    Spec v3 (docs/custom_engine_spec_v3.md, audit WP-C). Every option below is off by default, so a controller
+    built as before behaves as before; ``arena.selfplay --regime v3`` turns them on.
+
+    * ``charge="searched"``: charge the nodes the engine reports having searched (``go nodes N`` overshoots by
+      about a batch per thread), not the requested N. Both stock and free mode. Samples record both.
+    * ``min_think_ms``: a floor on think time in clock ms (the budget is max(clock / k, floor), then nodes), in
+      place of the bare ``min_nodes`` floor that let a seat move every 44-88 ms and so never flag by moving.
+    * ``pace_mixture`` ((weight, factor), ...): replaces ``jitter``. Each seat draws one factor per game from the
+      mixture; each search's charge is budget x that factor x a mean-1 log-normal (``pace_sigma``) plus an
+      exponential lag of mean ``lag_ms``.
+    * ``pace=True``: the controller keeps an EMA (``pace_alpha``) of every seat's observed move times (from the
+      clocks at each landing, read off the FENs' ply counts), sends them as the ``pace <aw> <ab> <bw> <bb>``
+      suffix (seats not yet seen: this search's own unjittered budget), and sets ``TreeMoveMs`` to the seat's own
+      pace instead of this search's jittered charge.
+    * ``noise=True``: Dirichlet root noise (``OpeningNoise*`` and the all-game switch) on every search that may
+      be recorded, off on the others. ``temperature`` > 0: the move temperature option while the game has
+      fewer than ``temperature_plies`` landed moves (0 after).
+    * ``pcr_p``: playout-cap randomisation. With probability ``pcr_p`` a search runs at least ``pcr_nodes`` and
+      may be recorded; the rest run at the clock budget and are not recorded (except the sit->move
+      transition). The clock is charged as for the clock-budget search either way (times the overshoot with
+      ``charge="searched"``), so the game's time course does not depend on the draw.
+    * ``dedupe="bucket"``: at most one sample per seat per (both FENs, all four clocks // ``clock_bucket_ms``),
+      instead of one per unchanged position, and the search where a sitting seat decides to move is always kept.
+      Every kept sample carries ``sit_ms``: how long the seat then sat (0 when it moved).
+    * ``sit_recheck=True``: a sitting seat woken before ``free_sit_ms`` has passed since its last look, with its
+      own board's FEN (pieces and both pockets there) unchanged, waits on without a search. A due re-look is a
+      ``recheck_nodes`` search that neither queues behind nor blocks the partner's search; only when it wants
+      to move does a full-budget search follow (its time added after the re-look's).
+    * ``think_head_norm=True``: the think-head multiplier is divided by its running mean in the game, so it
+      moves time between moves without cutting the mean.
+    * ``start_offset_ms``: the team's time-odds offset, written into every sample's sidecar.
+    * ``stock_no_root``: what a stock-mode seat does when the engine answers ``bestmove (none)`` while it has
+      legal moves: ``"wait"`` (as before) or ``"heuristic"`` (a 1-ply move). Counted in ``no_root_results``
+      in both modes.
+    ``stalls`` lists one dict per sit spell in free mode (seat, time, diagonal clock difference, whether the
+    partner's opponent is on turn, in check, legal move count)."""
 
     def __init__(self, team: str, process: HivemindProcess, nodes: int = 400, ms_per_node: float = MS_PER_NODE,
                  *, max_consecutive_sits: int = 2, sit_ms: int = 1000, clock_k: float | None = None,
                  min_nodes: int = 16, max_nodes: int = 1600, serial: bool = False, free: bool = False,
                  free_sit_ms: int = 500, k_range=(60.0, 300.0), jitter=None, record: bool = False,
-                 seed: int = 0, think_head: bool = False, quick_nodes: int = 16, send_elapsed: bool = True) -> None:
+                 seed: int = 0, think_head: bool = False, quick_nodes: int = 16, send_elapsed: bool = True,
+                 charge: str = "requested", min_think_ms: float | None = None, pace: bool = False,
+                 pace_alpha: float = 0.3, pace_mixture=None, pace_sigma: float = 0.25, lag_ms: float = 0.0,
+                 noise: bool = False, temperature: float = 0.0, temperature_plies: int = 20,
+                 pcr_p: float | None = None, pcr_nodes: int = 400, dedupe: str = "position",
+                 clock_bucket_ms: int = 5000, sit_recheck: bool = False, recheck_nodes: int = 32,
+                 think_head_norm: bool = False, start_offset_ms: int = 0, stock_no_root: str = "wait") -> None:
         if clock_k is not None and clock_k <= 0:
             raise ValueError(f"clock_k must be > 0, got {clock_k}")
         if record and not free:
             raise ValueError("record needs free=True (samples come from the hivemind-clock build)")
         if think_head and not free:
             raise ValueError("think_head needs free=True (the think_gain output comes from the clock network)")
+        v3_free_only = {"pace": pace, "noise": noise, "temperature": temperature > 0, "pcr_p": pcr_p is not None,
+                        "sit_recheck": sit_recheck, "dedupe": dedupe != "position"}
+        if not free and any(v3_free_only.values()):
+            raise ValueError(f"{[k for k, v in v3_free_only.items() if v]} need free=True")
+        if dedupe not in DEDUPE_MODES:
+            raise ValueError(f"dedupe must be one of {DEDUPE_MODES}, got {dedupe!r}")
+        if stock_no_root not in NO_ROOT_MODES:
+            raise ValueError(f"stock_no_root must be one of {NO_ROOT_MODES}, got {stock_no_root!r}")
+        if pcr_p is not None and not 0.0 <= pcr_p <= 1.0:
+            raise ValueError(f"pcr_p must be in [0, 1], got {pcr_p}")
+        if not 0.0 < pace_alpha <= 1.0:
+            raise ValueError(f"pace_alpha must be in (0, 1], got {pace_alpha}")
         self.team = team
         self.process = process
         self.nodes = int(nodes)
@@ -651,32 +787,78 @@ class HivemindTeamController:
         self._rng = random.Random(f"{seed}:{team}")
         self.k_range = _pair(k_range, "k_range")
         self.jitter = _pair(jitter, "jitter")
+        self.pace_mixture = _mixture(pace_mixture)
         if self.free:
             self.serial = True
-            if self.jitter is None:
+            if self.jitter is None and self.pace_mixture is None:
                 self.jitter = (0.5, 2.0)
             self.clock_k = self._rng.uniform(*self.k_range)
+        if self.pace_mixture is not None:
+            self.jitter = None  # the mixture replaces the uniform jitter
+        self.pace_sigma = float(pace_sigma)
+        self.lag_ms = max(0.0, float(lag_ms))
+        self.seat_factor: dict[str, float] = {}
+        if self.pace_mixture is not None:
+            weights = [w for w, _ in self.pace_mixture]
+            for s in SEATS:
+                if TEAM_OF[s] == team:
+                    self.seat_factor[s] = self._rng.choices([f for _, f in self.pace_mixture], weights)[0]
         self.think_head = bool(think_head)
         self.quick_nodes = max(1, int(quick_nodes))
         self.send_elapsed = bool(send_elapsed)
+        self.charge = _check_charge(charge)
+        self.min_think_ms = None if min_think_ms is None else max(0.0, float(min_think_ms))
+        self.pace = bool(pace)
+        self.pace_alpha = float(pace_alpha)
+        self.noise = bool(noise)
+        self.temperature = max(0.0, float(temperature))
+        self.temperature_plies = int(temperature_plies)
+        self.pcr_p = None if pcr_p is None else float(pcr_p)
+        self.pcr_nodes = int(pcr_nodes)
+        self.dedupe = dedupe
+        self.clock_bucket_ms = max(1, int(clock_bucket_ms))
+        self.sit_recheck = bool(sit_recheck)
+        self.recheck_nodes = max(1, int(recheck_nodes))
+        self.think_head_norm = bool(think_head_norm)
+        self.start_offset_ms = int(start_offset_ms)
+        self.stock_no_root = stock_no_root
         self.samples: list[RecordedSample] = []
         self.searches = 0
-        self.repeats_dropped = 0  # record: searches whose sample was dropped (same seat, same position in a row)
+        self.repeats_dropped = 0  # record: searches whose sample was dropped as a repeat (dedupe)
+        self.unrecorded_fast = 0  # record + pcr_p: clock-budget searches not recorded
+        self.transitions = 0  # dedupe="bucket": sit->move searches kept
+        self.rechecks = 0  # sit_recheck: small re-look searches run
+        self.rechecks_skipped = 0  # sit_recheck: wakes answered without a search
+        self.nodes_requested = 0  # every search, requested nodes
+        self.nodes_searched = 0  # every search, nodes the engine reported (requested when it reported none)
         self.quick_looks = 0  # think_head: 16-node looks run
         self.think_head_missing = 0  # think_head: looks that gave no think_gain (clock budget used unchanged)
         self.think_gain_sum = 0.0  # think_head: sum of the p values used (mean = sum / (looks - missing))
+        self._th_mult_sum, self._th_mult_n = 0.0, 0
         self._last_sample_pos: dict[str, tuple[str, str]] = {}
-        self.no_root_results = 0  # free mode: searches that returned bestmove (none) although the seat could move
+        self._seen_pos: dict[str, tuple[str, str]] = {}
+        self._seen: dict[str, set] = {}
+        self._pending_sit: dict[str, list[ControllerSample]] = {}
+        self._sitting: dict[str, dict] = {}
+        self._pace_ema: dict[str, float] = {}
+        self._pace_clock: dict[str, float] = {}
+        self._pace_plies: dict[str, int] = {}
+        self.stalls: list[dict] = []
+        self.no_root_results = 0  # searches that returned bestmove (none) although the seat could move
         self._busy_until = 0  # serial: the one machine is searching until then
         self._cache: tuple[tuple[str, str, bool], SearchResult, int] | None = None
         self._sits: dict[str, int] = {}
         self._seats: dict[str, "CentralizedHivemindSeat"] = {}
 
     def budget(self, clock_ms: int) -> int:
-        """Nodes for one search: the fixed ``nodes``, or with ``clock_k`` the remaining clock / clock_k."""
+        """Nodes for one search: the fixed ``nodes``, or with ``clock_k`` the remaining clock / clock_k (at least
+        ``min_think_ms`` of clock when set), clamped to ``min_nodes..max_nodes``."""
         if self.clock_k is None:
             return self.nodes
-        nodes = int(round(max(0, clock_ms) / self.clock_k / self.ms_per_node))
+        ms = max(0, clock_ms) / self.clock_k
+        if self.min_think_ms is not None:
+            ms = max(ms, self.min_think_ms)
+        nodes = int(round(ms / self.ms_per_node))
         return min(self.max_nodes, max(self.min_nodes, nodes))
 
     def player(self, seat: str) -> "CentralizedHivemindSeat":
@@ -686,10 +868,77 @@ class HivemindTeamController:
             self._seats[seat] = CentralizedHivemindSeat(seat, self)
         return self._seats[seat]
 
-    def _charged_ms(self, budget: int) -> int:
-        """Think time of one new search: budget * ms_per_node, times this search's jitter draw."""
-        factor = self._rng.uniform(*self.jitter) if self.jitter else 1.0
-        return int(round(budget * self.ms_per_node * factor))
+    # ------------------------------------------------------------------ think-time model
+
+    def _time_noise(self, seat: str | None = None) -> tuple[float, float]:
+        """(factor, lag ms) for one new search: the seat's pace-mixture factor x a mean-1 log-normal draw, or the
+        uniform ``jitter`` draw, or 1; plus an exponential lag when ``lag_ms`` > 0."""
+        if self.pace_mixture is not None and seat in self.seat_factor:
+            s = self.pace_sigma
+            factor = self.seat_factor[seat] * math.exp(self._rng.gauss(0.0, s) - s * s / 2) if s > 0 \
+                else self.seat_factor[seat]
+        elif self.jitter:
+            factor = self._rng.uniform(*self.jitter)
+        else:
+            factor = 1.0
+        lag = self._rng.expovariate(1.0 / self.lag_ms) if self.lag_ms > 0 else 0.0
+        return factor, lag
+
+    def _think_ms(self, nodes: float, factor: float = 1.0, lag: float = 0.0) -> int:
+        ms = nodes * self.ms_per_node
+        if self.min_think_ms is not None:
+            ms = max(ms, self.min_think_ms)
+        return int(round(ms * factor + lag))
+
+    def _charged_ms(self, budget: int, seat: str | None = None) -> int:
+        """Think time of one new search: budget * ms_per_node (floored at ``min_think_ms``), times this search's
+        jitter or pace draw, plus lag."""
+        return self._think_ms(budget, *self._time_noise(seat))
+
+    def _expected_ms(self, nodes: int) -> float:
+        """This search's own unjittered think time: the pace default."""
+        ms = nodes * self.ms_per_node
+        return max(ms, self.min_think_ms) if self.min_think_ms is not None else ms
+
+    # ------------------------------------------------------------------ pace (spec v3 contract 1)
+
+    def _observe_pace(self, obs: Observation) -> None:
+        """Update every seat's move-time EMA from the moves that landed since the last observation. A seat's move
+        time is its clock at its previous landing minus its clock at this one; the on-turn seat's clock has run
+        since the board's last landing, so that part is added back. Several moves by one seat between two
+        observations are averaged."""
+        for b in ("A", "B"):
+            plies = fen_plies(obs.fens[b])
+            if plies is None:
+                continue
+            last = obs.last_move_ms[b] if obs.last_move_ms else obs.now_ms
+            on_turn = obs.to_move.get(b)
+
+            def at_landing(s: str) -> float:
+                c = float(obs.clocks_ms[s])
+                return c + max(0, obs.now_ms - int(last)) if s == on_turn else c
+
+            prev = self._pace_plies.get(b)
+            if prev is not None and plies > prev:
+                for s in (f"{b}_white", f"{b}_black"):
+                    white = s.endswith("white")
+                    n = sum(1 for p in range(prev, plies) if (p % 2 == 0) == white)
+                    if n and s in self._pace_clock:
+                        spent = (self._pace_clock[s] - at_landing(s)) / n
+                        if spent >= 0:
+                            old = self._pace_ema.get(s)
+                            self._pace_ema[s] = spent if old is None else \
+                                self.pace_alpha * spent + (1 - self.pace_alpha) * old
+            if prev is None or plies != prev:
+                for s in (f"{b}_white", f"{b}_black"):
+                    self._pace_clock[s] = at_landing(s)
+                self._pace_plies[b] = plies
+
+    def pace_values(self, default_ms: float) -> dict:
+        """{seat: expected move ms} for the ``pace`` suffix: each seat's EMA, ``default_ms`` until it has one."""
+        return {s: self._pace_ema.get(s, default_ms) for s in CLOCK_SEATS}
+
+    # ------------------------------------------------------------------ stock mode
 
     def decide(self, seat: str, obs: Observation) -> Decision:
         if not obs.legal_moves:
@@ -712,13 +961,18 @@ class HivemindTeamController:
             res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=budget,
                                       time_advantage=ahead, require=require)
             self.searches += 1
-            full = self._charged_ms(budget)
+            if res.no_root:
+                self.no_root_results += 1
+            charged = charged_nodes(self.charge, budget, res)
+            self.nodes_requested += budget
+            self.nodes_searched += res.nodes if res.nodes > 0 else budget
+            full = self._charged_ms(charged)
             queued = max(0, self._busy_until - obs.now_ms) if self.serial else 0
-            think, nodes = queued + full, budget
+            think, nodes = queued + full, charged
             self._busy_until = obs.now_ms + think
             self._cache = (key, res, obs.now_ms + think)
         move = _legalize(res.move_for(board), list(obs.legal_moves))
-        if move is None and res.move_for(board) is None:
+        if move is None and res.move_for(board) is None and not (res.no_root and self.stock_no_root == "heuristic"):
             self._sits[seat] = sits + 1
             return Decision(kind="wait", think_ms=think, wait_ms=think + self.sit_ms, nodes=nodes, eval=res.q,
                             stall_reason="time_advantage" if ahead else "engine_pass")
@@ -727,6 +981,8 @@ class HivemindTeamController:
             move = evaluate_moves(b, list(obs.legal_moves), wanted=None, rng=random.Random(obs.ply))[0].uci
         self._sits[seat] = 0
         return Decision(kind="move", uci=move, think_ms=think, nodes=nodes, eval=res.q)
+
+    # ------------------------------------------------------------------ free mode
 
     def _elapsed(self, obs: Observation) -> dict | None:
         if not self.send_elapsed or obs.last_move_ms is None:
@@ -747,64 +1003,188 @@ class HivemindTeamController:
             return budget, quick
         p = min(1.0, max(0.0, float(look.think_gain[0 if BOARD_OF[seat] == "A" else 1])))
         self.think_gain_sum += p
-        total = min(self.max_nodes, max(self.min_nodes, int(round(budget * (0.5 + 1.5 * p)))))
+        mult = 0.5 + 1.5 * p
+        if self.think_head_norm:  # mean 1 over the game's looks so far (audit inputs 5)
+            self._th_mult_sum += mult
+            self._th_mult_n += 1
+            mult /= self._th_mult_sum / self._th_mult_n
+        total = min(self.max_nodes, max(self.min_nodes, int(round(budget * mult))))
         return max(total, quick + 1), quick
 
-    def _decide_free(self, seat: str, obs: Observation) -> Decision:
+    def _stall_info(self, seat: str, obs: Observation) -> dict:
+        """Per sit spell (audit self-play 4(d)): the diagonal (our clock minus the partner's opponent's), whether
+        the partner's opponent is on turn on the other board, in check, legal move count."""
+        partner = PARTNER[seat]
+        partop = OPPONENT[partner]
+        try:
+            in_check = parse_board(obs.fens[BOARD_OF[seat]]).is_check()
+        except ValueError:
+            in_check = None
+        return {"seat": seat, "t": obs.now_ms, "diagonal_ms": int(obs.clocks_ms[seat] - obs.clocks_ms[partop]),
+                "partop_on_turn": obs.to_move.get(BOARD_OF[partner]) == partop, "in_check": in_check,
+                "legal": len(obs.legal_moves)}
+
+    def _exploration_options(self, recorded: bool, ply: int) -> dict:
+        opts: dict = {}
+        if self.noise:
+            opts["OpeningNoise"] = bool(recorded)
+            if recorded:
+                opts.update({"OpeningNoisePlies": NOISE_PLIES, "OpeningNoiseAlphaPermille": NOISE_ALPHA_PERMILLE,
+                             "OpeningNoiseEpsilonPermille": NOISE_EPSILON_PERMILLE, NOISE_ALL_GAME_OPTION: True})
+        if self.temperature > 0:
+            on = recorded is not None and ply < self.temperature_plies
+            opts[TEMPERATURE_OPTION] = int(round(1000 * self.temperature)) if on else 0
+        return opts
+
+    def _free_search(self, seat: str, obs: Observation, *, recheck: bool = False,
+                     pre_ms: int = 0) -> tuple[SearchResult, int, int]:
+        """One free-mode search for ``seat``: (result, think ms for the Decision, nodes charged). Records the
+        sample when the recording rules keep it."""
         board = BOARD_OF[seat]
+        fen_a, fen_b = obs.fens["A"], obs.fens["B"]
         ahead = team_time_edge(obs.clocks_ms, self.team) > 0  # the legacy TimeAdvantage input plane only
-        key = (obs.fens["A"], obs.fens["B"], ahead)
-        cached = self._cache
-        # Reuse only a move: after a pass the controller searches again (the clocks have moved on).
-        if cached and cached[0] == key and _legalize(cached[1].move_for(board), list(obs.legal_moves)):
-            res, ready = cached[1], cached[2]
-            think, nodes = max(0, ready - obs.now_ms), 0
+        elapsed = self._elapsed(obs)
+        budget = self.budget(obs.clocks_ms[seat])
+        if recheck:
+            total, spent = max(1, min(budget, self.recheck_nodes)), 0
+            full = self.pcr_p is None  # a re-look is never a playout-cap full search
         else:
-            elapsed = self._elapsed(obs)
-            budget = self.budget(obs.clocks_ms[seat])
             total, spent = (self._think_head_nodes(seat, obs, budget, elapsed, ahead) if self.think_head
                             else (budget, 0))
-            own = self._charged_ms(total)
-            pos = (obs.fens["A"], obs.fens["B"])
-            repeat = self.record and self._last_sample_pos.get(seat) == pos
-            want_sample = self.record and not repeat
-            res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=total - spent,
-                                      time_advantage=ahead, clocks=obs.clocks_ms, sample=want_sample,
-                                      options={"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": own},
-                                      require_option=False, elapsed=elapsed)
-            self.searches += 1
-            if res.no_root:
-                # The seat has legal moves (decide() returned early otherwise), so the engine should have a
-                # root. Log it with the position, record no sample for it, and fall back to a heuristic move
-                # below, as the illegal-move path does, instead of crashing the game or waiting silently.
-                self.no_root_results += 1
-                _LOG.error("hivemind returned bestmove (none) for %s (%s) with %d legal moves; "
-                           "fenA=%s fenB=%s clocks=%s time_advantage=%s", seat, self.team,
-                           len(obs.legal_moves), obs.fens["A"], obs.fens["B"], obs.clocks_ms, ahead)
-            elif repeat:
-                self.repeats_dropped += 1
-            elif self.record:
+            full = self.pcr_p is None or self._rng.random() < self.pcr_p
+        request = total - spent
+        if self.pcr_p is not None and full and not recheck:
+            request = max(request, self.pcr_nodes - spent)
+        factor, lag = self._time_noise(seat)
+        pace = self.pace_values(self._expected_ms(total)) if self.pace else None
+        tree_ms = int(round(pace[seat])) if pace is not None else self._think_ms(total, factor, lag)
+        pos = (fen_a, fen_b)
+        legacy_repeat = self.record and self.dedupe == "position" and self._last_sample_pos.get(seat) == pos
+        want_sample = self.record and (not legacy_repeat if self.dedupe == "position" else True)
+        options = {"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": tree_ms}
+        options.update(self._exploration_options(None if recheck else full, obs.ply))
+        kw = {"pace": pace} if pace is not None else {}
+        res = self.process.search(fen_a, fen_b, team=self.team, nodes=request, time_advantage=ahead,
+                                  clocks=obs.clocks_ms, sample=want_sample, options=options,
+                                  require_option=False, elapsed=elapsed, **kw)
+        self.searches += 1
+        searched = (res.nodes if res.nodes > 0 else request) + spent
+        self.nodes_requested += request + spent
+        self.nodes_searched += searched
+        # Clock charge: the clock-budget search's nodes, times the overshoot when charging searched nodes.
+        charged = total if self.charge == "requested" else max(1, int(round(total * searched / (request + spent))))
+        own = self._think_ms(charged, factor, lag)
+        passed = not res.no_root and res.move_for(board) is None
+        if res.no_root:
+            # The seat has legal moves (decide() returned early otherwise), so the engine should have a
+            # root. Log it with the position, record no sample for it, and fall back to a heuristic move
+            # in the caller, as the illegal-move path does, instead of crashing the game or waiting silently.
+            self.no_root_results += 1
+            _LOG.error("hivemind returned bestmove (none) for %s (%s) with %d legal moves; "
+                       "fenA=%s fenB=%s clocks=%s time_advantage=%s", seat, self.team,
+                       len(obs.legal_moves), fen_a, fen_b, obs.clocks_ms, ahead)
+        elif self.record:
+            transition = False
+            if self.dedupe == "position":
+                keep = not legacy_repeat
+                if legacy_repeat:
+                    self.repeats_dropped += 1
+            else:
+                bkey = pos + tuple(int(obs.clocks_ms[s]) // self.clock_bucket_ms for s in CLOCK_SEATS)
+                if self._seen_pos.get(seat) != pos:
+                    self._seen_pos[seat], self._seen[seat] = pos, set()
+                transition = seat in self._sitting and not passed
+                keep = transition or (full and bkey not in self._seen[seat])
+                if keep:
+                    self._seen[seat].add(bkey)
+                    self.transitions += transition
+                elif not full:
+                    self.unrecorded_fast += 1
+                else:
+                    self.repeats_dropped += 1
+            if keep:
                 if res.sample is None:
                     raise RuntimeError("record=True but the search returned no sample")
                 if len(res.sample) <= SAMPLE_TEAM_OFFSET or \
                         res.sample[SAMPLE_TEAM_OFFSET] != SAMPLE_TEAM_BYTE[self.team]:
                     raise ValueError(f"sample team byte does not match team {self.team}")
-                self.samples.append(RecordedSample(
-                    now_ms=obs.now_ms, seq=next(_SAMPLE_SEQ), buf=res.sample, seat=seat, team=self.team,
-                    ply=obs.ply, fen_a=obs.fens["A"], fen_b=obs.fens["B"], clocks=dict(obs.clocks_ms),
-                    elapsed=elapsed, tree_ms=own, nodes=total, time_advantage=ahead))
+                extra = {"nodes_requested": request + spent, "nodes_searched": searched,
+                         "sit_ms": None if passed else 0.0, "start_offset_ms": self.start_offset_ms,
+                         "pace": None if pace is None else [float(pace[s]) for s in CLOCK_SEATS],
+                         "clocks_ms": {s: float(obs.clocks_ms[s]) for s in CLOCK_SEATS},
+                         "elapsed_ms": None if elapsed is None else {b: float(v) for b, v in elapsed.items()},
+                         "search_kind": "recheck" if recheck else ("full" if full else "fast"),
+                         "transition": transition}
+                sample = make_sample(
+                    extra, now_ms=obs.now_ms, seq=next(_SAMPLE_SEQ), buf=res.sample, seat=seat, team=self.team,
+                    ply=obs.ply, fen_a=fen_a, fen_b=fen_b, clocks=dict(obs.clocks_ms), elapsed=elapsed,
+                    tree_ms=tree_ms, nodes=total, time_advantage=ahead)
+                self.samples.append(sample)
                 self._last_sample_pos[seat] = pos
-            queued = max(0, self._busy_until - obs.now_ms)
-            think, nodes = queued + own, total
-            self._busy_until = obs.now_ms + think
-            self._cache = (key, res, obs.now_ms + think)
-        move = _legalize(res.move_for(board), list(obs.legal_moves))
+                if passed:
+                    self._pending_sit.setdefault(seat, []).append(sample)
+        if recheck:  # a sitter's re-look: does not queue behind or block the partner's search
+            return res, own, charged
+        queued = max(0, self._busy_until - obs.now_ms - pre_ms)
+        think = pre_ms + queued + own
+        self._busy_until = obs.now_ms + think
+        self._cache = ((fen_a, fen_b, ahead), res, obs.now_ms + think)
+        return res, think, charged
+
+    def _free_wait(self, seat: str, obs: Observation, res: SearchResult, think: int, nodes: int) -> Decision:
+        if seat not in self._sitting:
+            self.stalls.append(self._stall_info(seat, obs))
+        self._sitting[seat] = {"own_fen": obs.fens[BOARD_OF[seat]], "next_ms": obs.now_ms + think + self.free_sit_ms}
+        return Decision(kind="wait", think_ms=think, wait_ms=think + self.free_sit_ms, nodes=nodes, eval=res.q,
+                        stall_reason="free_pass")
+
+    def _moved(self, seat: str, obs: Observation) -> None:
+        """The seat decided to move: its sit spell (if any) ends now; fill ``sit_ms`` of the samples it left."""
+        self._sitting.pop(seat, None)
+        for s in self._pending_sit.pop(seat, []):
+            s.extra["sit_ms"] = float(max(0, obs.now_ms - s.now_ms))
+
+    def finish(self, end_ms: int) -> None:
+        """Game over at ``end_ms``: samples of seats still sitting get the sit length up to the end."""
+        for lst in self._pending_sit.values():
+            for s in lst:
+                s.extra["sit_ms"] = float(max(0, end_ms - s.now_ms))
+        self._pending_sit.clear()
+        self._sitting.clear()
+
+    def _decide_free(self, seat: str, obs: Observation) -> Decision:
+        board = BOARD_OF[seat]
+        legal = list(obs.legal_moves)
+        if self.pace:
+            self._observe_pace(obs)
+        ahead = team_time_edge(obs.clocks_ms, self.team) > 0
+        key = (obs.fens["A"], obs.fens["B"], ahead)
+        cached = self._cache
+        # Reuse only a move: after a pass the controller searches again (the clocks have moved on).
+        if cached and cached[0] == key and _legalize(cached[1].move_for(board), legal):
+            res, ready = cached[1], cached[2]
+            self._moved(seat, obs)
+            return Decision(kind="move", uci=_legalize(res.move_for(board), legal),
+                            think_ms=max(0, ready - obs.now_ms), nodes=0, eval=res.q)
+        pre_ms = 0
+        sit = self._sitting.get(seat)
+        if self.sit_recheck and sit is not None:
+            if obs.now_ms < sit["next_ms"] and obs.fens[board] == sit["own_fen"]:
+                self.rechecks_skipped += 1
+                return Decision(kind="wait", wait_ms=sit["next_ms"] - obs.now_ms, stall_reason="free_pass")
+            res, think, nodes = self._free_search(seat, obs, recheck=True)
+            self.rechecks += 1
+            if not res.no_root and res.move_for(board) is None:
+                return self._free_wait(seat, obs, res, think, nodes)
+            pre_ms = think  # the re-look wants a move: a full search follows, after it
+        res, think, nodes = self._free_search(seat, obs, pre_ms=pre_ms)
+        move = _legalize(res.move_for(board), legal)
         if move is None and res.move_for(board) is None and not res.no_root:
-            return Decision(kind="wait", think_ms=think, wait_ms=think + self.free_sit_ms, nodes=nodes,
-                            eval=res.q, stall_reason="free_pass")
+            return self._free_wait(seat, obs, res, think, nodes)
         if move is None:
             b = parse_board(obs.fens[board])
-            move = evaluate_moves(b, list(obs.legal_moves), wanted=None, rng=random.Random(obs.ply))[0].uci
+            move = evaluate_moves(b, legal, wanted=None, rng=random.Random(obs.ply))[0].uci
+        self._moved(seat, obs)
         return Decision(kind="move", uci=move, think_ms=think, nodes=nodes, eval=res.q)
 
 

@@ -41,7 +41,8 @@ Centralized hivemind teams also take ``clock_k`` (think time from the remaining 
 Custom engine (all off by default): ``free`` (no time/sit rules, real clocks; needs ``binary="hivemind-clock"``),
 ``free_sit_ms``, ``k_range``, ``jitter`` (out-of-step think times; also usable on a stock controller) and
 ``record`` (training samples), and from spec v2 ``think_head`` / ``quick_nodes`` (budget scaled by the network's
-think_gain) and ``send_elapsed`` (per-board elapsed times in ``position``, on by default in free mode). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
+think_gain) and ``send_elapsed`` (per-board elapsed times in ``position``, on by default in free mode), and from
+spec v3 the ``V3_CONTROLLER_KEYS`` (``charge="searched"`` also reaches split hivemind players). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
 an ONNX path.
 
 ``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
@@ -64,6 +65,10 @@ from arena.players.hivemind import (
 from arena.players.random_player import RandomPlayer
 
 SETUPS = ("centralized", "silent", "sharing")
+# Spec v3 WP-C options of HivemindTeamController, passed through when given (see its docstring).
+V3_CONTROLLER_KEYS = ("charge", "min_think_ms", "pace", "pace_alpha", "pace_mixture", "pace_sigma", "lag_ms",
+                      "noise", "temperature", "temperature_plies", "pcr_p", "pcr_nodes", "dedupe", "clock_bucket_ms",
+                      "sit_recheck", "recheck_nodes", "think_head_norm", "start_offset_ms", "stock_no_root")
 KINDS = ("random", "heuristic", "hivemind", "agent")
 COMPUTE_MODELS = ("throughput", "nodes")
 
@@ -94,12 +99,14 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         if setup == "centralized":
             ckw = {k: kw[k] for k in ("clock_k", "min_nodes", "max_nodes", "serial", "free", "free_sit_ms",
                                       "k_range", "jitter", "record", "think_head", "quick_nodes", "send_elapsed")
-                   if kw.get(k) is not None}
+                   + V3_CONTROLLER_KEYS if kw.get(k) is not None}
             ctl = HivemindTeamController(team, HivemindProcess(binary, model, **pkw), nodes=nodes,
                                          ms_per_node=ms, seed=seed, **skw, **ckw)
             return {s: ctl.player(s) for s in seats}
         if any(kw.get(k) for k in ("free", "jitter", "record", "think_head")):
             raise ValueError("free, jitter, record and think_head need setup='centralized'")
+        if kw.get("charge") is not None:
+            skw["charge"] = kw["charge"]
         half = max(1, nodes // 2)
         compute = kw.get("compute") or "throughput"
         if compute not in COMPUTE_MODELS:
