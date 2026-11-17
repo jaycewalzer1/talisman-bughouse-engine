@@ -60,11 +60,9 @@ def test_rescore_of_an_existing_run_equals_its_summary(tmp_path):
     row = tmp_path / "gate"
     shutil.copytree(REAL_ROW, row)
     old = json.loads((row / "summary.json").read_text())
-    rep = rescore_mod.rescore(str(row))  # same n_boot and seed as the row (2000, seed 1 for it01)
-    rep1 = rescore_mod.rescore(str(row), seed=1)
+    rep = rescore_mod.rescore(str(row), n_boot=2000, seed=1)  # the it01 gate ran with --seed 1, --boot 2000
     for name, r in old["results"]["by_opponent"].items():
-        new = rep1["results"]["by_opponent"][name] if rep1["results"]["by_opponent"][name]["ci95"] == r["ci95"] \
-            else rep["results"]["by_opponent"][name]
+        new = rep["results"]["by_opponent"][name]
         assert {k: new[k] for k in r} == r
     assert len(rep["games"]) == len(old["games"])
     for a, b in zip(rep["games"], sorted(old["games"], key=lambda g: g["game_id"])):
@@ -238,6 +236,16 @@ def test_ms_per_node_measured_once_per_binary_and_network(tmp_path):
     ct, ot = spec["contender_team"], "T2" if spec["contender_team"] == "T1" else "T1"
     assert spec["teams"][ct]["player_kw"]["ms_per_node"] == 0.25
     assert spec["teams"][ot]["player_kw"]["ms_per_node"] == 0.5
+
+
+def test_equal_ms_per_node_charges_both_arms_the_opponents_rate(tmp_path):
+    from arena.pool import equalize_ms_per_node
+
+    pool, _ = apply_ms_per_node(_engine_pool({"model": str(tmp_path / "clock.onnx")}), None,
+                                measure=lambda b, m, nodes, repeats: {"ms_per_node": 0.25 if "clock" in m else 0.5})
+    eq = equalize_ms_per_node(pool)
+    assert eq.contender.player_kw["ms_per_node"] == eq.opponents[0].player_kw["ms_per_node"] == 0.5
+    assert eq.contender.player_kw["model"] == str(tmp_path / "clock.onnx")
 
 
 def test_ms_per_node_reaches_the_controller():

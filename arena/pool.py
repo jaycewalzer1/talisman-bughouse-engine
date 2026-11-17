@@ -161,6 +161,20 @@ class Pool:
         return snap
 
 
+def equalize_ms_per_node(pool: Pool) -> Pool:
+    """Every engine team charged the first engine opponent's ms_per_node (its own, or the player default when it
+    has none): the equal-nodes diagnostic, which takes network speed out of an equal-clock row."""
+    from arena.players.hivemind import MS_PER_NODE
+
+    ref = next((o for o in pool.opponents if o.kind in ENGINE_KINDS), None)
+    if ref is None:
+        raise ValueError("--equal-ms-per-node needs an engine opponent")
+    ms = ref.player_kw.get("ms_per_node")
+    ms = float(MS_PER_NODE if ms in (None, "measure") else ms)
+    fix = lambda t: replace(t, player_kw={**t.player_kw, "ms_per_node": ms}) if t.kind in ENGINE_KINDS else t
+    return replace(pool, contender=fix(pool.contender), opponents=[fix(o) for o in pool.opponents])
+
+
 # ---------------------------------------------------------------------- rotation
 
 def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
@@ -628,6 +642,12 @@ def main(argv=None) -> int:
             p.add_argument("--measure-ms-per-node", action="store_true",
                            help="measure ms per searched node per binary+network for engine teams without one")
             p.add_argument("--measure-nodes", type=int, default=400)
+            p.add_argument("--ms-per-node-cache", default=None,
+                           help="JSON file of measured ms_per_node per binary+network (default <out>/ms_per_node.json);"
+                                " point several rows at one file so they charge the same values")
+            p.add_argument("--equal-ms-per-node", action="store_true",
+                           help="diagnostic: every engine team is charged the (first) opponent's ms_per_node, so "
+                                "both sides get the same nodes per second of clock (the equal-nodes row)")
         if name == "measure":
             p.add_argument("--name", required=True, help="the contender's or an opponent's name")
             p.add_argument("--nodes", type=int, default=400)
@@ -709,8 +729,13 @@ def main(argv=None) -> int:
     extra: dict = {}
     if args.measure_ms_per_node or any(t.player_kw.get("ms_per_node") == "measure"
                                        for t in [pool.contender, *pool.opponents]):
-        pool, used = apply_ms_per_node(pool, os.path.join(args.out, "ms_per_node.json"), nodes=args.measure_nodes)
+        cache = args.ms_per_node_cache or os.path.join(args.out, "ms_per_node.json")
+        pool, used = apply_ms_per_node(pool, cache, nodes=args.measure_nodes)
         extra["ms_per_node"] = used
+    if args.equal_ms_per_node:
+        pool = equalize_ms_per_node(pool)
+        extra["equal_ms_per_node"] = pool.contender.player_kw.get("ms_per_node")
+    if extra:
         specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
                               channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
     report = run_schedule(specs, args.out, workers=args.workers, n_boot=args.boot, seed=args.seed,
