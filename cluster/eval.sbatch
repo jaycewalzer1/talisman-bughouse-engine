@@ -24,6 +24,7 @@
 #   SPRT=0,20     GSPRT over normalised Elo [ELO0,ELO1(,ALPHA,BETA)] after every game pair; stops when decided
 #   JITTER=lo,hi  think-time factor per search for every centralized Hivemind team (both sides)
 #   WORKERS       parallel games (default 3)
+#   POOL          pool file (default arena/pools/phase1.json; arena/pools/upstream_v3.json has upstream-v3, fairy-sf)
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 source cluster/env.sh
@@ -65,6 +66,6 @@ $PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', 
 $PY cluster/warm_engine.py || exit 1
 $PY cluster/engine_parity.py check || exit 1
 
-$PY -m arena.pool run "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings eval \
+$PY -m arena.pool run --pool "${POOL:-arena/pools/phase1.json}" "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings eval \
   --pairs "${PAIRS:-800}" --workers "${WORKERS:-3}" --seed "${SEED:-0}" --base-ms "${BASE_MS:-60000}" \
   --skip-done --out "$OUT"

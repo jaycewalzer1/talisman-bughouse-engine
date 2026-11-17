@@ -46,7 +46,10 @@
 # player default), GATE_EQN (1 = the equal-nodes row at GATE_EQN_BASE, default the first GATE_BASES entry),
 # GATE_IT00 (1), GATE_SPRT (off; e.g. 0,20 stops a row once the GSPRT over normalised Elo is decided, which
 # unpairs later comparisons), GATE_OPP_JITTER (off; LO,HI jitters the opponent only), GATE_CONTENDER_KW and
-# GATE_OPPONENT_KW (extra JSON members, e.g. '"max_nodes": 3200'), PROMOTE (1), PROMOTE_MARGIN (0).
+# GATE_OPPONENT_KW (extra JSON members, e.g. '"max_nodes": 3200'), PROMOTE (1), PROMOTE_MARGIN (0),
+# GATE_POOL / GATE_OPPONENT (arena/pools/phase1.json / stock-centralized; for the target engine
+# GATE_POOL=arena/pools/upstream_v3.json GATE_OPPONENT=upstream-v3: any opponent other than stock-centralized
+# plays with its pool options plus GATE_OPPONENT_KW only, under its own time manager).
 #
 # Self-play (WP-C) and convert/train (WP-D) options. Each is passed only when the program lists the flag in its
 # --help (or, for convert, takes the keyword); a set option the program does not have is reported and skipped.
@@ -131,6 +134,8 @@ GATE_SPRT="${GATE_SPRT:-}"
 GATE_OPP_JITTER="${GATE_OPP_JITTER:-}"
 GATE_CONTENDER_KW="${GATE_CONTENDER_KW:-}"
 GATE_OPPONENT_KW="${GATE_OPPONENT_KW:-}"
+GATE_POOL="${GATE_POOL:-arena/pools/phase1.json}"
+GATE_OPPONENT="${GATE_OPPONENT:-stock-centralized}"
 PROMOTE="${PROMOTE:-1}"
 PROMOTE_MARGIN="${PROMOTE_MARGIN:-0}"
 [ -n "${GATE_JITTER:-}" ] && echo "iterate: GATE_JITTER is gone (spec v3: the contender is unjittered in the gate); use GATE_OPP_JITTER for the opponent" >&2
@@ -208,12 +213,16 @@ gate_row() {
   [ -n "$GATE_OPP_JITTER" ] && opp_jitter=", \"jitter\": [$GATE_OPP_JITTER]"
   local ckw="{\"free\": true, \"binary\": \"hivemind-clock\", \"model\": \"$model\", \"k_range\": [$GATE_K_RANGE], \"jitter\": [1.0, 1.0]${charge}${THINK_KW}${GATE_CONTENDER_KW:+, $GATE_CONTENDER_KW}}"
   local okw="{\"serial\": true${charge}${stock_k}${opp_jitter}${GATE_OPPONENT_KW:+, $GATE_OPPONENT_KW}}"
+  local onodes=(--opponent-nodes "$STOCK_NODES")
+  if [ "$GATE_OPPONENT" != stock-centralized ]; then
+    okw="{${GATE_OPPONENT_KW}}"; onodes=()
+  fi
   [ "$GATE_MEASURE" = 1 ] && extra+=(--measure-ms-per-node --ms-per-node-cache "$ROOT/ms_per_node.json")
   [ "$mode" = eqn ] && extra+=(--equal-ms-per-node)
   [ -n "$GATE_SPRT" ] && extra+=(--sprt "$GATE_SPRT")
   echo "gate row $out: clock $base ms ${mode:+($mode) }contender $ckw opponent $okw"
-  $PY -m arena.pool run --setup centralized --opponent stock-centralized --opponent-nodes "$STOCK_NODES" \
-    --contender-kw "$ckw" --opponent-kw "$okw" --openings "$GATE_OPENINGS" --pairs "$GATE_PAIRS" \
+  $PY -m arena.pool run --pool "$GATE_POOL" --setup centralized --opponent "$GATE_OPPONENT" \
+    ${onodes[@]+"${onodes[@]}"} --contender-kw "$ckw" --opponent-kw "$okw" --openings "$GATE_OPENINGS" --pairs "$GATE_PAIRS" \
     --workers "$WORKERS" --seed "$GATE_SEED" --base-ms "$base" --skip-done ${extra[@]+"${extra[@]}"} --out "$out"
 }
 
@@ -278,7 +287,7 @@ print(json.dumps(kw) if kw else '')" "$Q_VALUE_RATIO" "$WEIGHT_NODES_REF" "$SPLI
 echo "commit $(git rev-parse HEAD)  loop $ROOT  iterations $START..$((START + ITERS - 1))  games $GAMES  workers $WORKERS"
 echo "self-play: k $K_RANGE  jitter $JITTER  nodes $NODES_RANGE  clock $BASE_MS ms  options: ${SP_OPTS[*]:-none} ${SP_EXTRA}"
 echo "gate rows: $GATE_TAG_LIST  pairs $GATE_PAIRS  seed $GATE_SEED  openings $GATE_OPENINGS  contender k $GATE_K_RANGE unjittered"
-echo "gate opponent: stock, $( [ "$GATE_STOCK_K" = 0 ] && echo "$STOCK_NODES fixed nodes" || echo "clock / $GATE_STOCK_K" )  charge ${GATE_CHARGE:-default}  measured ms/node $GATE_MEASURE  sprt ${GATE_SPRT:-off}  it00 row $GATE_IT00  promote $PROMOTE (margin $PROMOTE_MARGIN)"
+echo "gate opponent: $GATE_OPPONENT ($GATE_POOL); if stock: $( [ "$GATE_STOCK_K" = 0 ] && echo "$STOCK_NODES fixed nodes" || echo "clock / $GATE_STOCK_K" )  charge ${GATE_CHARGE:-default}  measured ms/node $GATE_MEASURE  sprt ${GATE_SPRT:-off}  it00 row $GATE_IT00  promote $PROMOTE (margin $PROMOTE_MARGIN)"
 echo "convert: replay from the last $REPLAY_ITERS iteration(s)  keywords ${CONVERT_ALL:-none}  train options: ${TRAIN_OPTS[*]:-none} ${TRAIN_EXTRA}"
 echo "shards v$SHARD_VERSION  think head $THINK_HEAD  think labels $THINK_LABELS (N $THINK_NODES, fraction $THINK_FRACTION, cap $THINK_MAX, repeat $THINK_REPEAT)"
 $PY -c "from arena.players.hivemind import resolve_binary as r; print('binaries', r('hivemind'), r('hivemind-clock'))"

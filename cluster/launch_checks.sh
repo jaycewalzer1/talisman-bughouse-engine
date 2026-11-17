@@ -8,7 +8,7 @@
 #   bash cluster/launch_checks.sh lend       # how much of the partner's idle machine is it best to borrow?
 #   bash cluster/launch_checks.sh beat       # can one Hivemind that manages its clock beat stock Hivemind? (20 jobs)
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
-#   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (6 jobs)
+#   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
@@ -135,7 +135,7 @@ if [ "$WHAT" = controls ]; then  # not part of "all": 3 jobs
       sbatch -J "same_s$seed" cluster/eval.sbatch
   done
 fi
-if [ "$WHAT" = harness ]; then  # not part of "all": 6 jobs
+if [ "$WHAT" = harness ]; then  # not part of "all": 8 jobs
   # The equal-clock harness (docs/beat_stock.md "Headline metric from 2026-11-17", spec v3 contract 5): each arm is
   # charged the nodes it searched x its own ms_per_node, measured on the job's GPU (MEASURE=1). Needs WP-C's
   # charge="searched" in arena/players/hivemind.py. SPRT=0,20 stops a row once it is decided.
@@ -157,7 +157,10 @@ if [ "$WHAT" = harness ]; then  # not part of "all": 6 jobs
   W="third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx"
   harness  m0_widened_120     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 120000 800
   harness  m0_widened_180     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 180000 800
-  # M0 third arm (upstream v3 twin-s-clock under its own time manager) is WP-G's player kind; add it here once
-  # arena/players/upstream.py is in KINDS and arena/pools has an "upstream-v3" opponent.
+  # M0 third arm: stock it04 at equal clock against upstream v3 twin-s-clock under its own time manager (WP-G's
+  # player kind "upstream"; its ms_per_node is the explicit value in arena/pools/upstream_v3.json, not measured
+  # here because the measurement speaks our fork's UCI dialect). Needs the upstream build and setups.py hook.
+  harness  m0_upstream_120    "{$CHG, \"clock_k\": 110}"                          "{}"                                120000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
+  harness  m0_upstream_180    "{$CHG, \"clock_k\": 110}"                          "{}"                                180000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
 fi
 squeue -u "$USER"
