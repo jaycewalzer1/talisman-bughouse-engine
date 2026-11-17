@@ -192,3 +192,18 @@ def test_clock_response_is_zero_without_clock_planes(model):
             assert c["abs_dv_plus10"] < 2e-3 and c["abs_dv_minus10"] < 2e-3
     sweep = rep["pass_vs_diagonal"]
     assert abs(sweep["-10"]["mean_p_pass"] - sweep["10"]["mean_p_pass"]) < 2e-3
+
+
+def test_net_calibration_scores_value_and_wdl_heads():
+    # WDL head order is (loss, draw, win), as hivemind trains it on y_wdl = value + 1
+    rows = [{"net_value": 0.8, "outcome": 1, "net_wdl": [0.05, 0.05, 0.9]},
+            {"net_value": 0.2, "outcome": -1, "net_wdl": [0.3, 0.1, 0.6]},
+            {"net_value": -0.5, "outcome": 0, "net_wdl": [0.2, 0.6, 0.2]}]
+    c = ps.net_calibration(rows)
+    assert c["samples"] == 3
+    assert c["value_sign_agree"] == 0.5  # draws excluded; one of the two decisive signs right
+    assert c["wdl_argmax_acc"] == round(2 / 3, 4)
+    assert c["value_mse"] == round((0.2 ** 2 + 1.2 ** 2 + 0.5 ** 2) / 3, 4)
+    brier = ((0.1 ** 2 + 0.05 ** 2 + 0.05 ** 2) + (0.6 ** 2 + 0.1 ** 2 + 0.7 ** 2) + (0.2 ** 2 + 0.4 ** 2 + 0.2 ** 2)) / 3
+    assert c["wdl_brier"] == round(brier, 4)
+    assert c["wdl_score_mse"] == round(((0.85 - 1) ** 2 + (0.3 + 1) ** 2 + 0.0) / 3, 4)

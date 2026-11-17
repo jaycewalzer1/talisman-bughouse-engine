@@ -9,7 +9,9 @@ Shards (``.hvm`` chunks plus their ``.pos.jsonl`` sidecars, as arena.selfplay wr
   (own clock minus the partner's opponent's clock) and by the node count. With ``--model``, also the raw network's
   pass prior on the same positions (softmax over the legal moves plus the pass slot).
 * Value labels by game end reason (from the run's ``summary.json``): samples, mean |root_q - outcome|, and the
-  root_q -> outcome calibration by material bucket (men on both boards, kings and pockets excluded).
+  root_q -> outcome calibration by material bucket (men on both boards, kings and pockets excluded). With
+  ``--model``, the same calibration for the network's own value and WDL heads (MSE, sign agreement, WDL Brier and
+  argmax accuracy; the WDL head is ordered loss, draw, win) by material bucket.
 
 Event logs (``game_*.jsonl``, e.g. the gate's): decisions, counted as every move and every start of a sit spell
 (a ``stall`` event that turns a seat from moving to sitting; re-searches inside a spell are not decisions), with
@@ -137,6 +139,13 @@ def add_pass_prior(rows: list[dict], model: str) -> None:
         pol = net.board_policy(logits, r["meta"]["fenA"] if r["board"] == "A" else r["meta"]["fenB"])
         r["prior_pass"] = pol["p_pass"]
         r["prior_pass_top"] = pol["top"] == "pass"
+        r["net_value"] = float(out["value"][i, 0])
+        if "wdl_out" in out:
+            w = out["wdl_out"][i].astype(float)
+            if abs(w.sum() - 1.0) > 1e-3 or (w < 0).any():  # logits: softmax them
+                w = np.exp(w - w.max())
+                w = w / w.sum()
+            r["net_wdl"] = [float(w[0]), float(w[1]), float(w[2])]
 
 
 def group(rows: list[dict], key) -> dict[str, dict]:
@@ -192,6 +201,14 @@ def value_label_stats(rows: list[dict], reasons: dict[int, str]) -> dict:
     reason_out = {k: {"samples": len(v), "mean_abs_q_minus_outcome": round(sum(v) / len(v), 4)}
                   for k, v in sorted(by_reason.items())}
     mat_out = {}
+    net_by_mat = defaultdict(list)
+    seen = set()
+    for r in rows:
+        key = (r["chunk"], r["i"])
+        if key in seen or "net_value" not in r:
+            continue
+        seen.add(key)
+        net_by_mat[bin_label(r["material"], MATERIAL_BINS)].append(r)
     for k, v in sorted(by_mat.items(), key=lambda kv: _order(kv[0])):
         q = [a for a, _ in v]
         z = [b for _, b in v]
@@ -199,7 +216,36 @@ def value_label_stats(rows: list[dict], reasons: dict[int, str]) -> dict:
                       "mean_outcome": round(sum(z) / len(v), 4),
                       "mse": round(sum((a - b) ** 2 for a, b in v) / len(v), 4),
                       "sign_agree": round(sum((a > 0) == (b > 0) for a, b in v if b != 0) / max(1, sum(b != 0 for b in z)), 4)}
-    return {"by_reason": reason_out, "calibration_by_material": mat_out}
+    out = {"by_reason": reason_out, "calibration_by_material": mat_out}
+    if net_by_mat:
+        groups = dict(net_by_mat)
+        groups["all"] = [r for v in net_by_mat.values() for r in v]
+        out["net_calibration_by_material"] = {k: net_calibration(v) for k, v in groups.items()}
+    return out
+
+
+def net_calibration(rows: list[dict]) -> dict:
+    """The network's own value and WDL heads against the game outcome (one row per sample, sample team's view).
+    The WDL head's order is (loss, draw, win): hivemind trains it on ``y_wdl = value + 1`` (data_loaders.py).
+    WDL: Brier score over the three classes, accuracy of the argmax, and expected score W - L against the outcome."""
+    n = len(rows)
+    out = {"samples": n,
+           "mean_net_value": round(sum(r["net_value"] for r in rows) / n, 4),
+           "mean_outcome": round(sum(r["outcome"] for r in rows) / n, 4),
+           "value_mse": round(sum((r["net_value"] - r["outcome"]) ** 2 for r in rows) / n, 4)}
+    dec = [r for r in rows if r["outcome"] != 0]
+    out["value_sign_agree"] = round(sum((r["net_value"] > 0) == (r["outcome"] > 0) for r in dec) / max(1, len(dec)), 4)
+    wr = [r for r in rows if "net_wdl" in r]
+    if wr:
+        def onehot(z):
+            return (0.0, 0.0, 1.0) if z > 0 else ((1.0, 0.0, 0.0) if z < 0 else (0.0, 1.0, 0.0))
+        out["wdl_brier"] = round(sum(sum((p - t) ** 2 for p, t in zip(r["net_wdl"], onehot(r["outcome"])))
+                                     for r in wr) / len(wr), 4)
+        out["wdl_argmax_acc"] = round(sum(max(range(3), key=lambda j: r["net_wdl"][j]) == onehot(r["outcome"]).index(1.0)
+                                          for r in wr) / len(wr), 4)
+        out["mean_wdl_ldw"] = [round(sum(r["net_wdl"][j] for r in wr) / len(wr), 4) for j in range(3)]
+        out["wdl_score_mse"] = round(sum((r["net_wdl"][2] - r["net_wdl"][0] - r["outcome"]) ** 2 for r in wr) / len(wr), 4)
+    return out
 
 
 # --------------------------------------------------------------------------------------------- event logs
@@ -317,6 +363,10 @@ def print_report(rep: dict) -> None:
         print("root_q calibration by material:")
         for k, v in rep["value_labels"]["calibration_by_material"].items():
             print(f"  {k:<12} {json.dumps(v)}")
+        if "net_calibration_by_material" in rep["value_labels"]:
+            print("network value/WDL heads vs outcome by material:")
+            for k, v in rep["value_labels"]["net_calibration_by_material"].items():
+                print(f"  {k:<12} {json.dumps(v)}")
     if "events" in rep:
         ev = rep["events"]
         print(f"\nevent logs: {ev['games']} games")
