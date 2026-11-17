@@ -32,8 +32,8 @@
 #   RUN=smoke ITERS=1 GAMES=4 GATE_PAIRS=2 WORKERS=1 bash cluster/iterate.sh   # tiny local check (on the Mac:
 #             only with the hivemind-clock build present, one worker, nothing else heavy running)
 #
-# Settings: MODEL0 / CKPT0 (start network, default engine/models/hivemind-clock-v2-fp32.onnx / hivemind-clock-v2.tar from
-# tools/make_clock_net.py), GAMES (2000 per iteration), WORKERS (6 under Slurm, 1 elsewhere), K_RANGE, JITTER,
+# Settings: MODEL0 / CKPT0 (start network, default engine/models/hivemind-clock-v3-fp32.onnx / hivemind-clock-v3.tar from
+# tools/make_clock_net.py: it04 widened to 44 planes per board, the clock build's layout since the diagonal plane), GAMES (2000 per iteration), WORKERS (6 under Slurm, 1 elsewhere), K_RANGE, JITTER,
 # NODES_RANGE, BASE_MS, ARCH (crossboard-risev33), BATCH_SIZE, VAL_FRACTION (game-level validation share for
 # convert; unset = the converter's default 0.05; a tiny smoke run with 2 games needs 0.5). Spec v2: SHARD_VERSION
 # (6), THINK_HEAD (0; 1 = self-play and gate scale budgets by the network's think_gain), THINK_LABELS (0 = off),
@@ -47,6 +47,10 @@
 # GATE_IT00 (1), GATE_SPRT (off; e.g. 0,20 stops a row once the GSPRT over normalised Elo is decided, which
 # unpairs later comparisons), GATE_OPP_JITTER (off; LO,HI jitters the opponent only), GATE_CONTENDER_KW and
 # GATE_OPPONENT_KW (extra JSON members, e.g. '"max_nodes": 3200'), PROMOTE (1), PROMOTE_MARGIN (0),
+# GATE_RULES (v3 = arena.sim.RULES_V3, spec v3 D4, for every gate row incl. it00; v2 = the old arena rules),
+# GATE_REPS (1: the contender sends the arena's repetition counts, 'reps' suffix, as self-play v3 does),
+# CHECK_ENGINE (1 under Slurm: cluster/check_clock_engine.py on MODEL0 once per RUN before anything else, stop on
+# failure: the GPU/TensorRT FP16 outputs against FP32 ONNX Runtime),
 # GATE_POOL / GATE_OPPONENT (arena/pools/phase1.json / stock-centralized; for the target engine
 # GATE_POOL=arena/pools/upstream_v3.json GATE_OPPONENT=upstream-v3: any opponent other than stock-centralized
 # plays with its pool options plus GATE_OPPONENT_KW only, under its own time manager).
@@ -71,18 +75,21 @@
 #   PCR_NODES       --pcr-nodes
 #   DEDUPE          --dedupe            position/bucket
 #   SP_MS_PER_NODE  --ms-per-node       self-play cost model
+#   SP_RULES        --rules             arena rules profile (v3 = RULES_V3 without simulator lag; aborts and
+#                                       ply-cap games kept out of training)
+#   SP_REPS         --reps              send the arena's repetition counts ('reps' suffix), on/off
 #   SP_EXTRA        appended to the self-play command as is
 #   Q_VALUE_RATIO   convert keyword q_value_ratio (value target = (1-r) outcome + r root_q)
 #   WEIGHT_NODES_REF convert keyword weight_nodes_ref (sample weight min(1, nodes / N))
 #   SPLIT_BY        convert keyword split_by (auto/game/opening)
-#   REPLAY_ITERS    replay chunks from the last N iterations (1 = the previous one only, the old behaviour; the
-#                   audit asks for 3)
+#   REPLAY_ITERS    replay chunks from the last N iterations (default 3, spec v3 / audit training 2(d);
+#                   1 = the previous one only, the old behaviour)
 #   CONVERT_KW      JSON object of further convert_to_split_parquet keywords
 #   RECIPE          train_loop --recipe (auto/clock/stock; clock = two learning rates for trunk and new columns)
 #   TRUNK_LR        train_loop --trunk-lr  (not a train_loop flag yet: reported and skipped)
 #   HEAD_LR         train_loop --head-lr   (same)
 #   DRIFT_SHARD     train_loop --drift-shard (frozen SL validation shard) and --drift-out <it>/drift.json
-#   DRIFT_REFERENCE train_loop --drift-reference (default: the start checkpoint; use it04)
+#   DRIFT_REFERENCE train_loop --drift-reference (default with DRIFT_SHARD: the it04 checkpoint in engine/models)
 #   TRAIN_EXTRA     appended to the train_loop command as is
 # A <it>/drift.json written by training (WP-D drift metric) is copied into results.tsv as one JSON column.
 set -uo pipefail
@@ -114,8 +121,8 @@ THINK_MAX="${THINK_MAX:-0}"
 THINK_REPEAT="${THINK_REPEAT:-0.05}"
 THINK_FLAG=""; THINK_KW=""
 [ "$THINK_HEAD" = 1 ] && THINK_FLAG="--think-head" && THINK_KW=', "think_head": true'
-MODEL0="${MODEL0:-$MODELS/hivemind-clock-v2-fp32.onnx}"
-CKPT0="${CKPT0:-$MODELS/hivemind-clock-v2.tar}"
+MODEL0="${MODEL0:-$MODELS/hivemind-clock-v3-fp32.onnx}"
+CKPT0="${CKPT0:-$MODELS/hivemind-clock-v3.tar}"
 case "$MODEL0" in /*) ;; *) MODEL0="$REPO/$MODEL0" ;; esac
 case "$CKPT0" in /*) ;; *) CKPT0="$REPO/$CKPT0" ;; esac
 
@@ -134,6 +141,9 @@ GATE_SPRT="${GATE_SPRT:-}"
 GATE_OPP_JITTER="${GATE_OPP_JITTER:-}"
 GATE_CONTENDER_KW="${GATE_CONTENDER_KW:-}"
 GATE_OPPONENT_KW="${GATE_OPPONENT_KW:-}"
+GATE_RULES="${GATE_RULES:-v3}"
+GATE_REPS="${GATE_REPS:-1}"
+if [ -n "${SLURM_JOB_ID:-}" ]; then CHECK_ENGINE="${CHECK_ENGINE:-1}"; else CHECK_ENGINE="${CHECK_ENGINE:-0}"; fi
 GATE_POOL="${GATE_POOL:-arena/pools/phase1.json}"
 GATE_OPPONENT="${GATE_OPPONENT:-stock-centralized}"
 PROMOTE="${PROMOTE:-1}"
@@ -161,17 +171,21 @@ FULL_SEARCH_P="${FULL_SEARCH_P:-}"
 PCR_NODES="${PCR_NODES:-}"
 DEDUPE="${DEDUPE:-}"
 SP_MS_PER_NODE="${SP_MS_PER_NODE:-}"
+SP_RULES="${SP_RULES:-}"
+SP_REPS="${SP_REPS:-}"
 SP_EXTRA="${SP_EXTRA:-}"
 Q_VALUE_RATIO="${Q_VALUE_RATIO:-}"
 WEIGHT_NODES_REF="${WEIGHT_NODES_REF:-}"
 SPLIT_BY="${SPLIT_BY:-}"
-REPLAY_ITERS="${REPLAY_ITERS:-1}"
+REPLAY_ITERS="${REPLAY_ITERS:-3}"
 CONVERT_KW="${CONVERT_KW:-}"
 RECIPE="${RECIPE:-}"
 TRUNK_LR="${TRUNK_LR:-}"
 HEAD_LR="${HEAD_LR:-}"
 DRIFT_SHARD="${DRIFT_SHARD:-}"
 DRIFT_REFERENCE="${DRIFT_REFERENCE:-}"
+IT04_TAR="$MODELS/hivemind-it04-crossboard-risev33-loss1.556-p82.0.tar"
+[ -n "$DRIFT_SHARD" ] && [ -z "$DRIFT_REFERENCE" ] && [ -f "$IT04_TAR" ] && DRIFT_REFERENCE="$IT04_TAR"
 TRAIN_EXTRA="${TRAIN_EXTRA:-}"
 
 mkdir -p "$ROOT"
@@ -211,7 +225,9 @@ gate_row() {
   [ -n "$GATE_CHARGE" ] && charge=", \"charge\": \"$GATE_CHARGE\""
   [ "$GATE_STOCK_K" != 0 ] && stock_k=", \"clock_k\": $GATE_STOCK_K"
   [ -n "$GATE_OPP_JITTER" ] && opp_jitter=", \"jitter\": [$GATE_OPP_JITTER]"
-  local ckw="{\"free\": true, \"binary\": \"hivemind-clock\", \"model\": \"$model\", \"k_range\": [$GATE_K_RANGE], \"jitter\": [1.0, 1.0]${charge}${THINK_KW}${GATE_CONTENDER_KW:+, $GATE_CONTENDER_KW}}"
+  local reps=""
+  [ "$GATE_REPS" = 1 ] && reps=", \"reps\": true"
+  local ckw="{\"free\": true, \"binary\": \"hivemind-clock\", \"model\": \"$model\", \"k_range\": [$GATE_K_RANGE], \"jitter\": [1.0, 1.0]${charge}${reps}${THINK_KW}${GATE_CONTENDER_KW:+, $GATE_CONTENDER_KW}}"
   local okw="{\"serial\": true${charge}${stock_k}${opp_jitter}${GATE_OPPONENT_KW:+, $GATE_OPPONENT_KW}}"
   local onodes=(--opponent-nodes "$STOCK_NODES")
   if [ "$GATE_OPPONENT" != stock-centralized ]; then
@@ -223,7 +239,8 @@ gate_row() {
   echo "gate row $out: clock $base ms ${mode:+($mode) }contender $ckw opponent $okw"
   $PY -m arena.pool run --pool "$GATE_POOL" --setup centralized --opponent "$GATE_OPPONENT" \
     ${onodes[@]+"${onodes[@]}"} --contender-kw "$ckw" --opponent-kw "$okw" --openings "$GATE_OPENINGS" --pairs "$GATE_PAIRS" \
-    --workers "$WORKERS" --seed "$GATE_SEED" --base-ms "$base" --skip-done ${extra[@]+"${extra[@]}"} --out "$out"
+    --workers "$WORKERS" --seed "$GATE_SEED" --base-ms "$base" --rules "$GATE_RULES" --skip-done ${extra[@]+"${extra[@]}"} \
+    --out "$out"
 }
 
 # All gate rows of one network into <dir>/gate_*; marker .done_gate when every row has its summary.json.
@@ -266,6 +283,8 @@ sp_opt --pcr-p "$FULL_SEARCH_P" FULL_SEARCH_P
 sp_opt --pcr-nodes "$PCR_NODES" PCR_NODES
 sp_opt --dedupe "$DEDUPE" DEDUPE
 sp_opt --ms-per-node "$SP_MS_PER_NODE" SP_MS_PER_NODE
+sp_opt --rules "$SP_RULES" SP_RULES
+sp_opt --reps "$SP_REPS" SP_REPS
 TRAIN_OPTS=()
 train_opt() {  # flag value env-name
   [ -z "$2" ] && return 0
@@ -286,11 +305,18 @@ print(json.dumps(kw) if kw else '')" "$Q_VALUE_RATIO" "$WEIGHT_NODES_REF" "$SPLI
 
 echo "commit $(git rev-parse HEAD)  loop $ROOT  iterations $START..$((START + ITERS - 1))  games $GAMES  workers $WORKERS"
 echo "self-play: k $K_RANGE  jitter $JITTER  nodes $NODES_RANGE  clock $BASE_MS ms  options: ${SP_OPTS[*]:-none} ${SP_EXTRA}"
-echo "gate rows: $GATE_TAG_LIST  pairs $GATE_PAIRS  seed $GATE_SEED  openings $GATE_OPENINGS  contender k $GATE_K_RANGE unjittered"
+echo "gate rows: $GATE_TAG_LIST  rules $GATE_RULES  reps $GATE_REPS  pairs $GATE_PAIRS  seed $GATE_SEED  openings $GATE_OPENINGS  contender k $GATE_K_RANGE unjittered"
 echo "gate opponent: $GATE_OPPONENT ($GATE_POOL); if stock: $( [ "$GATE_STOCK_K" = 0 ] && echo "$STOCK_NODES fixed nodes" || echo "clock / $GATE_STOCK_K" )  charge ${GATE_CHARGE:-default}  measured ms/node $GATE_MEASURE  sprt ${GATE_SPRT:-off}  it00 row $GATE_IT00  promote $PROMOTE (margin $PROMOTE_MARGIN)"
 echo "convert: replay from the last $REPLAY_ITERS iteration(s)  keywords ${CONVERT_ALL:-none}  train options: ${TRAIN_OPTS[*]:-none} ${TRAIN_EXTRA}"
 echo "shards v$SHARD_VERSION  think head $THINK_HEAD  think labels $THINK_LABELS (N $THINK_NODES, fraction $THINK_FRACTION, cap $THINK_MAX, repeat $THINK_REPEAT)"
 $PY -c "from arena.players.hivemind import resolve_binary as r; print('binaries', r('hivemind'), r('hivemind-clock'))"
+
+# ------------------------------------------------------------------ engine output check (once per RUN, GPU)
+if [ "$CHECK_ENGINE" = 1 ] && [ ! -f "$ROOT/.done_check_engine" ]; then
+  echo; echo "== check_clock_engine on $MODEL0"
+  $PY cluster/check_clock_engine.py --model "$MODEL0" || die "check_clock_engine failed: the engine's network outputs do not match FP32 ONNX Runtime"
+  touch "$ROOT/.done_check_engine"
+fi
 
 # ------------------------------------------------------------------ it00 baseline rows (once per RUN)
 if [ "$GATE_IT00" = 1 ]; then
