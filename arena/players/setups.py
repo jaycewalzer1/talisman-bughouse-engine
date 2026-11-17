@@ -38,6 +38,10 @@ setups, so the setups differ only in information and coordination.
 
 Centralized hivemind teams also take ``clock_k`` (think time from the remaining clock), ``min_nodes`` and
 ``max_nodes`` (its clamp) and ``serial`` (one machine: overlapping searches queue). See HivemindTeamController.
+Custom engine (all off by default): ``free`` (no time/sit rules, real clocks; needs ``binary="hivemind-clock"``),
+``free_sit_ms``, ``k_range``, ``jitter`` (out-of-step think times; also usable on a stock controller) and
+``record`` (training samples). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
+an ONNX path.
 
 ``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
 scheduler (setup ``"sharing"`` only); ``path`` names its checkpoint.
@@ -54,6 +58,7 @@ from arena.players.hivemind import (
     HivemindPlayer,
     HivemindProcess,
     HivemindTeamController,
+    resolve_binary,
 )
 from arena.players.random_player import RandomPlayer
 
@@ -80,16 +85,19 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         return {s: HeuristicPlayer(s, seed=seed, comm=comm, **hkw) for s in seats}
 
     if kind == "hivemind":
-        binary = kw.get("binary", DEFAULT_BINARY)
+        binary = resolve_binary(kw.get("binary") or DEFAULT_BINARY)
         model = kw.get("model", DEFAULT_MODEL)
         ms = float(kw.get("ms_per_node", MS_PER_NODE))
         pkw = dict(options=kw.get("engine_options"), reset_tree=kw.get("reset_tree", True))
         skw = {k: kw[k] for k in ("max_consecutive_sits", "sit_ms") if k in kw and kw[k] is not None}
         if setup == "centralized":
-            ckw = {k: kw[k] for k in ("clock_k", "min_nodes", "max_nodes", "serial") if kw.get(k) is not None}
+            ckw = {k: kw[k] for k in ("clock_k", "min_nodes", "max_nodes", "serial", "free", "free_sit_ms",
+                                      "k_range", "jitter", "record") if kw.get(k) is not None}
             ctl = HivemindTeamController(team, HivemindProcess(binary, model, **pkw), nodes=nodes,
-                                         ms_per_node=ms, **skw, **ckw)
+                                         ms_per_node=ms, seed=seed, **skw, **ckw)
             return {s: ctl.player(s) for s in seats}
+        if any(kw.get(k) for k in ("free", "jitter", "record")):
+            raise ValueError("free, jitter and record need setup='centralized'")
         half = max(1, nodes // 2)
         compute = kw.get("compute") or "throughput"
         if compute not in COMPUTE_MODELS:

@@ -146,7 +146,7 @@ def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | Non
                    opponent: str | None = None, setup: str | None = None, lend: bool = False,
                    nodes: int | None = None, opponent_nodes: int | None = None, rule: str | None = None,
                    lend_share: float | None = None, contender_kw: dict | None = None,
-                   opponent_kw: dict | None = None) -> Pool:
+                   opponent_kw: dict | None = None, jitter: tuple[float, float] | None = None) -> Pool:
     """The pool narrowed for scoring one fixed team against one opponent.
 
     With agent (or features or policy) the contender plays as the scheduler agent, untrained when policy is None.
@@ -154,7 +154,9 @@ def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | Non
     With setup the contender is stock Hivemind in that team setup (lend only means something for a split team;
     lend_share is the part of the partner's idle machine it borrows, all of it when None).
     nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played.
-    contender_kw and opponent_kw are merged into the player options (e.g. clock_k, serial, max_consecutive_sits)."""
+    contender_kw and opponent_kw are merged into the player options (e.g. clock_k, serial, max_consecutive_sits).
+    jitter (lo, hi) gives every centralized Hivemind team on both sides a think-time factor per search drawn from
+    that range, so the two teams do not move in lock step (custom-engine gate); other teams are left as they are."""
     contender, opponents = pool.contender, pool.opponents
     if lend_share is not None and (setup in (None, "centralized") or not lend or not 0.0 < lend_share <= 1.0):
         raise ValueError("lend_share needs a split setup with lend, and a value in (0, 1]")
@@ -180,6 +182,13 @@ def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | Non
         contender = replace(contender, player_kw={**contender.player_kw, **contender_kw})
     if opponent_kw:
         opponents = [replace(o, player_kw={**o.player_kw, **opponent_kw}) for o in opponents]
+    if jitter is not None:
+        def jittered(t: TeamSpec) -> TeamSpec:
+            if t.kind != "hivemind" or t.setup != "centralized":
+                return t
+            return replace(t, player_kw={**t.player_kw, "jitter": [float(jitter[0]), float(jitter[1])]})
+        contender = jittered(contender)
+        opponents = [jittered(o) for o in opponents]
     return replace(pool, contender=contender, opponents=opponents)
 
 
@@ -323,6 +332,15 @@ def run_schedule(specs: list[dict], out: str, workers: int = 1, n_boot: int = 20
 
 # ---------------------------------------------------------------------- CLI
 
+def _jitter_arg(text: str | None) -> tuple[float, float] | None:
+    if not text:
+        return None
+    lo, hi = (float(v) for v in text.split(","))
+    if not 0 < lo <= hi:
+        raise ValueError(f"--jitter must be LO,HI with 0 < LO <= HI, got {text!r}")
+    return lo, hi
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m arena.pool", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -352,6 +370,9 @@ def main(argv=None) -> int:
             p.add_argument("--contender-kw", type=json.loads, default=None,
                            help='JSON player options for the contender, e.g. \'{"clock_k": 110, "serial": true}\'')
             p.add_argument("--opponent-kw", type=json.loads, default=None, help="JSON player options for the opponents")
+            p.add_argument("--jitter", default=None,
+                           help="LO,HI: think-time factor per search for every centralized Hivemind team on both "
+                                "sides (out-of-step games; off by default)")
         if name == "schedule":
             p.add_argument("--out", default=None, help="write the schedule as JSON lines")
         if name == "run":
@@ -393,7 +414,7 @@ def main(argv=None) -> int:
         pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent,
                               setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes,
                               rule=args.rule, lend_share=args.lend_share, contender_kw=args.contender_kw,
-                              opponent_kw=args.opponent_kw)
+                              opponent_kw=args.opponent_kw, jitter=_jitter_arg(args.jitter))
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
