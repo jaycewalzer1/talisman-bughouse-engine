@@ -265,3 +265,24 @@ def test_for_evaluation_keeps_an_unjittered_contender():
     pool = _engine_pool()
     ev = for_evaluation(pool, contender_kw={"jitter": [1.0, 1.0]}, opponent_kw={"serial": True})
     assert ev.contender.player_kw["jitter"] == [1.0, 1.0] and ev.opponents[0].player_kw == {"serial": True}
+
+
+# ---------------------------------------------------------------- compare_evals
+
+def test_compare_evals_pairs_rows_with_the_same_schedule(tmp_path, capsys):
+    from tools import compare_evals
+
+    _, out = _row(tmp_path, pairs=4)
+    games, _, finished = compare_evals.load(str(out))
+    assert finished and len(games) == 8
+    d, lo, hi, paired = compare_evals.diff_ci(games, games)
+    assert paired and d == lo == hi == 0.0
+    flipped = [{**g, "result": g["contender_team"]} for g in games]  # the same games, all won
+    d, lo, hi, paired = compare_evals.diff_ci(games, flipped)
+    assert paired and lo <= d <= hi and d == pytest.approx(1 - sum(
+        1.0 if g["result"] == g["contender_team"] else 0.5 if g["result"] == "draw" else 0.0 for g in games) / 8)
+    other = [{**g, "opening_id": -1 - i} for i, g in enumerate(games)]
+    assert compare_evals.diff_ci(games, other)[3] is False
+    compare_evals.main([str(out), str(out)])
+    text = capsys.readouterr().out
+    assert "nodes/g c" in text and "+0.000" in text
