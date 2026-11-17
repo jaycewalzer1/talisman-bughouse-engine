@@ -121,3 +121,10 @@ def paired_schedule(n_games: int, seed: int = 0,
                 rng.shuffle(order)
             pair = order.pop()
         yield pair, bool(g % 2)
+
+
+# Bughouse opening sets (audit WP-G): "bughouse" (canon from theory 05 + 3 chess controls + 25% bare start),
+# "bughouse_canon", "chess_controls", "bare". Defined in arena/openings_bughouse.py, which imports OpeningPair above.
+from arena.openings_bughouse import BUGHOUSE_SETS  # noqa: E402
+
+OPENING_SETS.update(BUGHOUSE_SETS)
