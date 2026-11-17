@@ -145,14 +145,16 @@ class Pool:
 def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | None = None, policy: str | None = None,
                    opponent: str | None = None, setup: str | None = None, lend: bool = False,
                    nodes: int | None = None, opponent_nodes: int | None = None, rule: str | None = None,
-                   lend_share: float | None = None) -> Pool:
+                   lend_share: float | None = None, contender_kw: dict | None = None,
+                   opponent_kw: dict | None = None) -> Pool:
     """The pool narrowed for scoring one fixed team against one opponent.
 
     With agent (or features or policy) the contender plays as the scheduler agent, untrained when policy is None.
     rule adds one of the agent's fixed hand-written rules (arena.players.scheduler_player.RULES).
     With setup the contender is stock Hivemind in that team setup (lend only means something for a split team;
     lend_share is the part of the partner's idle machine it borrows, all of it when None).
-    nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played."""
+    nodes and opponent_nodes replace the node budgets. With opponent, only that opponent is played.
+    contender_kw and opponent_kw are merged into the player options (e.g. clock_k, serial, max_consecutive_sits)."""
     contender, opponents = pool.contender, pool.opponents
     if lend_share is not None and (setup in (None, "centralized") or not lend or not 0.0 < lend_share <= 1.0):
         raise ValueError("lend_share needs a split setup with lend, and a value in (0, 1]")
@@ -174,6 +176,10 @@ def for_evaluation(pool: Pool, *, agent: bool = False, features: list[str] | Non
             raise ValueError(f"no opponent named {opponent!r}; the pool has {names}")
     if opponent_nodes is not None:
         opponents = [replace(o, nodes=opponent_nodes) for o in opponents]
+    if contender_kw:
+        contender = replace(contender, player_kw={**contender.player_kw, **contender_kw})
+    if opponent_kw:
+        opponents = [replace(o, player_kw={**o.player_kw, **opponent_kw}) for o in opponents]
     return replace(pool, contender=contender, opponents=opponents)
 
 
@@ -343,6 +349,9 @@ def main(argv=None) -> int:
                            help="with --setup and --lend: the part of the idle machine borrowed (default 1, all)")
             p.add_argument("--nodes", type=int, default=None, help="the contender's node budget")
             p.add_argument("--opponent-nodes", type=int, default=None, help="the opponents' node budget")
+            p.add_argument("--contender-kw", type=json.loads, default=None,
+                           help='JSON player options for the contender, e.g. \'{"clock_k": 110, "serial": true}\'')
+            p.add_argument("--opponent-kw", type=json.loads, default=None, help="JSON player options for the opponents")
         if name == "schedule":
             p.add_argument("--out", default=None, help="write the schedule as JSON lines")
         if name == "run":
@@ -383,7 +392,8 @@ def main(argv=None) -> int:
     try:
         pool = for_evaluation(pool, agent=args.agent, features=features, policy=args.policy, opponent=args.opponent,
                               setup=args.setup, lend=args.lend, nodes=args.nodes, opponent_nodes=args.opponent_nodes,
-                              rule=args.rule, lend_share=args.lend_share)
+                              rule=args.rule, lend_share=args.lend_share, contender_kw=args.contender_kw,
+                              opponent_kw=args.opponent_kw)
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,

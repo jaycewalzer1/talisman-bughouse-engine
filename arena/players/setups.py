@@ -36,6 +36,9 @@ search (twice the nodes, same think time): what a split team gains when one team
 For the heuristic kind there are no nodes; think time follows the same complexity/clock formula in all
 setups, so the setups differ only in information and coordination.
 
+Centralized hivemind teams also take ``clock_k`` (think time from the remaining clock), ``min_nodes`` and
+``max_nodes`` (its clamp) and ``serial`` (one machine: overlapping searches queue). See HivemindTeamController.
+
 ``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
 scheduler (setup ``"sharing"`` only); ``path`` names its checkpoint.
 """
@@ -83,8 +86,9 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         pkw = dict(options=kw.get("engine_options"), reset_tree=kw.get("reset_tree", True))
         skw = {k: kw[k] for k in ("max_consecutive_sits", "sit_ms") if k in kw and kw[k] is not None}
         if setup == "centralized":
+            ckw = {k: kw[k] for k in ("clock_k", "min_nodes", "max_nodes", "serial") if kw.get(k) is not None}
             ctl = HivemindTeamController(team, HivemindProcess(binary, model, **pkw), nodes=nodes,
-                                         ms_per_node=ms, **skw)
+                                         ms_per_node=ms, **skw, **ckw)
             return {s: ctl.player(s) for s in seats}
         half = max(1, nodes // 2)
         compute = kw.get("compute") or "throughput"

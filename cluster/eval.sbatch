@@ -11,6 +11,8 @@
 # Stock Hivemind in a team setup (centralized, silent or sharing; LEND=1 lends idle compute), no scheduler:
 #   NAME=match/central_100 SETUP=centralized NODES=100 sbatch -J c100 cluster/eval.sbatch
 # With LEND=1, LEND_SHARE=0.5 borrows only half of the partner's idle machine (default: all of it).
+# CONTENDER_KW and OPPONENT_KW are JSON player options, e.g. CONTENDER_KW='{"clock_k": 110, "serial": true}'.
+# BASE_MS is each player's starting clock (default 60000).
 # NODES and OPPONENT_NODES replace the node budgets (200 each). PAIRS=800 is 1600 games, about 4 hours. A job that
 # is cut off leaves no result, so keep it inside the time limit and use another SEED and NAME for more games.
 set -uo pipefail
@@ -39,12 +41,15 @@ else
 fi
 [ -n "${NODES:-}" ] && ARGS+=(--nodes "$NODES")
 [ -n "${OPPONENT_NODES:-}" ] && ARGS+=(--opponent-nodes "$OPPONENT_NODES")
+[ -n "${CONTENDER_KW:-}" ] && ARGS+=(--contender-kw "$CONTENDER_KW")
+[ -n "${OPPONENT_KW:-}" ] && ARGS+=(--opponent-kw "$OPPONENT_KW")
 
 echo "commit $(git rev-parse HEAD)  eval $OUT  $WHO  nodes ${NODES:-200}"
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
+echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
 $PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', DEFAULT_MODEL)"
 $PY cluster/warm_engine.py || exit 1
 $PY cluster/engine_parity.py check || exit 1
 
 $PY -m arena.pool run "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings eval \
-  --pairs "${PAIRS:-800}" --workers 3 --seed "${SEED:-0}" --out "$OUT"
+  --pairs "${PAIRS:-800}" --workers 3 --seed "${SEED:-0}" --base-ms "${BASE_MS:-60000}" --out "$OUT"

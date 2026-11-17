@@ -275,6 +275,34 @@ def test_hivemind_controller_reuses_joint_search():
     assert len(stub.calls) == 1 and dc.think_ms == 400
 
 
+def test_hivemind_controller_clock_budget():
+    stub = StubProcess(SearchResult("e2e4", None, 0.1, 20, None, 120, 3))
+    ctl = HivemindTeamController("T1", stub, nodes=200, ms_per_node=5.0, clock_k=100, min_nodes=16, max_nodes=150)
+    assert ctl.budget(50000) == 100  # 50 s / 100 = 500 ms = 100 nodes at 5 ms
+    assert ctl.budget(1000) == 16 and ctl.budget(0) == 16  # clamped below
+    assert ctl.budget(10 ** 6) == 150  # clamped above
+    clocks = {s: 50000 for s in SEATS}
+    d = ctl.player("A_white").decide(make_obs("A_white", {"A": START, "B": START}, clocks=clocks))
+    assert stub.calls[-1]["nodes"] == 100 and d.nodes == 100 and d.think_ms == 500
+    assert HivemindTeamController("T1", stub, nodes=200).budget(1000) == 200  # no clock_k: fixed
+
+
+def test_hivemind_controller_serial_queues_overlapping_searches():
+    fen_b = START.replace(" w ", " b ")
+    fens_a2 = {"A": START, "B": fen_b}
+    fens_b2 = {"A": START.replace(" w ", " b "), "B": fen_b}  # a different position: no reuse
+    for serial, second in ((False, 1000), (True, 1600)):
+        stub = StubProcess(SearchResult("e2e4", "e7e5", 0.2, 40, None, 241, 3))
+        ctl = HivemindTeamController("T1", stub, nodes=200, ms_per_node=5.0, serial=serial)
+        da = ctl.player("A_white").decide(make_obs("A_white", fens_a2, now_ms=1000))
+        db = ctl.player("B_black").decide(make_obs("B_black", fens_b2, now_ms=1400))
+        assert da.think_ms == 1000 and len(stub.calls) == 2
+        assert db.think_ms == second  # serial: waits 600 ms for the machine, then searches 1000
+        # once the machine is free again there is no queue
+        dc = ctl.player("A_white").decide(make_obs("A_white", fens_a2 | {"B": START}, now_ms=5000))
+        assert dc.think_ms == 1000
+
+
 # ---------------------------------------------------------------------------------------------- hivemind (real)
 
 needs_engine = pytest.mark.skipif(not hivemind_available(), reason="hivemind binary or model missing")

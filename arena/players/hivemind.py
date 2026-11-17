@@ -492,19 +492,40 @@ class HivemindTeamController:
     node budget. Each seat's ``decide`` asks the controller, which searches (or reuses the joint result it
     computed for exactly the same two positions, e.g. when both seats are asked at the same instant) and
     hands back the entry for that seat's board. A reused result costs only the remaining part of the
-    original search time (``ready_ms - now``), so both seats' moves land when the one search finishes."""
+    original search time (``ready_ms - now``), so both seats' moves land when the one search finishes.
+
+    ``clock_k``: instead of a fixed ``nodes``, each search gets the seat's own remaining clock divided by
+    ``clock_k`` (converted to nodes, clamped to ``min_nodes..max_nodes``): a plain clock-based time manager.
+    ``serial``: the team has ONE machine, so a search asked for while the other seat's search is still running
+    queues behind it and its think time includes the wait. Off by default: then the two seats can search at
+    the same time when their positions differ, which gives the team up to twice its compute once the boards
+    stop moving in step."""
 
     def __init__(self, team: str, process: HivemindProcess, nodes: int = 400, ms_per_node: float = MS_PER_NODE,
-                 *, max_consecutive_sits: int = 2, sit_ms: int = 1000) -> None:
+                 *, max_consecutive_sits: int = 2, sit_ms: int = 1000, clock_k: float | None = None,
+                 min_nodes: int = 16, max_nodes: int = 1600, serial: bool = False) -> None:
+        if clock_k is not None and clock_k <= 0:
+            raise ValueError(f"clock_k must be > 0, got {clock_k}")
         self.team = team
         self.process = process
         self.nodes = int(nodes)
         self.ms_per_node = float(ms_per_node)
         self.max_consecutive_sits = max_consecutive_sits
         self.sit_ms = sit_ms
+        self.clock_k = clock_k
+        self.min_nodes, self.max_nodes = int(min_nodes), int(max_nodes)
+        self.serial = serial
+        self._busy_until = 0  # serial: the one machine is searching until then
         self._cache: tuple[tuple[str, str, bool], SearchResult, int] | None = None
         self._sits: dict[str, int] = {}
         self._seats: dict[str, "CentralizedHivemindSeat"] = {}
+
+    def budget(self, clock_ms: int) -> int:
+        """Nodes for one search: the fixed ``nodes``, or with ``clock_k`` the remaining clock / clock_k."""
+        if self.clock_k is None:
+            return self.nodes
+        nodes = int(round(max(0, clock_ms) / self.clock_k / self.ms_per_node))
+        return min(self.max_nodes, max(self.min_nodes, nodes))
 
     def player(self, seat: str) -> "CentralizedHivemindSeat":
         if seat not in self._seats:
@@ -522,17 +543,20 @@ class HivemindTeamController:
         sits = self._sits.get(seat, 0)
         require = None if (ahead and sits < self.max_consecutive_sits) else board
         key = (obs.fens["A"], obs.fens["B"], ahead)
-        full = int(round(self.nodes * self.ms_per_node))
+        budget = self.budget(obs.clocks_ms[seat])
+        full = int(round(budget * self.ms_per_node))
         cached = self._cache
         if cached and cached[0] == key and _legalize(cached[1].move_for(board), list(obs.legal_moves)) \
                 and (require is None or cached[1].move_for(board) is not None):
             res, ready = cached[1], cached[2]
             think, nodes = max(0, ready - obs.now_ms), 0
         else:
-            res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=self.nodes,
+            res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=budget,
                                       time_advantage=ahead, require=require)
-            think, nodes = full, self.nodes
-            self._cache = (key, res, obs.now_ms + full)
+            queued = max(0, self._busy_until - obs.now_ms) if self.serial else 0
+            think, nodes = queued + full, budget
+            self._busy_until = obs.now_ms + think
+            self._cache = (key, res, obs.now_ms + think)
         move = _legalize(res.move_for(board), list(obs.legal_moves))
         if move is None and res.move_for(board) is None:
             self._sits[seat] = sits + 1

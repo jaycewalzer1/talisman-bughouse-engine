@@ -6,11 +6,12 @@
 #   bash cluster/launch_checks.sh matches    # stock only: what is each team setup worth, and which think budget wins?
 #   bash cluster/launch_checks.sh rules      # hand-written: does waiting for a mating piece win, alone or when asked for?
 #   bash cluster/launch_checks.sh lend       # how much of the partner's idle machine is it best to borrow?
+#   bash cluster/launch_checks.sh beat       # can one Hivemind that manages its clock beat stock Hivemind? (20 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches, rules, lend or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -82,5 +83,42 @@ if [ "$WHAT" = lend ] || [ "$WHAT" = all ]; then
   # Untrained scheduler choosing the amount itself on every move: all about 4 times in 5, else half or none.
   # Compare with untrained_none from "features", which always borrows all.
   NAME=eval/untrained_lend FEATURES=lend sbatch -J lend cluster/eval.sbatch
+fi
+if [ "$WHAT" = beat ]; then  # not part of "all": 20 jobs
+  # One centralized Hivemind against stock centralized Hivemind, both on ONE machine each ("serial": a search
+  # asked for while the other seat's search runs waits for it), which is the fair accounting once the boards
+  # stop moving in step. The decision rule for these results is in docs/beat_stock.md: read it before the numbers.
+  SER='{"serial": true}'
+  beat() {  # name, nodes, opponent nodes, contender options, pairs, clock ms, opponent options
+    NAME="beat/$1" SETUP=centralized LEND=0 NODES="$2" OPPONENT=stock-centralized OPPONENT_NODES="$3" \
+      CONTENDER_KW="$4" OPPONENT_KW="${7:-$SER}" PAIRS="$5" BASE_MS="$6" sbatch -J "$1" cluster/eval.sbatch
+  }
+  #     name                 nodes opp  contender options                                  pairs clock
+  # controls: identical teams, should come out at 0.50
+  beat  same_100_v100        100   100  "$SER"                                             800   60000
+  beat  same_50_v50          50    50   "$SER"                                             800   60000
+  # fixed budgets against each other: which one is stock's best on a 60 second clock?
+  beat  c25_v100             25    100  "$SER"                                             800   60000
+  beat  c50_v100             50    100  "$SER"                                             800   60000
+  beat  c200_v100            200   100  "$SER"                                             800   60000
+  beat  c25_v50              25    50   "$SER"                                             800   60000
+  beat  c100_v50             100   50   "$SER"                                             800   60000
+  # the time flag: 1% faster owns "ahead on time" all game; with and without the right to sit
+  beat  flag_99_v100         99    100  "$SER"                                             800   60000
+  beat  flag_49_v50          49    50   "$SER"                                             800   60000
+  beat  nosit_100_v100       100   100  '{"serial": true, "max_consecutive_sits": 0}'      800   60000
+  beat  flagnosit_99_v100    99    100  '{"serial": true, "max_consecutive_sits": 0}'      800   60000
+  # clock-based think time: remaining clock / k. k 55, 110, 220 start at about 200, 100, 50 nodes
+  beat  clock55_v100         100   100  '{"serial": true, "clock_k": 55}'                  800   60000
+  beat  clock110_v100        100   100  '{"serial": true, "clock_k": 110}'                 800   60000
+  beat  clock220_v100        100   100  '{"serial": true, "clock_k": 220}'                 800   60000
+  beat  clock55_v50          50    50   '{"serial": true, "clock_k": 55}'                  800   60000
+  beat  clock110_v50         50    50   '{"serial": true, "clock_k": 110}'                 800   60000
+  beat  clock220_v50         50    50   '{"serial": true, "clock_k": 220}'                 800   60000
+  # how much the old accounting (no machine queue, both teams) changes the clock result
+  beat  clock110_v100_open   100   100  '{"clock_k": 110}'                                 800   60000 '{}'
+  # a 3 minute clock: does the speed effect and the clock rule hold with more time? (fewer games: slower)
+  beat  long_c100_v300       100   300  "$SER"                                             300   180000
+  beat  long_clock110_v300   300   300  '{"serial": true, "clock_k": 110}'                 300   180000
 fi
 squeue -u "$USER"

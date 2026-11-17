@@ -37,3 +37,19 @@ if [ "${#learner[@]}" -gt 0 ]; then $PY tools/compare_runs.py "${learner[@]}" ru
 echo; echo "== wait-regret probe"
 probe=(runs/probe/*)
 if [ "${#probe[@]}" -gt 0 ]; then $PY tools/probe_summary.py "${probe[@]}"; else echo "not started"; fi
+
+echo; echo "== beat stock: one machine per team (decision rule: docs/beat_stock.md)"
+Bt=runs/beat
+echo "-- controls, should be 0.50"
+$PY tools/compare_evals.py $Bt/same_100_v100 $Bt/same_50_v50
+echo "-- fixed budgets against stock at 100 nodes, then at 50"
+$PY tools/compare_evals.py $Bt/same_100_v100 $Bt/c25_v100 $Bt/c50_v100 $Bt/c200_v100
+$PY tools/compare_evals.py $Bt/same_50_v50 $Bt/c25_v50 $Bt/c100_v50
+echo "-- the time flag"
+$PY tools/compare_evals.py $Bt/same_100_v100 $Bt/flag_99_v100 $Bt/nosit_100_v100 $Bt/flagnosit_99_v100
+$PY tools/compare_evals.py $Bt/same_50_v50 $Bt/flag_49_v50
+echo "-- clock-based think time against stock at 100 nodes, then at 50"
+$PY tools/compare_evals.py $Bt/same_100_v100 $Bt/clock55_v100 $Bt/clock110_v100 $Bt/clock220_v100 $Bt/clock110_v100_open
+$PY tools/compare_evals.py $Bt/same_50_v50 $Bt/clock55_v50 $Bt/clock110_v50 $Bt/clock220_v50
+echo "-- 3 minute clock"
+$PY tools/compare_evals.py $Bt/long_c100_v300 $Bt/long_clock110_v300
