@@ -80,3 +80,38 @@ def test_either_import_order_registers_the_sets():
     for first in ("arena.openings_bughouse", "arena.openings"):
         code = f"import {first}; from arena.openings import OPENING_SETS; assert 'bughouse' in OPENING_SETS"
         subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_score_resume_skips_scored_pairs_and_keeps_partial_out_of_the_filter(tmp_path):
+    import json
+
+    from arena.openings_bughouse import BARE_PAIR, CANON_PAIRS, CONTROL_PAIRS, score_pairs
+
+    pairs = CANON_PAIRS + CONTROL_PAIRS + (BARE_PAIR,)
+    prev = {"nodes": 800, "pairs": {p.name: {"q_t1": -0.6, "q_t2": -0.6, "balance": 0.0} for p in pairs[:3]}}
+    src = tmp_path / "prev.json"
+    src.write_text(json.dumps(prev))
+    out = tmp_path / "scores.json"
+    # Every pair already scored: no engine is started, the full file is written.
+    doc = score_pairs(nodes=800, out=str(out), limit=3, resume=str(src))
+    assert set(doc["pairs"]) == {p.name for p in pairs[:3]} and out.exists()
+    # Scores at another budget are not reused.
+    prev["nodes"] = 400
+    src.write_text(json.dumps(prev))
+    import arena.players.hivemind as hm
+
+    class Boom:
+        def __init__(self, *a, **k):
+            raise RuntimeError("engine started")
+
+    orig = hm.HivemindProcess
+    hm.HivemindProcess = Boom
+    try:
+        try:
+            score_pairs(nodes=800, out=str(tmp_path / "x.json"), limit=3, resume=str(src))
+            raise AssertionError("expected the engine to be needed")
+        except RuntimeError as e:
+            assert "engine started" in str(e)
+    finally:
+        hm.HivemindProcess = orig
+    assert not (tmp_path / "x.json").exists()

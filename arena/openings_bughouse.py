@@ -170,21 +170,46 @@ def clusters(pairs: tuple[OpeningPair, ...]) -> int:
 
 # ------------------------------------------------------------------------------------------------ scoring
 
-def score_pairs(nodes: int = 800, out: str = SCORES_PATH, limit: int | None = None) -> dict:
+def score_pairs(nodes: int = 800, out: str = SCORES_PATH, limit: int | None = None,
+                resume: str | None = None) -> dict:
     """Search every canon/control pair and the bare start with stock it04 for BOTH teams (both are on turn: White
     moves on A for T1 and on B for T2), equal clocks so ``TimeAdvantage false`` as the arena sends it. it04's
     no-advantage bias (about -270 cp each side at startpos-like positions, see hivemind.py) cancels in
     ``balance = (q_t1 - q_t2) / 2`` (T1's expected edge, [-1, 1]); the keep rule filters on |balance|.
-    Writes ``{"pairs": {name: {"q_t1", "q_t2", "balance", "nodes"}}}``. Single process."""
+    Writes ``{"pairs": {name: {"q_t1", "q_t2", "balance", "nodes"}}}``, rewritten after every pair to ``out +
+    ".partial"`` and renamed to ``out`` only when every pair is scored (so a stopped run never applies a half filter).
+    ``resume``: an earlier (partial) scores file whose pairs scored at the same ``nodes`` are kept, not searched again.
+    Single process."""
     from arena.players.hivemind import HivemindProcess
 
     pairs = CANON_PAIRS + CONTROL_PAIRS + (BARE_PAIR,)
     if limit:
         pairs = pairs[:limit]
-    proc = HivemindProcess()
     res: dict[str, dict] = {}
+    if resume:
+        with open(resume) as f:
+            prev = json.load(f)
+        if prev.get("nodes") == nodes:
+            names = {p.name for p in pairs}
+            res = {k: v for k, v in prev.get("pairs", {}).items() if k in names}
+        print(f"resume: {len(res)} pairs from {resume}", flush=True)
+
+    def doc() -> dict:
+        return {"engine": "stock it04 (build-ninja/hivemind, hivemind-fp32.onnx)", "nodes": nodes,
+                "time_advantage": False, "keep_abs_balance": KEEP_ABS_BALANCE, "pairs": res}
+
+    def write(path: str) -> None:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(doc(), f, indent=1, sort_keys=True)
+        os.replace(tmp, path)
+
+    todo = [p for p in pairs if p.name not in res]
+    proc = HivemindProcess() if todo else None
     try:
         for i, p in enumerate(pairs):
+            if p.name in res:
+                continue
             r1 = proc.search(p.fen_a, p.fen_b, team="T1", nodes=nodes, time_advantage=False)
             r2 = proc.search(p.fen_a, p.fen_b, team="T2", nodes=nodes, time_advantage=False)
             q1, q2 = r1.q or 0.0, r2.q or 0.0
@@ -192,13 +217,15 @@ def score_pairs(nodes: int = 800, out: str = SCORES_PATH, limit: int | None = No
                            "nodes": [r1.nodes, r2.nodes]}
             print(f"{i + 1}/{len(pairs)} {p.name}: Q_T1 {q1:+.3f} Q_T2 {q2:+.3f} balance {(q1 - q2) / 2:+.3f}",
                   flush=True)
+            write(out + ".partial")
     finally:
-        proc.close()
-    doc = {"engine": "stock it04 (build-ninja/hivemind, hivemind-fp32.onnx)", "nodes": nodes,
-           "time_advantage": False, "keep_abs_balance": KEEP_ABS_BALANCE, "pairs": res}
-    with open(out, "w") as f:
-        json.dump(doc, f, indent=1, sort_keys=True)
-    return doc
+        if proc is not None:
+            proc.close()
+    if len(res) == len(pairs):
+        write(out)
+        if os.path.exists(out + ".partial"):
+            os.remove(out + ".partial")
+    return doc()
 
 
 def main(argv=None) -> int:
@@ -207,9 +234,10 @@ def main(argv=None) -> int:
     ap.add_argument("--nodes", type=int, default=800)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", default=SCORES_PATH)
+    ap.add_argument("--resume", default=None, help="earlier (partial) scores json; its pairs are not searched again")
     args = ap.parse_args(argv)
     if args.score:
-        score_pairs(args.nodes, args.out, args.limit)
+        score_pairs(args.nodes, args.out, args.limit, args.resume)
         return 0
     for name, s in BUGHOUSE_SETS.items():
         print(f"{name}: {len(s)} entries, {clusters(s)} clusters")
