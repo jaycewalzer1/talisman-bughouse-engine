@@ -575,3 +575,140 @@ def test_partner_message_interrupts_an_open_ended_wait():
     delivered = [o for o in asked if o.inbox]
     assert delivered and delivered[0].now_ms == 1500
     assert delivered[0].inbox[0].payload["plies"] == 2
+
+
+# ---------------------------------------------------------------------------------------------- spec v3 rules
+
+from arena.sim import RULES_V3, scaled_max_plies  # noqa: E402
+from arena.state import BughouseState  # noqa: E402
+
+
+def _landings(events, seat):
+    return [e["ts"] for e in of(events, "move", seat=seat)]
+
+
+def test_min_move_ms_floors_every_landing_even_instant_moves():
+    sim, _, _ = make(scripts={s: (lambda obs: mv(obs.legal_moves[0], 0)) for s in SEATS}, max_plies=40,
+                     min_move_ms=100)
+    sim.run()
+    for seat in SEATS:
+        t = _landings(sim.events, seat)
+        assert t and all(b - a >= 100 for a, b in zip(t, t[1:]))
+    assert all(e["think_ms"] >= 100 for e in of(sim.events, "thinking", phase="start"))
+
+
+def test_three_seconds_of_clock_allow_at_most_30_landings():
+    sim, _, _ = make(FakeState(base_ms=3000), {s: (lambda obs: mv(obs.legal_moves[0], 0)) for s in SEATS},
+                     max_plies=10_000, min_move_ms=100)
+    res = sim.run()
+    assert res.reason == "flag"
+    assert max(len(_landings(sim.events, s)) for s in SEATS) <= 30
+
+
+def test_additive_lag_is_seeded_and_bounded():
+    def costs(seed):
+        sim, _, _ = make(scripts={s: (lambda obs: mv(obs.legal_moves[0], 10)) for s in SEATS}, max_plies=60,
+                         min_move_ms=100, lag_max_ms=50, seed=seed)
+        sim.run()
+        return [e["think_ms"] for e in of(sim.events, "thinking", phase="start")]
+
+    a = costs(1)
+    assert all(100 <= c <= 150 for c in a) and len(set(a)) > 5
+    assert a == costs(1) and a != costs(2)
+
+
+def test_lag_and_floor_off_by_default():
+    sim, _, _ = make(scripts={s: (lambda obs: mv(obs.legal_moves[0], 7)) for s in SEATS}, max_plies=8)
+    sim.run()
+    assert {e["think_ms"] for e in of(sim.events, "thinking", phase="start")} == {7}
+
+
+def test_max_plies_scales_with_base_time():
+    assert scaled_max_plies(60000) == 400 and scaled_max_plies(180000) == 1200 and scaled_max_plies(2000) == 400
+    sim, _, _ = make(FakeState(base_ms=300_000), max_plies=None)
+    assert sim.max_plies == 2000
+    assert make(max_plies=7)[0].max_plies == 7
+
+
+def test_aborted_game_scored_by_the_on_turn_clocks():
+    sim, _, _ = make(max_plies=5, score_aborts=True)
+    res = sim.run()
+    # after 5 plies (100 ms each) A_black is on turn with 59900 and B_white with 59800: B_white would flag first
+    assert res == GameResult("T1", "max_plies", "B", "B_white")
+    sim, _, _ = make(max_plies=6, score_aborts=True)
+    assert sim.run() == GameResult("draw", "max_plies")  # equal on-turn clocks
+
+
+def _all_wait(obs):
+    return wait(1000)
+
+
+def test_mutual_pass_is_adjudicated_with_the_predicted_loser():
+    state = FakeState()
+    state.clocks_ms["B_white"] = 50_000  # B_white would flag first
+    sim, _, _ = make(state, {s: _all_wait for s in SEATS}, sitoff_ms=3000, sitoff_unadjudicated=0.0)
+    res = sim.run()
+    assert res == GameResult("T1", "sitoff_adjudicated", "B", "B_white")
+    assert sim.events[-1]["ts"] == 3000 and sim.events[-1]["reason"] == "sitoff_adjudicated"
+
+
+def test_sitoff_clock_starts_when_the_second_seat_sits():
+    scripts = {"A_white": _all_wait, "B_white": [mv("a2a3", 500)], "B_black": _all_wait}
+    sim, _, _ = make(scripts=scripts, sitoff_ms=3000, sitoff_unadjudicated=0.0)
+    res = sim.run()
+    # A_white sits from 0, B_black from 500 (its turn starts when B_white lands): adjudicated at 3500
+    assert res.reason == "sitoff_adjudicated" and sim.events[-1]["ts"] == 3500
+    assert res.loser_seat == "A_white"  # 56500 left vs B_black's 57000
+
+
+def test_one_sided_sit_is_not_adjudicated():
+    scripts = {"A_white": _all_wait, "B_white": lambda obs: mv(obs.legal_moves[0], 100),
+               "B_black": lambda obs: mv(obs.legal_moves[0], 100)}
+    sim, _, _ = make(FakeState(base_ms=10_000), scripts, sitoff_ms=1000, sitoff_unadjudicated=0.0,
+                     max_plies=10_000)
+    res = sim.run()
+    assert res.reason == "flag" and res.loser_seat == "A_white"
+
+
+def test_unadjudicated_games_run_to_the_flag():
+    sim, _, _ = make(FakeState(base_ms=10_000), {s: _all_wait for s in SEATS}, sitoff_ms=1000,
+                     sitoff_unadjudicated=1.0)
+    assert not sim.adjudicates_sitoffs
+    res = sim.run()
+    assert res.reason == "double_flag" or res.reason == "flag"
+
+
+def test_unadjudicated_share_is_about_ten_percent():
+    share = sum(not make(sitoff_ms=1000, seed=k)[0].adjudicates_sitoffs for k in range(2000)) / 2000
+    assert 0.08 < share < 0.12
+    assert not make(seed=3)[0].adjudicates_sitoffs  # off unless sitoff_ms is set
+
+
+def test_frozen_defender_flags_without_the_attacker_moving():
+    # A_black is in a rook check that a drop could block, so it is not mate, but its hand is empty: no legal
+    # move. Nobody on board B moves (no piece can arrive), so A_black sits until it flags.
+    frozen = "R5k1/5ppp/8/8/8/8/8/K7[] b - - 0 1"
+    start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+    state = BughouseState(60000, fens={"A": frozen, "B": start}, start_clocks_ms={"A_black": 2000})
+    assert state.legal_moves("A_black") == [] and state.result() is None
+    players = {s: Scripted(s, lambda obs: mv(obs.legal_moves[0], 100) if obs.legal_moves else wait(500))
+               for s in SEATS}
+    players["B_white"] = Scripted("B_white", lambda obs: wait(500))
+    sim = Simulator(state, players, game_id="frozen", setup="test")
+    res = sim.run()
+    assert res == GameResult("T1", "flag", "A", "A_black") and sim.events[-1]["ts"] == 2000
+    assert not of(sim.events, "move")
+    assert of(sim.events, "stall", seat="A_black", active=True)[0]["reason"] == "need_piece"
+
+
+def test_rules_v3_profile_runs_a_real_game():
+    state = BughouseState(20_000)
+    players = {s: Scripted(s, lambda obs: mv(sorted(obs.legal_moves)[0], 0) if obs.legal_moves else wait(500))
+               for s in SEATS}
+    sim = Simulator(state, players, game_id="v3", setup="test", seed=5, **RULES_V3)
+    res = sim.run()
+    assert res.reason in {"checkmate", "flag", "double_flag", "repetition", "sitoff_adjudicated", "max_plies"}
+    check_stream(sim.events)
+    for seat in SEATS:
+        t = _landings(sim.events, seat)
+        assert all(b - a >= 100 for a, b in zip(t, t[1:]))

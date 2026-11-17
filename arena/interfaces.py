@@ -46,16 +46,31 @@ class MoveResult:
     fen: str  # bracket-form FEN of the moved board after the move
 
 
+# GameResult.reason vocabulary (spec v3 shared contract 3; arena/RULES.md "Game end"):
+#   checkmate           a team won by mate (board, loser_seat set)
+#   flag                a clock ran out (board, loser_seat set)
+#   double_flag         two clocks ran out at the same ms: draw
+#   repetition          threefold board repetition (FICS style): draw (board set)
+#   sitoff_adjudicated  both on-turn seats sat for the Simulator's sitoff_ms: the lower clock loses (equal: draw)
+#   max_plies           safety abort at the ply cap: draw, or with score_aborts the lower on-turn clock loses;
+#                       consumers keep these games out of training
+#   aborted             the game could not finish (error, empty queue): draw
+REASONS: tuple[str, ...] = ("checkmate", "flag", "double_flag", "repetition", "sitoff_adjudicated", "max_plies",
+                            "aborted")
+DRAW_REASONS: tuple[str, ...] = ("double_flag", "repetition")  # always draws
+
+
 @dataclass(frozen=True)
 class GameResult:
     result: str  # "T1" | "T2" | "draw"
-    reason: str  # "checkmate" | "flag" | "stalemate" | "max_plies" | "aborted"
+    reason: str  # one of REASONS
     board: str | None = None
     loser_seat: str | None = None
 
 
 class GameState(Protocol):
-    """Implemented by arena.state.BughouseState(base_ms, increment_ms=0)."""
+    """Implemented by arena.state.BughouseState(base_ms, increment_ms=0, fens=None, start_clocks_ms=None,
+    repetition=True). start_clocks_ms gives per-seat starting clocks (time odds); others start at base_ms."""
 
     clocks_ms: dict[str, int]  # remaining time per seat as of the last advance_clocks call
 
@@ -64,7 +79,7 @@ class GameState(Protocol):
     def legal_moves(self, seat: str) -> list[str]: ...  # UCI incl. drops "N@f3"; [] if not seat's turn
     def apply_move(self, seat: str, uci: str, now_ms: int) -> MoveResult: ...  # raises ValueError if illegal
     def advance_clocks(self, now_ms: int) -> GameResult | None: ...  # run clocks to now; flag result if any
-    def result(self) -> GameResult | None: ...  # checkmate/stalemate/flag once the game is over
+    def result(self) -> GameResult | None: ...  # checkmate/flag/double_flag/repetition once over
     def copy(self) -> "GameState": ...
 
 

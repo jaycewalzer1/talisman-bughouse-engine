@@ -119,7 +119,8 @@ def test_flag_is_sticky_and_clamped():
 
 
 def test_move_after_flag_time_rejected():
-    s = BughouseState(1000)
+    # B_white starts with more time so only A_white flags at 1000 (equal clocks would be a double flag draw).
+    s = BughouseState(1000, start_clocks_ms={"B_white": 2000})
     with pytest.raises(ValueError):
         s.apply_move("A_white", "e2e4", 1000)
     assert s.result().reason == "flag" and s.result().loser_seat == "A_white"
@@ -204,3 +205,81 @@ def test_copy_is_independent():
     t.apply_move("A_white", "e2e4", 500)
     assert s.to_move("A") == "A_white" and s.clocks_ms["A_white"] == 60000
     assert t.to_move("A") == "A_black"
+
+
+# --- spec v3 rules: double flag, start clocks, repetition ------------------------------------------
+
+@pytest.mark.parametrize("seat_low", ["A_white", "B_white"])
+def test_double_flag_lower_clock_loses_regardless_of_seat(seat_low):
+    other = "B_white" if seat_low == "A_white" else "A_white"
+    s = BughouseState(1000, start_clocks_ms={seat_low: 400, other: 600})
+    r = s.advance_clocks(5000)  # both run out inside one interval
+    assert r.reason == "flag" and r.loser_seat == seat_low
+    assert r.result == ("T1" if seat_low == "B_white" else "T2")
+
+
+def test_double_flag_on_exact_tie_is_a_draw():
+    s = BughouseState(1000)
+    r = s.advance_clocks(1000)  # A_white and B_white both hit 0 at the same ms
+    assert r == GameResult(result="draw", reason="double_flag")
+    assert s.result() == r
+
+
+def test_asymmetric_start_clocks_flag_the_right_seat():
+    s = BughouseState(60000, start_clocks_ms={"A_white": 30000, "B_white": 45000})
+    assert s.clocks_ms == {"A_white": 30000, "A_black": 60000, "B_white": 45000, "B_black": 60000}
+    assert s.start_clocks_ms == s.clocks_ms
+    s.apply_move("A_white", "e2e4", 10000)
+    assert s.clocks_ms["A_white"] == 20000 and s.clocks_ms["B_white"] == 35000
+    r = s.advance_clocks(100000)
+    assert r.loser_seat == "B_white" and r.reason == "flag" and r.result == "T1"
+    with pytest.raises(ValueError):
+        BughouseState(1000, start_clocks_ms={"C_white": 1})
+
+
+ROOKS = "1r4k1/8/8/8/8/8/8/K6R[N] w - - 0 1"
+START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+
+
+def _play(s, seats_moves):
+    for seat, uci in seats_moves:
+        assert s.result() is None, (seat, uci)
+        s.apply_move(seat, uci, 0)
+    return s.result()
+
+
+def test_threefold_board_repetition_is_a_draw():
+    s = BughouseState(60000, fens={"A": ROOKS, "B": START})
+    shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
+    assert _play(s, shuffle) is None  # start position seen twice
+    assert _play(s, shuffle[:3]) is None
+    r = _play(s, shuffle[3:])  # and a third time
+    assert r == GameResult(result="draw", reason="repetition", board="A")
+
+
+def test_repetition_ignores_the_pocket_and_the_other_board():
+    s = BughouseState(60000, fens={"A": ROOKS, "B": START})
+    shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
+    _play(s, shuffle)
+    _play(s, [("B_white", "e2e4"), ("B_black", "d7d5"), ("B_white", "e4d5")])  # A_black receives a pawn
+    assert "p" in pocket(s.fen("A"))
+    assert _play(s, shuffle) == GameResult(result="draw", reason="repetition", board="A")
+
+
+def test_a_drop_resets_the_repetition_count():
+    s = BughouseState(60000, fens={"A": ROOKS, "B": START})
+    shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
+    _play(s, shuffle)  # the start position has now occurred twice
+    # drop, recapture, and triangulate back to the start position: its third occurrence overall, but the first
+    # since the drop
+    r = _play(s, [("A_white", "N@b7"), ("A_black", "b8b7"), ("A_white", "h1h2"), ("A_black", "b7b6"),
+                  ("A_white", "h2h1"), ("A_black", "b6b8")])
+    assert r is None and s.fen("A").startswith("1r4k1/8/8/8/8/8/8/K6R")
+    _play(s, shuffle)
+    assert _play(s, shuffle) == GameResult(result="draw", reason="repetition", board="A")
+
+
+def test_repetition_can_be_switched_off():
+    s = BughouseState(60000, fens={"A": ROOKS, "B": START}, repetition=False)
+    shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
+    assert _play(s, shuffle * 3) is None

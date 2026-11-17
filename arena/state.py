@@ -1,4 +1,5 @@
-"""BughouseState: two crazyhouse boards, partner pocket transfer, four clocks, FICS-style terminal rules.
+"""BughouseState: two crazyhouse boards, partner pocket transfer, four clocks, FICS-style terminal rules
+(checkmate, flag, double flag on an exact tie = draw, threefold board repetition = draw).
 
 Rules profile: arena/RULES.md. Contract: arena/interfaces.py (GameState).
 """
@@ -24,9 +25,12 @@ def _color_name(color: chess.Color) -> str:
 class BughouseState:
     """Implements arena.interfaces.GameState.
 
-    fens: optional {"A": fen, "B": fen} starting positions (bracket form, `~` promoted markers allowed)."""
+    fens: optional {"A": fen, "B": fen} starting positions (bracket form, `~` promoted markers allowed).
+    start_clocks_ms: optional per-seat starting clocks (e.g. time odds); seats not named start at base_ms.
+    repetition: FICS-style repetition draw (RULES.md). On by default; False restores the old no-draw profile."""
 
-    def __init__(self, base_ms: int, increment_ms: int = 0, fens: dict | None = None):
+    def __init__(self, base_ms: int, increment_ms: int = 0, fens: dict | None = None,
+                 start_clocks_ms: dict | None = None, repetition: bool = True):
         fens = fens or {}
         self.boards: dict[str, chess.variant.CrazyhouseBoard] = {
             b: chess.variant.CrazyhouseBoard(fens[b]) if b in fens else chess.variant.CrazyhouseBoard()
@@ -35,6 +39,15 @@ class BughouseState:
         self.base_ms = base_ms
         self.increment_ms = increment_ms
         self.clocks_ms: dict[str, int] = {s: base_ms for s in SEATS}
+        for seat, ms in (start_clocks_ms or {}).items():
+            if seat not in self.clocks_ms:
+                raise ValueError(f"unknown seat {seat!r} in start_clocks_ms")
+            self.clocks_ms[seat] = int(ms)
+        self.start_clocks_ms: dict[str, int] = dict(self.clocks_ms)
+        self.repetition = repetition
+        # Per board: how often each board-only position (placement, side to move, castling, ep; pockets
+        # ignored) occurred since the last drop on that board.
+        self._seen: dict[str, dict[str, int]] = {b: {repetition_key(self.boards[b]): 1} for b in BOARDS}
         self.last_ms = 0  # simulated time of the last advance_clocks call
         self._result: GameResult | None = None
 
@@ -62,7 +75,9 @@ class BughouseState:
 
     def advance_clocks(self, now_ms: int) -> GameResult | None:
         """Charge elapsed time to the side to move on each board. Returns the flag result the first time
-        a clock reaches 0 (if both boards flag in the same interval, the one that ran out first loses)."""
+        a clock reaches 0. If both boards flag in the same interval, the clock that had less time left at the
+        start of the interval ran out first and loses; on an exact tie both flagged at the same ms and the game
+        is a draw (reason "double_flag")."""
         if self._result is not None:
             return None
         elapsed = max(0, now_ms - self.last_ms)
@@ -76,6 +91,9 @@ class BughouseState:
                 flagged.append((before, seat))
         if not flagged:
             return None
+        if len(flagged) == 2 and flagged[0][0] == flagged[1][0]:
+            self._result = GameResult(result="draw", reason="double_flag")
+            return self._result
         _, loser = min(flagged)
         self._result = GameResult(result=OTHER_TEAM[TEAM_OF[loser]], reason="flag",
                                   board=BOARD_OF[loser], loser_seat=loser)
@@ -117,7 +135,22 @@ class BughouseState:
         if is_bughouse_mate(board):
             loser = seat_of(board_name, _color_name(board.turn))
             self._result = GameResult(result=TEAM_OF[seat], reason="checkmate", board=board_name, loser_seat=loser)
+        else:
+            seen = self._seen[board_name]
+            if move.drop is not None:
+                seen.clear()  # FICS: any drop resets the repetition count on that board
+            key = repetition_key(board)
+            seen[key] = seen.get(key, 0) + 1
+            if self.repetition and seen[key] >= 3:
+                self._result = GameResult(result="draw", reason="repetition", board=board_name)
         return MoveResult(san=san, capture=capture, fen=board.fen())
+
+
+def repetition_key(board: chess.Board) -> str:
+    """Board-only position for the repetition rule: placement (with `~` promoted markers), side to move,
+    castling and legal en passant square, as in the FEN; the pocket is ignored."""
+    parts = board.fen().split(" ")
+    return " ".join([parts[0].split("[", 1)[0]] + parts[1:4])
 
 
 def is_bughouse_mate(board: chess.Board) -> bool:

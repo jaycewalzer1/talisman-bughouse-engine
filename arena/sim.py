@@ -6,6 +6,17 @@ work goes through one heap of internal events ordered by (time, insertion counte
 deterministic given deterministic players (and charge_wall_time=False).
 
 Emitted events follow docs/events.md exactly.
+
+Clock-realism and rule options (spec v3 D4, arena/RULES.md), all off by default so existing callers and the
+C++ parity stub behave as before; RULES_V3 holds the profile the spec chose:
+- min_move_ms: every landing costs at least this much clock (also a cached or instant move);
+- lag_max_ms: an additive lag drawn uniformly from [0, lag_max_ms] per move (SplitMix64 seeded from `seed`,
+  the same stream as async_selfplay.cc), charged to the mover's clock like think time;
+- max_plies=None scales the safety cap with the base time (scaled_max_plies); score_aborts scores a game
+  that hits it by the on-turn clocks (the lower one loses, equal is a draw), reason "max_plies";
+- sitoff_ms: when both on-turn seats have been sitting (passing) for this long at once, the game ends as
+  "sitoff_adjudicated" with the lower of their two clocks losing (it would flag first if nobody moved; equal
+  is a draw). A seeded share `sitoff_unadjudicated` of games is never adjudicated and runs to the flag.
 """
 
 from __future__ import annotations
@@ -32,6 +43,37 @@ from arena.interfaces import (
 
 BOARDS = ("A", "B")
 FALLBACK_WAIT_MS = 200
+M64 = (1 << 64) - 1
+_LAG_STREAM = 0x6C61675F  # "lag_": seed ^ this seeds the lag draws (async_selfplay.cc uses the same)
+_SITOFF_STREAM = 0x7369746F  # "sito": seed ^ this decides whether this game adjudicates sit-offs
+
+# Spec v3 D4 rules profile for the clock build and free-mode self-play: Simulator(..., **RULES_V3).
+RULES_V3 = {
+    "min_move_ms": 100,
+    "lag_max_ms": 150,
+    "max_plies": None,
+    "score_aborts": True,
+    "sitoff_ms": 5000,
+    "sitoff_unadjudicated": 0.1,
+}
+
+
+def scaled_max_plies(base_ms: int | None) -> int:
+    """Safety cap on total plies (both boards) scaled with the base time: 400 at 60 s and below, 1200 at
+    180 s. Every engine game seen so far ended well before it (audit section 5, rules 1)."""
+    return max(400, round(400 * (base_ms or 60000) / 60000))
+
+
+class SplitMix64:
+    def __init__(self, seed: int):
+        self.state = seed & M64
+
+    def next(self) -> int:
+        self.state = (self.state + 0x9E3779B97F4A7C15) & M64
+        z = self.state
+        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & M64
+        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & M64
+        return z ^ (z >> 31)
 
 # internal event kinds
 _FLAG = "flag_check"
@@ -39,6 +81,7 @@ _DECIDE = "decide"
 _LAND = "land"
 _WAKE = "wake"
 _DELIVER = "deliver"
+_SITOFF = "sitoff"
 
 # seat statuses
 _IDLE = "idle"  # not to move (or game over)
@@ -56,9 +99,15 @@ class Simulator:
         game_id: str,
         setup: str,
         channel_delay_ms: int = 0,
-        max_plies: int = 400,
+        max_plies: int | None = 400,
         charge_wall_time: bool = False,
         on_event: Callable[[dict], None] | None = None,
+        min_move_ms: int = 0,
+        lag_max_ms: int = 0,
+        seed: int = 0,
+        score_aborts: bool = False,
+        sitoff_ms: int | None = None,
+        sitoff_unadjudicated: float = 0.1,
     ) -> None:
         missing = [s for s in SEATS if s not in players]
         if missing:
@@ -68,7 +117,17 @@ class Simulator:
         self.game_id = game_id
         self.setup = setup
         self.channel_delay_ms = int(channel_delay_ms)
-        self.max_plies = int(max_plies)
+        self.max_plies = scaled_max_plies(getattr(state, "base_ms", None)) if max_plies is None else int(max_plies)
+        self.min_move_ms = max(0, int(min_move_ms))
+        self.lag_max_ms = max(0, int(lag_max_ms))
+        self.seed = int(seed)
+        self.score_aborts = score_aborts
+        self.sitoff_ms = None if sitoff_ms is None else max(1, int(sitoff_ms))
+        self._lag_rng = SplitMix64(self.seed ^ _LAG_STREAM)
+        # Whether this game adjudicates sit-offs: a seeded per-game draw keeps a share running to the flag.
+        self.adjudicates_sitoffs = (self.sitoff_ms is not None and
+                                    SplitMix64(self.seed ^ _SITOFF_STREAM).next() % 1_000_000
+                                    >= round(sitoff_unadjudicated * 1_000_000))
         self.charge_wall_time = charge_wall_time
         self.on_event = on_event
 
@@ -87,6 +146,8 @@ class Simulator:
         self._lent_share: dict[str, float] = {s: 0.0 for s in SEATS}  # how much of it, while lent
         self._sit_search_until: dict[str, int] = {s: 0 for s in SEATS}  # search behind a wait decision
         self._last_move_ms: dict[str, int] = {b: 0 for b in BOARDS}  # when the last move landed on each board
+        self._pass_since: dict[str, int | None] = {s: None for s in SEATS}  # sitting (not thinking) since
+        self._sitoff_gen = 0
         self._ran = False
 
     # ------------------------------------------------------------------ public
@@ -137,11 +198,12 @@ class Simulator:
         res = self.state.advance_clocks(self.now)
         if res is None:
             # Fallback in case the state only flags strictly below zero: a running clock at 0 is a flag.
-            for b in BOARDS:
-                seat = self.state.to_move(b)
-                if self.state.clocks_ms[seat] <= 0:
-                    res = GameResult(result=TEAM_OF[OPPONENT[seat]], reason="flag", board=b, loser_seat=seat)
-                    break
+            out = [b for b in BOARDS if self.state.clocks_ms[self.state.to_move(b)] <= 0]
+            if len(out) == 2:
+                res = GameResult(result="draw", reason="double_flag")
+            elif out:
+                seat = self.state.to_move(out[0])
+                res = GameResult(result=TEAM_OF[OPPONENT[seat]], reason="flag", board=out[0], loser_seat=seat)
         if res is not None:
             self._end(res)
             return True
@@ -154,6 +216,26 @@ class Simulator:
         for s in SEATS:
             self._status[s] = _IDLE
         self._emit("game_end", result=res.result, reason=res.reason, board=res.board, loserSeat=res.loser_seat)
+
+    def _on_turn_result(self, reason: str) -> GameResult:
+        """Score by the two on-turn clocks: the lower would flag first if nobody moved; equal is a draw."""
+        a, b = (self.state.to_move(x) for x in BOARDS)
+        ca, cb = int(self.state.clocks_ms[a]), int(self.state.clocks_ms[b])
+        if ca == cb:
+            return GameResult(result="draw", reason=reason)
+        loser = a if ca < cb else b
+        return GameResult(result=TEAM_OF[OPPONENT[loser]], reason=reason, board=BOARD_OF[loser], loser_seat=loser)
+
+    def _arm_sitoff(self) -> None:
+        """If both on-turn seats are sitting, schedule the adjudication check for when the mutual pass has
+        lasted sitoff_ms. Older checks are invalidated by the generation counter."""
+        if not self.adjudicates_sitoffs or self.result is not None:
+            return
+        self._sitoff_gen += 1
+        since = [self._pass_since[self.state.to_move(b)] for b in BOARDS]
+        if None in since:
+            return
+        self._push(max(since) + self.sitoff_ms, _SITOFF, self._sitoff_gen)
 
     def _schedule_flag_check(self, board: str) -> None:
         seat = self.state.to_move(board)
@@ -242,6 +324,14 @@ class Simulator:
         # _advance() already ran for this timestamp; a still-running game means this check was stale.
         pass
 
+    def _on_sitoff(self, gen: int) -> None:
+        if gen != self._sitoff_gen:
+            return
+        since = [self._pass_since[self.state.to_move(b)] for b in BOARDS]
+        if None in since or self.now < max(since) + self.sitoff_ms:
+            return
+        self._end(self._on_turn_result("sitoff_adjudicated"))
+
     def _on_deliver(self, m: Message) -> None:
         self._deliver(m)
 
@@ -314,7 +404,11 @@ class Simulator:
         g = self._gen[seat]
         if dec.kind == "move":
             cost = self._own_machine_ms(seat, wall_ms if self.charge_wall_time else max(0, int(dec.think_ms)))
+            cost = max(cost, self.min_move_ms)
+            if self.lag_max_ms:
+                cost += self._lag_rng.next() % (self.lag_max_ms + 1)
             self._status[seat] = _THINKING
+            self._pass_since[seat] = None
             if dec.borrow:
                 self._lend(PARTNER[seat], self.now + cost, dec.borrow_share)
             self._emit(
@@ -328,6 +422,7 @@ class Simulator:
                 borrowed=dec.borrow,
             )
             self._push(self.now + cost, _LAND, seat, g, dec, self.now)
+            self._arm_sitoff()
         else:
             planned = max(0, int(dec.think_ms))
             slowed = self._own_machine_ms(seat, planned) - planned
@@ -335,6 +430,8 @@ class Simulator:
             if dec.borrow:
                 self._lend(PARTNER[seat], self._sit_search_until[seat], dec.borrow_share)
             self._status[seat] = _WAITING
+            if self._pass_since[seat] is None:
+                self._pass_since[seat] = self.now
             if not self._sitting[seat]:
                 self._sitting[seat] = True
                 self._emit("stall", seat=seat, active=True, reason=dec.stall_reason)
@@ -342,6 +439,7 @@ class Simulator:
             # a delivery inside _send (delay 0) may have already woken us; only schedule if still waiting
             if self._status[seat] == _WAITING and self._gen[seat] == g:
                 self._push(self.now + max(1, int(dec.wait_ms) + slowed), _WAKE, seat, g)
+            self._arm_sitoff()
 
     def _on_land(self, seat: str, gen: int, dec: Decision, started: int) -> None:
         if gen != self._gen[seat] or self._status[seat] != _THINKING:
@@ -368,6 +466,7 @@ class Simulator:
             return
         self._stop_sitting(seat)
         self._status[seat] = _IDLE
+        self._pass_since[seat] = None
         self.plies += 1
         self._last_move_ms[board] = self.now
         self._emit("thinking", **end_fields)
@@ -391,10 +490,12 @@ class Simulator:
             self._end(res)
             return
         if self.plies >= self.max_plies:
-            self._end(GameResult(result="draw", reason="max_plies"))
+            self._end(self._on_turn_result("max_plies") if self.score_aborts
+                      else GameResult(result="draw", reason="max_plies"))
             return
         self._schedule_flag_check(board)
         self._wake_all_waiting()
         nxt = st.to_move(board)
         if self._status[nxt] == _IDLE:
             self._start_turn(nxt)
+        self._arm_sitoff()
