@@ -653,9 +653,10 @@ def fen_plies(fen: str) -> int | None:
 
 
 class ControllerSample(RecordedSample):
-    """A ``RecordedSample`` plus the spec v3 sidecar fields (shared contract 2) in ``extra``, merged into ``meta``.
-    A subclass, so arena/recorder.py needs no change to carry them; ``extra`` is a dict filled in place later
-    (``sit_ms`` once the seat moves or the game ends)."""
+    """A ``RecordedSample`` whose ``extra`` dict is filled in place after the search: ``sit_ms`` (how long the seat
+    then sat, known only once it moves or the game ends; the NamedTuple field cannot change) and the controller's
+    own keys ``search_kind`` / ``transition``. ``meta`` merges them into the sidecar line; every other spec v3 key
+    is a ``RecordedSample`` field in the recorder's format (seat-ordered float lists)."""
 
     def meta(self, game_id: int) -> dict:
         out = super().meta(game_id)
@@ -663,7 +664,14 @@ class ControllerSample(RecordedSample):
         return out
 
 
+_V3_FIELDS = set(getattr(RecordedSample, "_fields", ()))
+
+
 def make_sample(extra: dict, **fields) -> ControllerSample:
+    """A ControllerSample; spec v3 fields the recorder's RecordedSample does not have go to ``extra`` instead."""
+    for k in [k for k in fields if k not in _V3_FIELDS]:
+        v = fields.pop(k)
+        extra[k] = list(v) if isinstance(v, tuple) else v
     s = ControllerSample(**fields)
     s.extra = extra
     return s
@@ -1108,17 +1116,19 @@ class HivemindTeamController:
                 if len(res.sample) <= SAMPLE_TEAM_OFFSET or \
                         res.sample[SAMPLE_TEAM_OFFSET] != SAMPLE_TEAM_BYTE[self.team]:
                     raise ValueError(f"sample team byte does not match team {self.team}")
-                extra = {"nodes_requested": request + spent, "nodes_searched": searched,
-                         "sit_ms": None if passed else 0.0, "start_offset_ms": self.start_offset_ms,
-                         "pace": None if pace is None else [float(pace[s]) for s in CLOCK_SEATS],
-                         "clocks_ms": {s: float(obs.clocks_ms[s]) for s in CLOCK_SEATS},
-                         "elapsed_ms": None if elapsed is None else {b: float(v) for b, v in elapsed.items()},
+                # spec v3 contract 2: seat-ordered (A_white A_black B_white B_black) and (A, B) float tuples
+                extra = {"sit_ms": None if passed else 0.0,
                          "search_kind": "recheck" if recheck else ("full" if full else "fast"),
                          "transition": transition}
                 sample = make_sample(
                     extra, now_ms=obs.now_ms, seq=next(_SAMPLE_SEQ), buf=res.sample, seat=seat, team=self.team,
                     ply=obs.ply, fen_a=fen_a, fen_b=fen_b, clocks=dict(obs.clocks_ms), elapsed=elapsed,
-                    tree_ms=tree_ms, nodes=total, time_advantage=ahead)
+                    tree_ms=tree_ms, nodes=total, time_advantage=ahead,
+                    nodes_requested=request + spent, nodes_searched=searched,
+                    start_offset_ms=float(self.start_offset_ms),
+                    pace=None if pace is None else tuple(float(pace[s]) for s in CLOCK_SEATS),
+                    clocks_ms=tuple(float(obs.clocks_ms[s]) for s in CLOCK_SEATS),
+                    elapsed_ms=None if elapsed is None else (float(elapsed["A"]), float(elapsed["B"])))
                 self.samples.append(sample)
                 self._last_sample_pos[seat] = pos
                 if passed:

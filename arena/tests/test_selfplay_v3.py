@@ -180,7 +180,7 @@ def test_playout_cap_randomisation():
         assert stub.calls[-1]["options"]["OpeningNoise"] is full
     kept = len(ctl.samples)
     assert kept + ctl.unrecorded_fast == n and 0.15 * n < kept < 0.35 * n
-    assert all(s.extra["search_kind"] == "full" and s.extra["nodes_requested"] == 400 for s in ctl.samples)
+    assert all(s.extra["search_kind"] == "full" and s.nodes_requested == 400 for s in ctl.samples)
 
 
 # ---------------------------------------------------------------------------------------------- dedupe, sits
@@ -198,12 +198,13 @@ def test_pass_then_move_records_both_with_sit_length():
     first, last = ctl.samples
     assert first.extra["search_kind"] == "full" and not first.extra["transition"]
     assert last.extra["transition"] and ctl.transitions == 1 and ctl.repeats_dropped == 9
-    assert first.extra["clocks_ms"]["A_white"] == 59000.0 and last.extra["clocks_ms"]["A_white"] == 53000.0
+    assert first.clocks_ms[0] == 59000.0 and last.clocks_ms[0] == 53000.0  # A_white first
     assert first.extra["sit_ms"] == 6000.0 and last.extra["sit_ms"] == 0.0
     meta = first.meta(7)
-    for k in ("nodes_requested", "nodes_searched", "sit_ms", "start_offset_ms", "pace", "clocks_ms", "elapsed_ms"):
+    for k in ("nodes_requested", "nodes_searched", "sit_ms", "start_offset_ms", "clocks_ms"):
         assert k in meta
-    assert meta["gameId"] == 7 and meta["fenA"] == START
+    assert meta["clocks_ms"] == [59000.0, 58000.0, 57000.0, 56000.0] and meta["sit_ms"] == 6000.0
+    assert meta["gameId"] == 7 and meta["fenA"] == START and meta["nodes_requested"] == 118
 
 
 def test_clock_bucket_dedupe_keeps_one_per_bucket_and_finish_fills_sits():
@@ -218,7 +219,7 @@ def test_clock_bucket_dedupe_keeps_one_per_bucket_and_finish_fills_sits():
     assert all(s.extra["sit_ms"] is None for s in ctl.samples)
     ctl.finish(10_000)
     assert [s.extra["sit_ms"] for s in ctl.samples][0] == 9000.0
-    assert all(s.extra["start_offset_ms"] == -15000 for s in ctl.samples)
+    assert all(s.start_offset_ms == -15000 and s.meta(1)["start_offset_ms"] == -15000 for s in ctl.samples)
 
 
 def test_sit_recheck_skips_unchanged_wakes_and_does_not_block_partner():
@@ -329,3 +330,120 @@ def test_setups_pass_v3_options():
     finally:
         for p in split.values():
             p.close()
+
+
+# ---------------------------------------------------------------------------------------------- self-play specs
+
+def _args(*extra):
+    from arena.selfplay import parse_args
+    return parse_args(["--games", "200", "--out", "/nonexistent/x", "--seed", "3", *extra])
+
+
+def test_v2_regime_is_unchanged_by_default():
+    from arena.selfplay import controller_kw, make_specs
+
+    args = _args()
+    assert args.regime == "v2" and args.base_mix is None and not args.time_odds
+    spec = make_specs(args)[0]
+    assert spec["base_ms"] == 60000 and spec["max_plies"] == 400 and spec["k"] is None
+    kw = controller_kw(spec, "T1")
+    assert kw["k_range"] == (60.0, 300.0) and kw["jitter"] == (0.5, 2.0)
+    assert not {"charge", "pace", "pcr_p", "dedupe", "sit_recheck", "noise", "pace_mixture"} & set(kw)
+
+
+def test_time_odds_share_and_sign_balanced_over_200_specs():
+    from arena.selfplay import make_specs
+
+    specs = make_specs(_args("--regime", "v3"))
+    one = [s for s in specs if sum(1 for v in s["start_offsets"].values() if v) == 1]
+    both = [s for s in specs if all(v < 0 for v in s["start_offsets"].values())]
+    assert 0.15 < len(one) / 200 < 0.35 and 0.03 < len(both) / 200 < 0.18
+    signs = [v > 0 for s in one for v in s["start_offsets"].values() if v]
+    teams = [t for s in one for t, v in s["start_offsets"].items() if v]
+    assert 0.3 < sum(signs) / len(signs) < 0.7 and 0.3 < teams.count("T1") / len(teams) < 0.7
+    for s in specs:  # a start clock is never below a quarter of base
+        assert all(s["base_ms"] + v >= s["base_ms"] // 4 for v in s["start_offsets"].values())
+
+
+def test_base_time_mix_and_move1_budget_independent():
+    from arena.selfplay import controller_kw, make_specs
+
+    specs = make_specs(_args("--regime", "v3", "--games", "600"))
+    bases = [s["base_ms"] for s in specs]
+    share = {b: bases.count(b) / len(bases) for b in set(bases)}
+    assert set(share) == {60000, 120000, 180000, 300000} and 0.27 < share[180000] < 0.43
+    # move-1 budget = base / k = the think target, whatever the base
+    budgets = [s["base_ms"] / controller_kw(s, "T1")["k_range"][0] for s in specs]
+    assert all(200 - 1e-6 <= b <= 1000 + 1e-6 for b in budgets)
+    mean = sum(budgets) / len(budgets)
+    by_base = {b: [x for x, bb in zip(budgets, bases) if bb == b] for b in share}
+    assert all(abs(sum(v) / len(v) - mean) < 0.15 * mean for v in by_base.values())
+    xb, xm = sum(bases) / len(bases), mean
+    cov = sum((b - xb) * (x - xm) for b, x in zip(bases, budgets))
+    corr = cov / math.sqrt(sum((b - xb) ** 2 for b in bases) * sum((x - xm) ** 2 for x in budgets))
+    assert abs(corr) < 0.1
+    assert {s["max_plies"] for s in specs} == {400, 800, 1200, 2000}  # scaled by base / 60 s
+
+
+def test_explicit_flag_wins_over_regime_default():
+    from arena.selfplay import controller_kw, make_specs
+
+    spec = make_specs(_args("--regime", "v3", "--charge", "requested", "--time-odds", "off", "--pcr-p", "0.5"))[0]
+    kw = controller_kw(spec, "T2")
+    assert kw["charge"] == "requested" and kw["pcr_p"] == 0.5 and spec["start_offsets"] == {"T1": 0, "T2": 0}
+    assert kw["pace"] and kw["dedupe"] == "bucket" and kw["sit_recheck"] and kw["pace_mixture"]
+    assert make_specs(_args("--pace", "on"))[0]["v3"]["pace"] is True  # also under v2
+
+
+class CountingStub(StubProcess):
+    """LegalStub-like engine counting its own lifetime (acquire/release)."""
+
+    def __init__(self, seed):
+        from arena.tests.test_custom_engine import LegalStub
+        super().__init__(None)
+        self.inner = LegalStub(seed)
+        self.refs = 1
+        self.closed = False
+
+    def search(self, fen_a, fen_b, **kw):
+        self.calls.append(kw)
+        return self.inner.search(fen_a, fen_b, **kw)
+
+    def acquire(self):
+        self.refs += 1
+        return self
+
+    def release(self):
+        self.refs -= 1
+        if self.refs <= 0:
+            self.closed = True
+
+
+def test_v3_selfplay_end_to_end_persistent_engines(tmp_path):
+    from arena.recorder import read_sidecar
+    from arena.selfplay import parse_args, run
+
+    args = parse_args(["--games", "2", "--out", str(tmp_path / "v3"), "--regime", "v3", "--base-mix",
+                       "20000:1", "--max-plies", "240", "--seed", "5", "--no-events"])
+    made = []
+
+    def factory(team):
+        made.append(CountingStub(len(made) + 20))
+        return made[-1]
+
+    report = run(args, process_factory=factory)
+    r = report["results"]
+    assert r["games"] == 2 and r["errors"] == 0, report["games"]
+    assert len(made) == 2  # one engine per team for both games
+    assert all(s.closed for s in made)  # released at the end of the run
+    assert all(len(s.calls) > 10 for s in made)
+    calls = [c for s in made for c in s.calls]
+    assert all("pace" in c and c["options"]["FreePass"] for c in calls)
+    assert r["nodes_requested"] > 0 and "stalls" in r and r["base_ms"] == {"20000": 2}
+    metas = [m for c in sorted((tmp_path / "v3" / "training_data").glob("*.hvm")) for m in read_sidecar(str(c))]
+    assert len(metas) == r["samples"] > 0
+    for m in metas:
+        assert m["sit_ms"] is not None and m["sit_ms"] >= 0 and len(m["pace"]) == 4
+        assert m["search_kind"] in ("full", "fast", "recheck") and m["nodes_searched"] >= 1
+    assert any(m["search_kind"] == "full" for m in metas)
+    assert all(m["search_kind"] != "fast" or m["transition"] for m in metas)  # fast ones only as transitions
