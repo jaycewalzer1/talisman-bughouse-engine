@@ -166,14 +166,38 @@ With the plane held, it02's p(pass) is 0.234 at -30 s and 0.232 at +30 s: flat, 
 diagonal dependence that remains is it04's (TimeAdvantage), and training has flattened it (ratio +30/-30: 5.4 for
 it04, 2.2 for it01, 1.5 for it02).
 
+## 6. Value and WDL heads against the outcome (`tools/pass_stats.py --model`)
+
+The networks' own heads (not the search's root_q) on every shard sample, one row per sample, the sample team's view,
+outcome in {-1, 0, +1}. The WDL head is ordered (loss, draw, win): hivemind trains it on `y_wdl = value + 1`
+(`training/data_loaders.py:259`); read as (win, draw, loss) every WDL number comes out inverted. For all four nets
+the value output equals W - L to 4 decimals (WDL score MSE = value MSE), so the two heads say the same thing and
+only the value numbers are given. MSE / sign agreement on decisive samples:
+
+| shards | it04 (= v2) | it01 | it02 | in-sample for |
+|---|---|---|---|---|
+| it01 round (1,379) | 0.930 / 0.712 | 0.659 / 0.765 | 0.247 / 0.913 | it01 (853 train, 526 val), it02 (replay) |
+| it02 round (1,724) | 0.548 / 0.807 | **0.549 / 0.786** | 0.212 / 0.937 | it02 |
+| both, by men on boards 60 / 50-59 / 40-49 / 30-39 (sign) | 0.51 / 0.70 / 0.80 / 0.99 | 0.56 / 0.71 / 0.87 / 0.85 | 0.64 / 0.90 / 0.98 / 1.00 | |
+
+The only clean out-of-sample row is it01 on the it02-round shards: MSE 0.549 against it04's 0.548, sign agreement
+0.786 against 0.807. One local1h round bought nothing on unseen games, which matches it01's validation value
+accuracy of 0.54 in the log; it02's 0.21-0.25 is fit to games it trained on (it01 replay plus its own round), not
+evidence of a better head. it01 also turned the sign wrong in the sparse 30-39 bucket (mean value +0.09 where the
+outcome mean is -0.32; it04 0.99 sign agreement there, it01 0.85), a 435-sample bucket the it01 round had few of.
+Draw mass is 0.4-2% for every net, and none of the 24 local1h games was drawn (14 flags, 10 mates), so nothing in
+these shards can test the draw column.
+
+Per-run files: `runs/wph/pass_prior_<net>.txt` (both rounds, all buckets) and `runs/wph/calib_<round>shards_<net>.txt`.
+
 ## Not done or limited
 
 - Flags while sitting vs moving in **self-play**: self-play ran with `no_events`, so only the 12 gate games give it.
   Recording events in self-play (WP-C/WP-B) or a `sit_ms` sidecar field (spec v3 contract 2) would cover it.
 - Sit-length per iteration counts sit spells in the gate only; the shards cannot show sit length because the dedupe
   drops repeat searches (audit 1.3 item 12).
-- WDL calibration uses root_q (search) against the outcome; the net's own value and wdl heads were not calibrated
-  separately on the shards.
+- The net-head calibration (section 6) has one clean out-of-sample cell (it01 on the it02 round, 1,724 samples from
+  12 games, so neighbouring samples are strongly correlated); the material buckets under 30 men have 19 samples.
 - Theory 02 2.8 case 1 (partop in check cannot sit back) and case 4 (flag race plan) have no positions yet; the set
   has cases 2 and 3, the 2.7 sit-off for a piece, and a no-source control.
 - The upstream twin-s-clock arm was not measured (no build here); `regression.py run --model` takes any ONNX with
