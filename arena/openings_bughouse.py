@@ -35,7 +35,7 @@ import os
 import chess
 import chess.variant
 
-from arena.openings import OpeningPair
+from arena.openings import OPENING_SETS, OpeningPair
 
 # (name, SAN moves, source note). Every line has an even ply count (White to move on its board).
 CANON: tuple[tuple[str, str, str], ...] = (
@@ -161,6 +161,7 @@ BUGHOUSE_SETS: dict[str, tuple[OpeningPair, ...]] = {
     "chess_controls": CONTROL_PAIRS,
     "bare": (BARE_PAIR,),
 }
+OPENING_SETS.update(BUGHOUSE_SETS)
 
 
 def clusters(pairs: tuple[OpeningPair, ...]) -> int:

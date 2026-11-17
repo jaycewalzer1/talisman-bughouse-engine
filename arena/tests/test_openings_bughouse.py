@@ -71,3 +71,12 @@ def test_captures_feed_the_partner_on_the_other_board():
     a = chess.variant.CrazyhouseBoard(f["A"])
     assert len(a.pockets[chess.BLACK]) == 1 and len(a.pockets[chess.WHITE]) == 0
     assert "[p]" in f["A"]
+
+
+def test_either_import_order_registers_the_sets():
+    import subprocess
+    import sys
+
+    for first in ("arena.openings_bughouse", "arena.openings"):
+        code = f"import {first}; from arena.openings import OPENING_SETS; assert 'bughouse' in OPENING_SETS"
+        subprocess.run([sys.executable, "-c", code], check=True)

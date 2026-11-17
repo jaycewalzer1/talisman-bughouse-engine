@@ -125,6 +125,10 @@ def paired_schedule(n_games: int, seed: int = 0,
 
 # Bughouse opening sets (audit WP-G): "bughouse" (canon from theory 05 + 3 chess controls + 25% bare start),
 # "bughouse_canon", "chess_controls", "bare". Defined in arena/openings_bughouse.py, which imports OpeningPair above.
-from arena.openings_bughouse import BUGHOUSE_SETS  # noqa: E402
+# Either module may be imported first: openings_bughouse registers its sets itself when it finishes loading.
+import sys as _sys  # noqa: E402
 
-OPENING_SETS.update(BUGHOUSE_SETS)
+if "arena.openings_bughouse" not in _sys.modules:
+    from arena.openings_bughouse import BUGHOUSE_SETS  # noqa: E402
+
+    OPENING_SETS.update(BUGHOUSE_SETS)
