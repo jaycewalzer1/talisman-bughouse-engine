@@ -4,8 +4,8 @@ Two measurements on a sample of recorded positions (chunk ``.pos.jsonl`` sidecar
 
 1. **dV per +-10 s per clock, by material density.** Each of the four clocks (by role from the searching team's
    view: ``ours_A``, ``theirs_A``, ``ours_B``, ``theirs_B``) is moved by +10 s and by -10 s (floored at 100 ms) and
-   dV = V(changed) - V(recorded) is averaged per role and per material bucket (men on both boards and in all
-   pockets, kings excluded; the start position has 60).
+   dV = V(changed) - V(recorded) is averaged per role and per material bucket (men on both boards, kings and
+   pockets excluded; the start position has 60).
 2. **Pass rate vs diagonal.** On every board where the team is on turn, the seat's diagonal (own clock minus the
    partner's opponent's) is set to each value of ``--diagonals`` by moving those two clocks symmetrically about
    their mean; reported per diagonal: mean raw p(pass) over the legal moves plus the pass slot, and the share of

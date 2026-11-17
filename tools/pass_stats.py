@@ -9,7 +9,7 @@ Shards (``.hvm`` chunks plus their ``.pos.jsonl`` sidecars, as arena.selfplay wr
   (own clock minus the partner's opponent's clock) and by the node count. With ``--model``, also the raw network's
   pass prior on the same positions (softmax over the legal moves plus the pass slot).
 * Value labels by game end reason (from the run's ``summary.json``): samples, mean |root_q - outcome|, and the
-  root_q -> outcome calibration by material bucket (pieces on both boards and in all pockets, kings excluded).
+  root_q -> outcome calibration by material bucket (men on both boards, kings and pockets excluded).
 
 Event logs (``game_*.jsonl``, e.g. the gate's): decisions, counted as every move and every start of a sit spell
 (a ``stall`` event that turns a seat from moving to sitting; re-searches inside a spell are not decisions), with
@@ -42,7 +42,7 @@ from arena.recorder import PASS_POLICY_INDEX, TEAM_OF_BYTE, read_chunk, read_sid
 PASS_INDEX = 0  # marginal slot of a pass; PASS_POLICY_INDEX (4672) marks a pass inside a joint entry
 DIAG_BINS_S = (-math.inf, -30, -10, -2, 2, 10, 30, math.inf)
 NODE_BINS = (0, 32, 64, 128, 256, 512, math.inf)
-MATERIAL_BINS = (0, 30, 40, 50, 60, math.inf)  # men on both boards and in all pockets, kings excluded (start: 60)
+MATERIAL_BINS = (0, 30, 40, 50, 60, math.inf)  # men on both boards, kings and pockets excluded (start: 60)
 
 
 def diag_sign(ms: float) -> str:
@@ -83,11 +83,12 @@ def seat_diagonal(clocks: dict, seat: str) -> int:
 
 
 def material(fen_a: str, fen_b: str) -> int:
+    """Men on both boards, kings and pockets excluded (60 at the start). Bughouse conserves material (a capture
+    moves a piece to a pocket), so density on the boards, not the total, is what changes over a game."""
     n = 0
     for fen in (fen_a, fen_b):
-        board, _, rest = fen.split(" ")[0].partition("[")
+        board = fen.split(" ")[0].split("[")[0]
         n += sum(1 for ch in board if ch.isalpha() and ch.lower() != "k")
-        n += sum(1 for ch in rest if ch.isalpha())
     return n
 
 
