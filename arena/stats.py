@@ -12,9 +12,97 @@ import random
 from collections import defaultdict
 from typing import Callable, Iterable, Sequence
 
-from arena.interfaces import TEAM_OF
+import chess
+import chess.variant
+
+from arena.interfaces import BOARD_OF, OPPONENT, PARTNER, SEATS, TEAM_OF
 
 TEAMS = ("T1", "T2")
+SIGNS = ("ahead", "behind")  # diagonal clock (own minus partner's opponent) > 0, or <= 0
+
+
+def _side_to_move(fen: str | None) -> str:
+    parts = (fen or "").split()
+    return "black" if len(parts) > 1 and parts[1] == "b" else "white"
+
+
+def _in_check(fen: str | None) -> bool:
+    try:
+        return chess.variant.CrazyhouseBoard(fen).is_check()
+    except Exception:  # not a parsable FEN (test fakes): unknown, count as no check
+        return False
+
+
+def _clock_metrics(events: list[dict], start: dict, end: dict | None) -> dict:
+    """Replay the clocks from game_start and the move events (each carries the clocks at landing; between
+    events only the seat on turn on each board loses time) and derive, per team:
+      turns_<sign>, sits_<sign>, sit_ms_<sign>: turns, turns with a sit spell, and total sit length, bucketed by
+          the sign of the seat's diagonal clock when the turn began;
+    and per game: flag_while ("sitting" | "moving" | None) for the flagged seat, flag_other_check (the board
+    that did not flag had its side to move in check when the flag fell)."""
+    clocks = {s: int((start.get("clocks") or {}).get(s, 0)) for s in SEATS}
+    fens = dict(start.get("fens") or {})
+    on_turn = {b: f"{b}_{_side_to_move(fens.get(b))}" for b in ("A", "B")}
+    t_ref = int(start.get("ts", 0))
+
+    def now_clocks(ts: int) -> dict:
+        out = dict(clocks)
+        for seat in on_turn.values():
+            out[seat] = max(0, out[seat] - (ts - t_ref))
+        return out
+
+    agg = {t: {f"{k}_{sg}": 0 for k in ("turns", "sits", "sit_ms") for sg in SIGNS} for t in TEAMS}
+    turn_sign: dict[str, str] = {}
+    sit_start: dict[str, int] = {}
+    thinking: set[str] = set()
+
+    def begin_turn(seat: str, ts: int) -> None:
+        c = now_clocks(ts)
+        sign = "ahead" if c[seat] - c[OPPONENT[PARTNER[seat]]] > 0 else "behind"
+        turn_sign[seat] = sign
+        agg[TEAM_OF[seat]][f"turns_{sign}"] += 1
+
+    def end_sit(seat: str, ts: int) -> None:
+        if seat in sit_start and seat in turn_sign:
+            agg[TEAM_OF[seat]][f"sit_ms_{turn_sign[seat]}"] += ts - sit_start.pop(seat)
+        sit_start.pop(seat, None)
+
+    for seat in on_turn.values():
+        begin_turn(seat, t_ref)
+    for e in events:
+        typ, ts = e.get("type"), int(e.get("ts", 0))
+        if typ == "thinking":
+            (thinking.add if e.get("phase") == "start" else thinking.discard)(e.get("seat"))
+        elif typ == "stall":
+            seat = e.get("seat")
+            if e.get("active"):
+                if seat not in sit_start:
+                    sit_start[seat] = ts
+                    if seat in turn_sign:
+                        agg[TEAM_OF[seat]][f"sits_{turn_sign[seat]}"] += 1
+            else:
+                end_sit(seat, ts)
+        elif typ == "move":
+            seat, board = e.get("seat"), e.get("board") or BOARD_OF.get(e.get("seat"), "A")
+            end_sit(seat, ts)
+            thinking.discard(seat)
+            turn_sign.pop(seat, None)
+            clocks.update({s: int(v) for s, v in (e.get("clocks") or {}).items()})
+            t_ref = ts
+            fens[board] = e.get("fen")
+            on_turn[board] = OPPONENT[seat]
+            begin_turn(on_turn[board], ts)
+
+    flag_while = flag_other_check = None
+    if end is not None and end.get("reason") == "flag" and end.get("loserSeat"):
+        loser = end["loserSeat"]
+        flag_while = "sitting" if loser in sit_start and loser not in thinking else "moving"
+        other = "B" if end.get("board") == "A" else "A"
+        flag_other_check = _in_check(fens.get(other))
+    end_ts = int(end.get("ts", t_ref)) if end else t_ref
+    for seat in list(sit_start):
+        end_sit(seat, end_ts)
+    return {"teams": agg, "flag_while": flag_while, "flag_other_check": flag_other_check}
 
 
 def summarize_game(events: Iterable[dict]) -> dict:
@@ -25,8 +113,12 @@ def summarize_game(events: Iterable[dict]) -> dict:
       think_ms       total think time of those decisions
       nodes          total nodes searched
       moves, messages, stalls, captures
+    Per-team clock fields (under "clock_teams", kept apart so "teams" stays as older summaries have it):
+      turns_ahead/behind, sits_ahead/behind, sit_ms_ahead/behind   turns, turns with a sit, total sit length,
+                     by the sign of the seat's diagonal clock (own minus partner's opponent) at turn start
     Top-level: game_id, setup, result, reason, board, loser_seat, loser_team, plies, duration_ms,
-    flag (bool), seats (from game_start).
+    flag (bool), seats (from game_start), flag_while ("sitting"/"moving"/None: what the flagged seat was doing),
+    flag_other_check (bool/None: the other board's side to move was in check when the flag fell).
     """
     events = list(events)
     start = next((e for e in events if e.get("type") == "game_start"), {})
@@ -52,6 +144,7 @@ def summarize_game(events: Iterable[dict]) -> dict:
         elif typ == "stall" and e.get("active"):
             teams[TEAM_OF[e["seat"]]]["stalls"] += 1
 
+    cm = _clock_metrics(events, start, end)
     loser_seat = end.get("loserSeat") if end else None
     reason = end.get("reason") if end else "aborted"
     return {
@@ -67,6 +160,9 @@ def summarize_game(events: Iterable[dict]) -> dict:
         "plies": teams["T1"]["moves"] + teams["T2"]["moves"],
         "duration_ms": max((int(e.get("ts", 0)) for e in events), default=0),
         "teams": teams,
+        "clock_teams": cm["teams"],
+        "flag_while": cm["flag_while"],
+        "flag_other_check": cm["flag_other_check"],
     }
 
 
@@ -79,19 +175,30 @@ def contender_row(summary: dict) -> dict:
     bt = "T2" if ct == "T1" else "T1"
     res = summary["result"]
     score = 1.0 if res == ct else 0.5 if res == "draw" else 0.0
+    flag = bool(summary.get("flag"))
     row = {
         "cluster": summary.get("opening_id", summary.get("game_id")),
         "score": score,
-        "flag": 1.0 if summary.get("flag") else 0.0,
-        "c_flagged": 1.0 if summary.get("flag") and summary.get("loser_team") == ct else 0.0,
-        "b_flagged": 1.0 if summary.get("flag") and summary.get("loser_team") == bt else 0.0,
+        "flag": 1.0 if flag else 0.0,
+        "draw": 1.0 if res == "draw" else 0.0,
+        "sitoff": 1.0 if summary.get("reason") == "sitoff_adjudicated" else 0.0,
     }
-    for prefix, team in (("c", ct), ("b", bt)):
+    for prefix, team, other in (("c", ct, bt), ("b", bt, ct)):
         t = summary["teams"][team]
+        lost_on_flag = flag and summary.get("loser_team") == team
+        row[f"{prefix}_flagged"] = 1.0 if lost_on_flag else 0.0
+        row[f"{prefix}_flagged_sitting"] = 1.0 if lost_on_flag and summary.get("flag_while") == "sitting" else 0.0
+        row[f"{prefix}_flagged_moving"] = 1.0 if lost_on_flag and summary.get("flag_while") == "moving" else 0.0
+        won_on_flag = flag and summary.get("loser_team") == other
+        row[f"{prefix}_flag_win_check"] = 1.0 if won_on_flag and summary.get("flag_other_check") else 0.0
         row[f"{prefix}_decisions"] = t["decisions"]
         row[f"{prefix}_think_ms"] = t["think_ms"]
         row[f"{prefix}_nodes"] = t["nodes"]
         row[f"{prefix}_messages"] = t["messages"]
+        ct_ = (summary.get("clock_teams") or {}).get(team, {})  # absent in older summaries: reads as 0
+        for k in ("turns", "sits", "sit_ms"):
+            for sg in SIGNS:
+                row[f"{prefix}_{k}_{sg}"] = ct_.get(f"{k}_{sg}", 0)
     return row
 
 
@@ -160,7 +267,22 @@ METRICS: dict[str, Statistic] = {
     "baseline_nodes_per_decision": ratio_of("b_nodes", "b_decisions"),
     "contender_messages_per_game": mean_of("c_messages"),
     "baseline_messages_per_game": mean_of("b_messages"),
+    "draw_rate": mean_of("draw"),
+    "sitoff_rate": mean_of("sitoff"),  # games ended by sit-off adjudication
+    # flags split by what the flagged seat was doing: sitting (waiting) or moving (thinking or about to)
+    "contender_flagged_sitting": mean_of("c_flagged_sitting"),
+    "contender_flagged_moving": mean_of("c_flagged_moving"),
+    "baseline_flagged_sitting": mean_of("b_flagged_sitting"),
+    "baseline_flagged_moving": mean_of("b_flagged_moving"),
+    # games won on time while the other board's side to move was in check
+    "contender_flag_win_other_check": mean_of("c_flag_win_check"),
+    "baseline_flag_win_other_check": mean_of("b_flag_win_check"),
 }
+for _p, _who in (("c", "contender"), ("b", "baseline")):
+    for _sg in SIGNS:
+        # share of turns with a sit, and mean sit length, by the sign of the diagonal clock at turn start
+        METRICS[f"{_who}_pass_rate_{_sg}"] = ratio_of(f"{_p}_sits_{_sg}", f"{_p}_turns_{_sg}")
+        METRICS[f"{_who}_sit_ms_{_sg}"] = ratio_of(f"{_p}_sit_ms_{_sg}", f"{_p}_sits_{_sg}")
 
 
 def compute_stats(summaries: Sequence[dict], *, n_boot: int = 2000, seed: int = 0) -> dict:
@@ -208,5 +330,17 @@ def format_table(stats: dict, contender: str = "contender", baseline: str = "bas
         f"{'nodes/game':<22}{ci('contender_nodes_per_game', '{:.0f}'):<36}{ci('baseline_nodes_per_game', '{:.0f}')}",
         f"{'messages/game':<22}{ci('contender_messages_per_game', '{:.1f}'):<36}"
         f"{ci('baseline_messages_per_game', '{:.1f}')}",
+        f"{'flagged while sitting':<22}{ci('contender_flagged_sitting'):<36}{ci('baseline_flagged_sitting')}",
+        f"{'flagged while moving':<22}{ci('contender_flagged_moving'):<36}{ci('baseline_flagged_moving')}",
+        f"{'flag win, other chk':<22}{ci('contender_flag_win_other_check'):<36}"
+        f"{ci('baseline_flag_win_other_check')}",
+        f"{'pass rate, ahead':<22}{ci('contender_pass_rate_ahead'):<36}{ci('baseline_pass_rate_ahead')}",
+        f"{'pass rate, behind':<22}{ci('contender_pass_rate_behind'):<36}{ci('baseline_pass_rate_behind')}",
+        f"{'sit ms, ahead':<22}{ci('contender_sit_ms_ahead', '{:.0f}'):<36}{ci('baseline_sit_ms_ahead', '{:.0f}')}",
+        f"{'sit ms, behind':<22}{ci('contender_sit_ms_behind', '{:.0f}'):<36}"
+        f"{ci('baseline_sit_ms_behind', '{:.0f}')}",
+        "",
+        f"{'draw rate':<28}{ci('draw_rate')}",
+        f"{'sit-off adjudicated':<28}{ci('sitoff_rate')}",
     ]
     return "\n".join(lines)

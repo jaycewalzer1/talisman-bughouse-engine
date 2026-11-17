@@ -712,3 +712,66 @@ def test_rules_v3_profile_runs_a_real_game():
     for seat in SEATS:
         t = _landings(sim.events, seat)
         assert all(b - a >= 100 for a, b in zip(t, t[1:]))
+
+
+# ---------------------------------------------------------------------------------------------- stats metrics
+
+from arena.stats import METRICS, compute_stats, format_table, summarize_game  # noqa: E402
+
+
+def test_stats_sitting_flag_and_pass_rate_by_diagonal_sign():
+    state = FakeState()
+    state.clocks_ms["B_white"] = 50_000  # A_white's diagonal (A_white - B_white) is +10 s: ahead
+    scripts = {"A_white": _all_wait, "B_white": lambda obs: mv(obs.legal_moves[0], 100),
+               "B_black": lambda obs: mv(obs.legal_moves[0], 100)}
+    sim, _, _ = make(state, scripts, max_plies=10_000)
+    res = sim.run()
+    assert res.loser_seat == "A_white" and res.reason == "flag"
+    s = summarize_game(sim.events)
+    assert s["flag_while"] == "sitting" and s["flag_other_check"] is False  # FakeState FENs: no check known
+    t1, t2 = s["clock_teams"]["T1"], s["clock_teams"]["T2"]
+    assert (t1["turns_ahead"] >= 1, t1["sits_ahead"], t1["sit_ms_ahead"]) == (True, 1, 60_000)
+    # B_white starts 10 s behind A_white and never sits
+    assert t2["turns_behind"] >= 1 and t2["sits_behind"] == 0 and t2["sits_ahead"] == 0
+    s.update(contender_team="T2", opening_id=0)
+    m = compute_stats([s], n_boot=10)["metrics"]
+    assert m["baseline_flagged_sitting"]["est"] == 1.0 and m["baseline_flagged_moving"]["est"] == 0.0
+    assert m["baseline_pass_rate_ahead"]["est"] == 1.0 and m["baseline_sit_ms_ahead"]["est"] == 60_000
+    assert m["contender_pass_rate_behind"]["est"] == 0.0
+    assert set(METRICS) <= set(m) and "pass rate, ahead" in format_table(compute_stats([s], n_boot=10))
+
+
+def test_stats_flag_while_moving():
+    sim, _, _ = make(FakeState(base_ms=500), {"A_white": [mv("a2a3", 600)], "B_white": [mv("a2a3", 100)],
+                                              "B_black": [mv("a2a3", 1000)]})
+    sim.run()
+    s = summarize_game(sim.events)
+    assert s["loser_seat"] == "A_white" and s["flag_while"] == "moving"
+
+
+def test_stats_flag_win_while_the_other_board_is_in_check():
+    start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+    checked = "rnbqk1nr/pppp1ppp/8/4p3/1b1P4/8/PPP1PPPP/RNBQKBNR[] w KQkq - 1 3"  # white in check on B
+    clocks = {s: 60000 for s in SEATS}
+    ev = [
+        {"type": "game_start", "seq": 0, "ts": 0, "game_id": "g", "setup": "t", "seats": {},
+         "fens": {"A": start, "B": checked}, "clocks": clocks},
+        {"type": "stall", "seq": 1, "ts": 0, "seat": "B_white", "active": True, "reason": "need_piece"},
+        {"type": "game_end", "seq": 2, "ts": 60000, "result": "T2", "reason": "flag", "board": "A",
+         "loserSeat": "A_white"},
+    ]
+    s = summarize_game(ev)
+    assert s["flag_other_check"] is True and s["flag_while"] == "moving"
+    assert s["clock_teams"]["T2"]["sit_ms_behind"] == 60000  # B_white level on the diagonal: "behind"
+    s.update(contender_team="T2", opening_id=0)
+    m = compute_stats([s], n_boot=10)["metrics"]
+    assert m["contender_flag_win_other_check"]["est"] == 1.0 and m["baseline_flag_win_other_check"]["est"] == 0.0
+
+
+def test_stats_reads_older_summaries_without_clock_fields():
+    s = summarize_game([{"type": "game_start", "ts": 0},
+                        {"type": "game_end", "ts": 5, "result": "draw", "reason": "double_flag"}])
+    s.pop("clock_teams")
+    s.update(contender_team="T1", opening_id=0)
+    m = compute_stats([s], n_boot=10)["metrics"]
+    assert m["draw_rate"]["est"] == 1.0 and m["score"]["est"] == 0.5
