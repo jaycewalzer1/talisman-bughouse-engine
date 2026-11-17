@@ -83,7 +83,8 @@ def read_cpu(path: str) -> dict | None:
 def stage_report(run: str, row: dict, cpus: int | None) -> dict:
     name, workers = row["stage"], int(row["workers"])
     wall = max(1.0, float(row["end"]) - float(row["start"]))
-    rep = {"stage": name, "base_s": int(row["base_ms"]) / 1000, "workers": workers, "games_asked": int(row["games"]),
+    base_s = None if row["base_ms"] == "mix" else int(row["base_ms"]) / 1000  # None = the production mix
+    rep = {"stage": name, "base_s": base_s, "workers": workers, "games_asked": int(row["games"]),
            "exit": int(row["exit"]), "wall_s": wall}
     summary_path = os.path.join(run, name, "summary.json")
     if os.path.isfile(summary_path):
@@ -109,16 +110,21 @@ def stage_report(run: str, row: dict, cpus: int | None) -> dict:
     return rep
 
 
-def mix_rate(stages: list[dict]) -> float | None:
-    """Games per GPU-hour at the self-play base-time mix, from the two stages with the most base times at one worker
-    count (6 preferred): per-game GPU time is taken as linear in base time (a + b x base) and averaged over
-    the mix. With one base time only, that stage's steady rate scaled by base time (a rough upper-bound guess)."""
+def mix_rate(stages: list[dict]) -> tuple[float | None, str]:
+    """Games per GPU-hour at the self-play base-time mix and how it was found. A "mix" stage (base time drawn from the
+    production mix) is used as measured (6 workers preferred). Otherwise from the two stages with the most base times
+    at one worker count (6 preferred): per-game GPU time is taken as linear in base time (a + b x base) and averaged
+    over the mix. With one base time only, that stage's steady rate scaled by base time (a rough guess)."""
+    mixed = [s for s in stages if s["base_s"] is None and s.get("games_per_gpu_hour_steady")]
+    if mixed:
+        best = max(mixed, key=lambda s: (s["workers"] == 6, s.get("games") or 0))
+        return best["games_per_gpu_hour_steady"], f"measured on stage {best['stage']}"
     by_workers: dict[int, dict[float, float]] = {}
     for s in stages:
-        if s.get("games_per_gpu_hour_steady"):
+        if s.get("games_per_gpu_hour_steady") and s["base_s"] is not None:
             by_workers.setdefault(s["workers"], {})[s["base_s"]] = 3600 / s["games_per_gpu_hour_steady"]
     if not by_workers:
-        return None
+        return None, ""
     workers = max(by_workers, key=lambda w: (len(by_workers[w]), w == 6))
     pts = sorted(by_workers[workers].items())
     if len(pts) >= 2:
@@ -126,10 +132,12 @@ def mix_rate(stages: list[dict]) -> float | None:
         b = (y1 - y0) / (x1 - x0)
         a = y0 - b * x0
         cost = sum(w * (a + b * base) for base, w in BASE_MIX.items())
+        how = f"interpolated from {pts[0][0]:.0f} s and {pts[-1][0]:.0f} s at {workers} workers"
     else:
         x0, y0 = pts[0]
         cost = sum(w * y0 * base / x0 for base, w in BASE_MIX.items())
-    return round(3600 / cost, 1) if cost > 0 else None
+        how = f"ROUGH: one base time only ({x0:.0f} s), scaled by base time"
+    return (round(3600 / cost, 1), how) if cost > 0 else (None, "")
 
 
 def fmt(v, unit="") -> str:
@@ -141,6 +149,7 @@ def main(argv=None) -> int:
     ap.add_argument("run", help="runs/cluster/bench_selfplay_<job>")
     ap.add_argument("--cpus", type=int, default=None, help="cores allocated to the job")
     ap.add_argument("--model", default=None, help="network used (recorded in report.json)")
+    ap.add_argument("--regime", default=None, help="self-play regime used (recorded in report.json)")
     args = ap.parse_args(argv)
 
     with open(os.path.join(args.run, "stages.tsv")) as f:
@@ -185,12 +194,10 @@ def main(argv=None) -> int:
         if b >= CPU_BOUND and utils and max(utils) < UTIL_BATCHING:
             decisions.append("low GPU use on CPU-bound stages says little about batching: rerun with sbatch -n16 and "
                              "decide on the batching server from that run")
-    rate = mix_rate(stages)
+    rate, how = mix_rate(stages)
     if rate:
         hours = round(ROUND_GAMES / rate)
-        rough = "" if len({s["base_s"] for s in stages if s.get("games_per_gpu_hour_steady")}) >= 2 else \
-            " (ROUGH: one base time only, scaled by base time)"
-        decisions.append(f"games per GPU-hour at the base-time mix {BASE_MIX}{rough}: {rate} -> {ROUND_GAMES} games cost "
+        decisions.append(f"games per GPU-hour at the base-time mix {BASE_MIX} ({how}): {rate} -> {ROUND_GAMES} games cost "
                          f"~{hours} GPU-hours per round" + (
                              f"; under {MIN_GAMES_PER_HOUR}: halve the training-round count, not the ablations"
                              if rate < MIN_GAMES_PER_HOUR else ""))
@@ -202,8 +209,8 @@ def main(argv=None) -> int:
                              f"(x{w[hi] / w[lo]:.2f}); near x{hi / lo:.1f} means just run more workers")
     print("\n" + "\n".join("* " + d for d in decisions))
 
-    report = {"run": args.run, "model": args.model, "cpus": args.cpus, "stages": stages,
-              "games_per_gpu_hour_mix": rate, "decisions": decisions}
+    report = {"run": args.run, "model": args.model, "regime": args.regime, "cpus": args.cpus, "stages": stages,
+              "games_per_gpu_hour_mix": rate, "games_per_gpu_hour_mix_how": how, "decisions": decisions}
     with open(os.path.join(args.run, "report.json"), "w") as f:
         json.dump(report, f, indent=2)
     print(f"\nwrote {os.path.join(args.run, 'report.json')}")
