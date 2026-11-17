@@ -3,13 +3,17 @@
 //
 // usage: planes_dump <model.onnx> <out.bin>   (records on stdin)
 // stdin, one record per line, tab separated:
-//   team(w|b)  time_advantage(0|1)  <fenA>|<fenB>  moves  [clocks]
-// where moves is space separated "<board>:<uci>" (may be empty) and the
+//   team(w|b)  time_advantage(0|1)  <fenA>|<fenB>  moves  [clocks]  [elapsed]
+// where moves is space separated "<board>:<uci>" (may be empty), the
 // optional clocks field is "<aw> <ab> <bw> <bb>" in ms (Board::set_clocks,
-// as UCI 'position ... clocks'). Built against build-clock (planes_dump_clock)
-// the planes have 41 channels per board.
+// as UCI 'position ... clocks') and the optional elapsed field is "<ea> <eb>"
+// in ms (Board::set_elapsed, as UCI '... elapsed'; only applied with clocks).
+// Built against build-clock (planes_dump_clock) the planes have 43 channels
+// per board (spec v2).
 // out.bin, per record, float32: planes[NB_INPUT_VALUES], value, wdl[3],
-// moves_left, pi_a[NB_POLICY_VALUES], pi_b[NB_POLICY_VALUES].
+// moves_left, pi_a[NB_POLICY_VALUES], pi_b[NB_POLICY_VALUES], and in the
+// clock build two more floats: the think_gain logits for A and B (0 when the
+// network has no think_gain output).
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -90,6 +94,15 @@ int main(int argc, char** argv) {
                 return 1;
             }
             board.set_clocks(aw, ab, bw, bb);
+            if (fields.size() > 5 && !fields[5].empty()) {
+                std::stringstream elapsed(fields[5]);
+                int64_t ea, eb;
+                if (!(elapsed >> ea >> eb)) {
+                    std::cerr << "record " << record << ": bad elapsed '" << fields[5] << "'\n";
+                    return 1;
+                }
+                board.set_elapsed(ea, eb);
+            }
         }
 
         board_to_planes(board, planes.data(), team, timeAdvantage);
@@ -103,6 +116,14 @@ int main(int argc, char** argv) {
         out.write(reinterpret_cast<const char*>(&movesLeft), sizeof(float));
         out.write(reinterpret_cast<const char*>(piA.data()), piA.size() * sizeof(float));
         out.write(reinterpret_cast<const char*>(piB.data()), piB.size() * sizeof(float));
+#ifdef HIVEMIND_CLOCK_PLANES
+        float thinkGain[2] = {0.0f, 0.0f};
+        if (engine.hasThinkGain() && !engine.evaluateThinkGain(planes.data(), thinkGain)) {
+            std::cerr << "record " << record << ": think_gain failed\n";
+            return 1;
+        }
+        out.write(reinterpret_cast<const char*>(thinkGain), sizeof(thinkGain));
+#endif
         ++record;
     }
     std::cerr << "wrote " << record << " records\n";

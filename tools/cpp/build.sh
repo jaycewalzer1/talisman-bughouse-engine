@@ -14,7 +14,7 @@ for tool in policy_dump planes_dump; do
     -L"$ORT/lib" -lonnxruntime -Wl,-rpath,"$ORT/lib" \
     -o "$ROOT/tools/cpp/$tool"
 done
-# planes_dump_clock: the same dump against the hivemind-clock build (41 channels per board).
+# planes_dump_clock: the same dump against the hivemind-clock build (43 channels per board, spec v2).
 if [ -f "$E/build-clock/libhivemind_lib.a" ]; then
   clang++ -std=gnu++2b -Ofast -fno-finite-math-only -march=native -flto \
     -Wno-deprecated-ofast \

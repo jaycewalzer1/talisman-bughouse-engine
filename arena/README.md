@@ -145,10 +145,25 @@ Contract: `docs/custom_engine_spec.md` section 3. Everything here is off by defa
 - `record=True` searches with `go nodes N sample`; `arena/recorder.py` fills gameId, outcome (+1/0/-1 from the
   sample's team, flags count as wins, move-limit games 0) and movesLeft at game end and writes HVM5 chunks that
   `convert_selfplay_data.read_binary_shard` reads (round trip tested in `arena/tests/test_custom_engine.py`).
+- Spec v2 (`docs/custom_engine_spec_v2.md`, tests in `arena/tests/test_custom_engine_v2.py`):
+  - every free-mode `position` also carries `elapsed <ea> <eb>`, ms since the last move landed on each board
+    (`Observation.last_move_ms`, filled by the simulator; `send_elapsed=False` / `--no-elapsed` turns it off);
+  - `think_head=True` / `--think-head` (off by default): a 16-node look reads `info string think_gain <pa> <pb>`
+    and the move's budget becomes clock budget x (0.5 + 1.5 p) for the seat's board, the look's nodes included;
+    a network without the head prints no think_gain and the clock budget is used unchanged;
+  - at most one sample per seat per unchanged position in a row (same FENs, clocks ignored); repeats are counted
+    (`repeats_dropped` per game and in the results);
+  - movesLeft = moves landed after the sample's search started;
+  - chunks are HVM6 by default (`--shard-version 5` for HVM5): each sample is followed by a 90-byte block
+    `'<ffBB20f'` = think_gain A, B (f32), their masks (u8, 1 = present), 20 arrival counts (pocket-major: ours on A,
+    theirs on A, ours on B, theirs on B; pieces P N B R Q; pieces landing within 5 s after the search started; NaN =
+    no label). Header magic `HVM6`, version 6. Each chunk has a `<chunk>.pos.jsonl` sidecar with the positions;
+  - `tools/think_labels.py --in <training_data> --out <dir>` searches sampled positions at N and 4N nodes and writes
+    labelled HVM6 chunks (`cluster/iterate.sh` with `THINK_LABELS=1`; off by default).
 
 ```bash
 .venv/bin/python -m arena.selfplay --games 200 --workers 1 --out runs/selfplay/it01 \
-    --model third_party/hivemind/engine/models/hivemind-clock-fp32.onnx --binary hivemind-clock \
+    --model third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx --binary hivemind-clock \
     --k-range 60,300 --jitter 0.5,2.0 --nodes-range 16,1600
 ```
 
