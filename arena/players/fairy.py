@@ -12,7 +12,8 @@ ARCH=apple-silicon``; NOTES.md). One process per seat: Fairy plays one board and
   centiseconds), ``ptell time``/``ptell otim`` (the partner's and the partner's opponent's clocks, which Fairy's
   sitting rules compare), ``ptell dead``/``ptell fast`` when the partner told us so, then ``go`` -> ``move <m>``.
   Thinking lines are ``depth score time(cs) nodes seldepth nps tbhits <tab> pv``.
-* Time: Fairy's own time manager on wall time. The charged think time is the engine's wall time for the search
+* Time: Fairy's own time manager on wall time, or a fixed ``move_s`` per move (``st``; Fairy then has no clock
+  limit, so its clock-comparing sit rules see zero clocks of its own) charged as exactly ``move_s`` (``charge="move"``). The charged think time is the engine's wall time for the search
   (``charge="wall"``, default) or ``nodes x ms_per_node`` (``charge="nodes"``, a fixed cost model). Fairy's
   ``nodestime`` option (nodes as time) was tried and stops after a few hundred nodes on this build, so it is not used.
 * Sitting is never left to the engine (its sit loops busy-wait on the wall clock, which the simulated arena cannot
@@ -124,8 +125,9 @@ class FairyProcess:
         self._wait_for(lambda l: l.strip() == f"pong {n}")
 
     def think(self, fen: str, *, base_ms: int, own_ms: int, opp_ms: int, partner_ms: int, partner_opp_ms: int,
-              partner_tells: tuple[str, ...] = ()) -> FairyResult:
-        """Search ``fen`` (side to move = this seat) under Fairy's own time manager; return its move and ptells."""
+              partner_tells: tuple[str, ...] = (), move_s: int = 0) -> FairyResult:
+        """Search ``fen`` (side to move = this seat) under Fairy's own time manager, or for a fixed ``move_s`` whole
+        seconds (CECP ``st``, sent after the clocks: it zeroes Fairy's clock limits); return its move and ptells."""
         self.start()
         self._send("new")
         self._send("variant bughouse")
@@ -136,6 +138,8 @@ class FairyProcess:
         self._send(f"otim {max(1, opp_ms // 10)}")
         self._send(f"ptell time {max(0, partner_ms // 10)}")
         self._send(f"ptell otim {max(0, partner_opp_ms // 10)}")
+        if move_s > 0:
+            self._send(f"st {int(move_s)}")
         for word in partner_tells:
             self._send(f"ptell {word}")
         self._ping(2)  # all of the above applied before go
@@ -158,7 +162,8 @@ class FairyProcess:
             return l.startswith(("move ", "resign", "1-0", "0-1", "1/2"))
 
         try:
-            line = self._wait_for(done, collect=res.lines, timeout_s=max(5.0, own_ms / 1000 + 5))
+            line = self._wait_for(done, collect=res.lines,
+                                  timeout_s=max(5.0, (move_s if move_s > 0 else own_ms / 1000) + 5))
         except TimeoutError:
             self._send("?")  # move now (stops a sit loop, if one ever starts)
             line = self._wait_for(lambda l: l.startswith("move "), collect=res.lines, timeout_s=10)
@@ -208,9 +213,12 @@ class FairyPlayer:
     kind = "fairy"
 
     def __init__(self, seat: str, process: FairyProcess, *, base_ms: int = 60000, sit_ms: int = 1000,
-                 charge: str = "wall", ms_per_node: float = FAIRY_MS_PER_NODE) -> None:
-        if charge not in ("wall", "nodes"):
-            raise ValueError(f"charge must be 'wall' or 'nodes', got {charge!r}")
+                 charge: str = "wall", ms_per_node: float = FAIRY_MS_PER_NODE, move_s: int = 0) -> None:
+        if charge not in ("wall", "nodes", "move"):
+            raise ValueError(f"charge must be 'wall', 'nodes' or 'move', got {charge!r}")
+        if charge == "move" and move_s <= 0:
+            raise ValueError("charge='move' needs move_s > 0")
+        self.move_s = max(0, int(move_s))
         self.seat = seat
         self.process = process
         self.base_ms = int(base_ms)
@@ -258,11 +266,17 @@ class FairyPlayer:
         res = self.process.think(holdings_fen(obs.fens[board]), base_ms=self.base_ms, own_ms=own,
                                  opp_ms=int(obs.clocks_ms[OPPONENT[self.seat]]),
                                  partner_ms=int(obs.clocks_ms[partner]),
-                                 partner_opp_ms=int(obs.clocks_ms[OPPONENT[partner]]), partner_tells=tells)
+                                 partner_opp_ms=int(obs.clocks_ms[OPPONENT[partner]]), partner_tells=tells,
+                                 move_s=self.move_s)
         self.searches += 1
         self.nodes_total += res.nodes
         self.wall_ms_total += res.wall_ms
-        think = res.wall_ms if self.charge == "wall" else int(round(res.nodes * self.ms_per_node))
+        if self.charge == "wall":
+            think = res.wall_ms
+        elif self.charge == "move":
+            think = self.move_s * 1000  # the fixed per-move budget, whatever the loaded machine gave the search
+        else:
+            think = int(round(res.nodes * self.ms_per_node))
         msgs = tuple(self._msg(w) for w in res.ptells if w.split()[0] in ("sit", "x", "dead", "fast", "slow", "go"))
         words = [w.split()[0] for w in res.ptells]
         if "dead" in words:
@@ -299,9 +313,10 @@ class FairyPlayer:
 def fairy_team(team: str, *, seed: int = 0, nodes: int = 0, **kw) -> dict:
     """{seat: FairyPlayer} for one team (``kind="fairy"``): two processes, each seat on its own board. ``nodes`` is
     ignored (Fairy runs its own time manager); options ``binary``, ``threads``, ``hash_mb``, ``base_ms``,
-    ``sit_ms``, ``charge``, ``ms_per_node``."""
+    ``sit_ms``, ``charge``, ``ms_per_node``, ``move_s`` (fixed whole seconds per move, CECP ``st``; with
+    ``charge="move"`` each search costs exactly that on the arena clock: the matched-time setting)."""
     pkw = {k: kw[k] for k in ("threads", "hash_mb") if kw.get(k) is not None}
-    fkw = {k: kw[k] for k in ("base_ms", "sit_ms", "charge", "ms_per_node") if kw.get(k) is not None}
+    fkw = {k: kw[k] for k in ("base_ms", "sit_ms", "charge", "ms_per_node", "move_s") if kw.get(k) is not None}
     return {s: FairyPlayer(s, FairyProcess(kw.get("binary") or FAIRY_BINARY, **pkw), **fkw) for s in team_seats(team)}
 
 

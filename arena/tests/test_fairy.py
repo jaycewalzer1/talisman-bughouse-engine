@@ -103,3 +103,18 @@ def test_engine_uses_holdings_and_otim():
         assert "@" not in (empty.move or "")  # no holdings, no drops
     finally:
         proc.close()
+
+
+def test_fixed_move_time_sends_st_after_clocks_and_charges_it():
+    proc = Recorder([" 10 25 12 120000 14 1000000 0\tQ@a8", "move Q@a8"])
+    p = FairyPlayer("A_white", proc, base_ms=300_000, charge="move", move_s=2)
+    dec = p.decide(_obs("A_white", MATE_IN_ONE, CLOCKS, ["Q@a8", "g1f1"]))
+    sent = proc.sent
+    assert "st 2" in sent and sent.index("st 2") > sent.index("otim 2000") and sent.index("st 2") < sent.index("go")
+    assert dec.kind == "move" and dec.think_ms == 2000
+    # default: no st
+    proc = Recorder([" 10 25 12 120000 14 1000000 0\tQ@a8", "move Q@a8"])
+    FairyPlayer("A_white", proc, base_ms=60_000).decide(_obs("A_white", MATE_IN_ONE, CLOCKS, ["Q@a8", "g1f1"]))
+    assert not any(c.startswith("st ") for c in proc.sent)
+    with pytest.raises(ValueError):
+        FairyPlayer("A_white", Recorder([]), charge="move")
