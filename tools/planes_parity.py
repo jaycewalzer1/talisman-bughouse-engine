@@ -6,12 +6,17 @@ tools/cpp/planes_dump, then compares board2planes vs board_to_planes channel
 by channel, and the network's value/policy on each side.
 
 Usage: .venv/bin/python tools/planes_parity.py [--games N] [--seed S] [--clocks]
+       [--clock-planes 44|43] [--diagonal-scale S] [--dump PATH] [--model ONNX]
 
---clocks: the 43-channel clock layout (spec v2). Uses tools/cpp/planes_dump_clock
-(built against engine/build-clock) and hivemind-clock-v2-fp32.onnx, sends random
-clocks (some near 0, some negative, some above 300 s) and, for most records, random
-elapsed times (some 0, some negative, some above 60 s) to both sides, and compares
-channels 37..42 too. It also checks the engine's outputs against it04 (the stock
+--clocks: the clock layout, 44 channels per board (spec v3, default) or 43 with
+--clock-planes 43 (a spec v2 build). Uses tools/cpp/planes_dump_clock (built
+against engine/build-clock, or --dump) and hivemind-clock-v3-fp32.onnx
+(hivemind-clock-v2-fp32.onnx at 43; or --model), sends random clocks (some near 0,
+some negative, some above 300 s, a third of them with our board-A clock within
+30 s of the diagonal seat's so the diagonal plane is not saturated) and, for most
+records, random elapsed times (some 0, some negative, some above 60 s) to both
+sides, and compares channels 37..43 too. --diagonal-scale must match the build's
+HIVEMIND_DIAGONAL_SCALE_S (default 15). It also checks the engine's outputs against it04 (the stock
 network fed the same planes without channels 37..42): value, wdl, moves_left, pi_a
 and pi_b must match whatever the new planes hold, and the engine's think_gain
 logits must match Python ORT on the same planes. The shipped stock ONNX
@@ -50,18 +55,22 @@ STOCK_MODEL = ROOT / "third_party/hivemind/engine/models/hivemind-fp32.onnx"
 STOCK_PER_BOARD = 37
 
 
-def use_clock_layout():
-    """Switch the module to the 43-channel clock build (--clocks, spec v2)."""
+def use_clock_layout(per_board=44):
+    """Switch the module to the clock build (--clocks): 44 channels per board
+    (spec v3, diagonal plane) or 43 (spec v2)."""
     global DUMP, MODEL, PER_BOARD, NB_INPUT, RECORD, EXTRA, CHANNEL_NAMES
     DUMP = ROOT / "tools" / "cpp" / "planes_dump_clock"
-    MODEL = ROOT / "third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx"
-    PER_BOARD = 43
+    version = "v3" if per_board == 44 else "v2"
+    MODEL = ROOT / f"third_party/hivemind/engine/models/hivemind-clock-{version}-fp32.onnx"
+    PER_BOARD = per_board
     NB_INPUT = 2 * PER_BOARD * 64
     EXTRA = 2
     RECORD = NB_INPUT + 5 + 2 * NB_POLICY + EXTRA
     CHANNEL_NAMES = CHANNEL_NAMES + ["clock_us_lin", "clock_us_exp",
                                      "clock_them_lin", "clock_them_exp",
                                      "elapsed_lin", "elapsed_exp"]
+    if per_board == 44:
+        CHANNEL_NAMES = CHANNEL_NAMES + ["diagonal"]
 
 
 def random_elapsed(rng):
@@ -80,8 +89,11 @@ def random_elapsed(rng):
     return [one(), one()]
 
 
-def random_clocks(rng):
-    """Four clocks in ms (A_white, A_black, B_white, B_black), edge cases included."""
+def random_clocks(rng, team=None):
+    """Four clocks in ms (A_white, A_black, B_white, B_black), edge cases included.
+
+    With team given, a third of the draws put the diagonal seat (team's colour on
+    board B) within 30 s of team's board-A clock, where tanh is not saturated."""
     def one():
         r = rng.random()
         if r < 0.1:
@@ -91,7 +103,11 @@ def random_clocks(rng):
         if r < 0.9:
             return rng.randint(15000, 300000)
         return rng.randint(300000, 900000)
-    return [one() for _ in range(4)]
+    clocks = [one() for _ in range(4)]
+    if team is not None and rng.random() < 0.33:
+        ours = 0 if team else 1  # A_white or A_black
+        clocks[2 + ours] = clocks[ours] + rng.randint(-30000, 30000)
+    return clocks
 
 _PIECES = "PNBRQK"
 CHANNEL_NAMES = (
@@ -196,14 +212,29 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--examples", type=int, default=3)
     parser.add_argument("--clocks", action="store_true",
-                        help="43-channel clock build with random clocks and elapsed times")
+                        help="clock build (44 channels per board, spec v3) with random clocks "
+                             "and elapsed times")
+    parser.add_argument("--clock-planes", type=int, choices=(43, 44), default=44,
+                        help="--clocks: channels per board of the dump's build (default 44)")
+    parser.add_argument("--diagonal-scale", type=float, default=15.0,
+                        help="--clocks at 44: s of the diagonal plane, as the build's "
+                             "HIVEMIND_DIAGONAL_SCALE_S (default 15)")
+    parser.add_argument("--dump", type=Path, default=None,
+                        help="planes_dump binary (default tools/cpp/planes_dump[_clock])")
+    parser.add_argument("--model", type=Path, default=None,
+                        help="network the dump and Python run (default per layout)")
     parser.add_argument("--it04-onnx", type=Path, default=None,
                         help="--clocks: it04 reference exported in FP32 from its checkpoint "
                              "(default: the stock hivemind-fp32.onnx, FP16-rounded weights, "
                              "reported but not enforced)")
     args = parser.parse_args()
+    global DUMP, MODEL
     if args.clocks:
-        use_clock_layout()
+        use_clock_layout(args.clock_planes)
+    if args.dump is not None:
+        DUMP = args.dump
+    if args.model is not None:
+        MODEL = args.model
 
     rng = random.Random(args.seed)
     games = targeted_games() + [random_game(rng) for _ in range(args.games)]
@@ -218,13 +249,15 @@ def main():
         fields = ["w" if team else "b", str(int(time_advantage)),
                   f"{START_FEN}|{START_FEN}", moves]
         if args.clocks:
-            clocks = random_clocks(rng)
+            clocks = random_clocks(rng, team)
             elapsed = random_elapsed(rng)
             fields.append(" ".join(map(str, clocks)))
             if elapsed is not None:
                 fields.append(" ".join(map(str, elapsed)))
             py_planes.append(board2planes(game.board, team, clocks=clocks, elapsed=elapsed,
-                                          elapsed_planes=True))
+                                          elapsed_planes=True,
+                                          diagonal_plane=PER_BOARD == 44,
+                                          diagonal_scale_s=args.diagonal_scale))
         else:
             py_planes.append(board2planes(game.board, team))
         records.append("\t".join(fields))
@@ -314,7 +347,8 @@ def main():
         ref = {k: np.concatenate(v) for k, v in ref.items()}
         wdl_name = "wdl" if "wdl" in ref else "wdl_out"
         ml_name = "moves_left" if "moves_left" in ref else "plys_to_end"
-        print(f"\nclock engine (v2 network, C++) vs it04 {reference.name} (Python ORT, planes 37..42 "
+        print(f"\nclock engine ({MODEL.name}, C++) vs it04 {reference.name} (Python ORT, planes "
+              f"37..{PER_BOARD - 1} "
               f"dropped){'' if enforce else ' [FP16-rounded reference: not enforced]'}:")
         checks = [("value", cpp_value, ref["value"][:, 0]), ("pi_a", cpp_pi_a, ref["pi_a"]),
                   ("pi_b", cpp_pi_b, ref["pi_b"]),
