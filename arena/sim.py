@@ -86,6 +86,7 @@ class Simulator:
         self._lent_until: dict[str, int] = {s: 0 for s in SEATS}  # seat's machine lent to its partner
         self._lent_share: dict[str, float] = {s: 0.0 for s in SEATS}  # how much of it, while lent
         self._sit_search_until: dict[str, int] = {s: 0 for s in SEATS}  # search behind a wait decision
+        self._last_move_ms: dict[str, int] = {b: 0 for b in BOARDS}  # when the last move landed on each board
         self._ran = False
 
     # ------------------------------------------------------------------ public
@@ -207,6 +208,7 @@ class Simulator:
         # A state forked from a running game (arena.probe_wait) starts at its own clock time.
         self.now = int(getattr(st, "last_ms", 0))
         st.advance_clocks(self.now)
+        self._last_move_ms = {b: self.now for b in BOARDS}
         self._emit(
             "game_start",
             game_id=self.game_id,
@@ -262,6 +264,7 @@ class Simulator:
             inbox=inbox,
             ply=self.plies,
             partner_machine_free=self._machine_free(PARTNER[seat]),
+            last_move_ms=dict(self._last_move_ms),
         )
 
     def _machine_free(self, seat: str) -> bool:
@@ -366,6 +369,7 @@ class Simulator:
         self._stop_sitting(seat)
         self._status[seat] = _IDLE
         self.plies += 1
+        self._last_move_ms[board] = self.now
         self._emit("thinking", **end_fields)
         self._emit(
             "move",

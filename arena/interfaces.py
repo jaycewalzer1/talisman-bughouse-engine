@@ -83,6 +83,9 @@ class Observation:
     # Split setups with lending: True when the partner's machine is idle (partner not searching and not
     # lending it already), so this seat may borrow it for one search (Decision.borrow).
     partner_machine_free: bool = False
+    # Simulated ms at which the last move landed on each board ({"A": ms, "B": ms}; the game start when no move
+    # has landed there yet). None when the caller does not track it (players then send no elapsed times).
+    last_move_ms: dict | None = None
 
 
 @dataclass(frozen=True)

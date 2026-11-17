@@ -45,7 +45,7 @@ def game_metrics(events: list[dict], wall_s: float) -> dict:
 
 def bench_one(spec: dict) -> dict | None:
     """One game's numbers, or None if the stage's time was already up when its turn came."""
-    if time.time() > spec["deadline"]:
+    if time.time() >= spec["deadline"]:
         return None
     t0 = time.perf_counter()
     events, _ = play_game(spec)
