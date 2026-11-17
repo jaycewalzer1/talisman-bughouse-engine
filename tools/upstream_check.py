@@ -10,6 +10,11 @@
   .venv/bin/python tools/upstream_check.py smoke [--games 6] [--base-ms 60000] [--out runs/upstream/smoke]
       it04 (stock binary, centralized, fixed nodes) vs upstream-v3 in single in-process games, paired with swapped
       teams on the bughouse opening set, nodes-as-time with each arm's own ms_per_node.
+
+  .venv/bin/python tools/upstream_check.py fairy [--games 10] [--move-s 1] [--base-ms 180000]
+      it04 vs Fairy-Stockfish (arena/players/fairy.py) at matched time per move: Fairy searches a fixed --move-s
+      wall seconds (CECP st) and is charged exactly that; it04 gets --move-s / 5.5 ms nodes (its MS_PER_NODE), so
+      both spend the same arena clock per move on this Mac's CPU. Paired, swapped teams, single process.
 """
 
 from __future__ import annotations
@@ -271,6 +276,68 @@ def cmd_smoke(args) -> int:
     return 0 if summary["aborted"] == 0 else 1
 
 
+def cmd_fairy(args) -> int:
+    from arena.openings import paired_schedule
+    from arena.openings_bughouse import BUGHOUSE_SETS
+    from arena.players import team_players
+    from arena.players.fairy import fairy_team
+    from arena.players.hivemind import MS_PER_NODE
+    from arena.run import _close, event_to_dict
+    from arena.sim import Simulator
+    from arena.state import BughouseState
+    from arena.stats import summarize_game
+
+    os.makedirs(args.out, exist_ok=True)
+    it04_nodes = args.it04_nodes or max(1, round(args.move_s * 1000 / MS_PER_NODE))
+    rows = []
+    t_start = time.perf_counter()
+    for i, (pair, swap) in enumerate(paired_schedule(args.games, args.seed, BUGHOUSE_SETS[args.openings])):
+        fy_team = "T1" if swap else "T2"
+        it_team = "T2" if swap else "T1"
+        players = {}
+        players.update(team_players(it_team, "centralized", "hivemind", seed=i, nodes=it04_nodes))
+        fplayers = fairy_team(fy_team, base_ms=args.base_ms, move_s=args.move_s, charge="move")
+        players.update(fplayers)
+        t0 = time.perf_counter()
+        try:
+            state = BughouseState(args.base_ms, 0, fens=pair.fens)
+            sim = Simulator(state, players, game_id=f"f{i:03d}", setup="centralized-vs-fairy",
+                            max_plies=args.max_plies)
+            result = sim.run()
+            events = [event_to_dict(e) for e in sim.events]
+        finally:
+            for pl in {id(pl): pl for pl in players.values()}.values():
+                _close(pl)
+        with open(os.path.join(args.out, f"game_{i:03d}.jsonl"), "w") as f:
+            for e in events:
+                f.write(json.dumps(e, separators=(",", ":")) + "\n")
+        s = summarize_game(events)
+        score = 0.5 if result.result == "draw" else (1.0 if result.result == it_team else 0.0)
+        fs = list(fplayers.values())
+        nodes, wall, searches = (sum(p.nodes_total for p in fs), sum(p.wall_ms_total for p in fs),
+                                 sum(p.searches for p in fs))
+        row = {"game": i, "opening": pair.name, "fairy_team": fy_team, "result": result.result,
+               "reason": result.reason, "it04_score": score, "plies": s.get("plies"),
+               "fairy_searches": searches, "fairy_sits": sum(p.sits for p in fs),
+               "fairy_fallback_moves": sum(p.fallback_moves for p in fs),
+               "fairy_us_per_node": round(1000 * wall / nodes, 3) if nodes else None,
+               "wall_s": round(time.perf_counter() - t0, 1)}
+        rows.append(row)
+        print(json.dumps(row), flush=True)
+    total = sum(r["it04_score"] for r in rows)
+    summary = {"games": len(rows), "it04_score": total, "it04_mean": total / max(1, len(rows)),
+               "reasons": {k: sum(r["reason"] == k for r in rows) for k in sorted({r["reason"] for r in rows})},
+               "fallback_moves": sum(r["fairy_fallback_moves"] for r in rows),
+               "it04": f"stock build-ninja/hivemind + hivemind-fp32.onnx, centralized, {it04_nodes} nodes "
+                       f"at {MS_PER_NODE} ms/node",
+               "fairy": f"Fairy-Stockfish CECP, 1 thread, st {args.move_s} s/move charged {args.move_s * 1000} ms",
+               "base_ms": args.base_ms, "openings": args.openings, "wall_s": round(time.perf_counter() - t_start, 1)}
+    with open(os.path.join(args.out, "summary.json"), "w") as f:
+        json.dump({"summary": summary, "games": rows}, f, indent=1)
+    print(json.dumps(summary))
+    return 0 if summary["reasons"].get("aborted", 0) == 0 else 1
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "_reference":
@@ -293,8 +360,17 @@ def main(argv=None) -> int:
     s.add_argument("--upstream-ms", type=float, default=0.65)
     s.add_argument("--coreml", default="default")
     s.add_argument("--out", default=os.path.join(ROOT, "runs", "upstream", "smoke"))
+    fa = sub.add_parser("fairy")
+    fa.add_argument("--games", type=int, default=10)
+    fa.add_argument("--seed", type=int, default=0)
+    fa.add_argument("--move-s", type=int, default=1, help="Fairy's fixed whole seconds per move (CECP st)")
+    fa.add_argument("--it04-nodes", type=int, default=0, help="0: move_s / MS_PER_NODE (matched time)")
+    fa.add_argument("--base-ms", type=int, default=180000)
+    fa.add_argument("--max-plies", type=int, default=400)
+    fa.add_argument("--openings", default="bughouse")
+    fa.add_argument("--out", default=os.path.join(ROOT, "runs", "upstream", "fairy"))
     args = ap.parse_args(argv)
-    return cmd_parity(args) if args.cmd == "parity" else cmd_smoke(args)
+    return {"parity": cmd_parity, "smoke": cmd_smoke, "fairy": cmd_fairy}[args.cmd](args)
 
 
 if __name__ == "__main__":
