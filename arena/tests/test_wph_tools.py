@@ -102,3 +102,52 @@ def test_widened_v2_matches_it04_on_the_sets():
     b = rg.evaluate_cases(rg.NetEval(V2, threads=2), cases)
     assert [r["policy"]["top"] for r in a] == [r["policy"]["top"] for r in b]
     assert max(abs(x["value"] - y["value"]) for x, y in zip(a, b)) < 0.03
+
+
+# ------------------------------------------------------------------------------------------- pass_stats
+
+import pass_stats as ps  # noqa: E402
+
+
+def test_seat_diagonal_is_own_minus_partners_opponent():
+    clocks = {"A_white": 40000, "A_black": 30000, "B_white": 25000, "B_black": 35000}
+    assert ps.seat_diagonal(clocks, "A_white") == 15000  # vs B_white
+    assert ps.seat_diagonal(clocks, "B_black") == 5000  # vs A_black
+    assert ps.seat_diagonal(clocks, "A_black") == -5000  # vs B_black
+
+
+def test_event_stats_counts_sits_and_flag_state(tmp_path):
+    fen = "6k1/5ppp/8/8/8/8/5PPP/6K1[] w - - 0 1"
+    seats = {"A_white": {"name": "x-free"}, "A_black": {"name": "y"}, "B_white": {"name": "y"},
+             "B_black": {"name": "x-free"}}
+    clocks = {s: 10000 for s in seats}
+    events = [
+        {"type": "game_start", "ts": 0, "seats": seats, "fens": {"A": fen, "B": fen}, "clocks": clocks},
+        {"type": "move", "ts": 500, "board": "B", "seat": "B_white", "fen": fen.replace(" w ", " b "),
+         "clocks": dict(clocks, A_white=9500, B_white=9500)},  # the arena charges every on-turn seat
+        {"type": "stall", "ts": 600, "seat": "A_white", "active": True, "reason": "free_pass"},
+        {"type": "stall", "ts": 900, "seat": "A_white", "active": False},
+        {"type": "stall", "ts": 950, "seat": "A_white", "active": True, "reason": "free_pass"},
+        {"type": "game_end", "ts": 10500, "reason": "flag", "loserSeat": "A_white"},
+    ]
+    path = tmp_path / "game_0001.jsonl"
+    path.write_text("\n".join(__import__("json").dumps(e) for e in events))
+    rep = ps.event_stats([str(path)])
+    assert rep["decisions"]["contender"]["n"] == 1  # one sit spell, not two
+    assert rep["decisions"]["contender"]["sit_rate"] == 1.0
+    assert rep["sit_lengths"]["contender"]["all"]["max_ms"] == 9900
+    assert rep["flags"] == {"contender": {"sitting": 1}}
+    # A_white at t=600: 10000 - 600 = 9400 vs B_white 9500 (B_black on turn since 500): behind by 100 ms
+    assert "behind" in rep["decisions"]["contender"]["by_diagonal"]
+
+
+@needs_chunk
+def test_pass_stats_runs_on_a_recorded_shard():
+    d = os.path.dirname(_chunks()[0])
+    rep = ps.run(ps.parse_args(["--shards", d]))
+    assert rep["samples"] > 0
+    allg = rep["pass_all"]["all"]
+    assert 0.0 <= allg["share_pass_top"] <= allg["share_pass_visited"] <= 1.0
+    assert sum(g["n"] for g in rep["pass_by_diag_sign"].values()) == rep["shard_rows"]
+    assert set(rep["value_labels"]["by_reason"]) <= {"checkmate", "flag", "?", "double_flag", "repetition",
+                                                     "sitoff_adjudicated", "max_plies", "aborted"}
