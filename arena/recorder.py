@@ -80,7 +80,7 @@ NO_ARRIVALS = (float("nan"),) * NB_ARRIVALS
 BOARD_VALUES = 64
 NB_POLICY_VALUES = 73 * BOARD_VALUES
 PASS_POLICY_INDEX = NB_POLICY_VALUES
-CHANNEL_CHOICES = (86, 82, 74)  # v2 clock build (2 * 43), v1 clock build (2 * 41), stock (2 * 37)
+CHANNEL_CHOICES = (88, 86, 82, 74)  # v3 clock build (2 * 44, diagonal plane), v2 (2 * 43), v1 (2 * 41), stock (2 * 37)
 TEAM_OF_BYTE = {0: "T1", 1: "T2"}
 DEFAULT_SAMPLES_PER_CHUNK = 4096
 
@@ -184,7 +184,7 @@ def sample_size(buf: bytes, channels: int, offset: int = 0, version: int = VERSI
 
 
 def infer_channels(buf: bytes, version: int = VERSION) -> int:
-    """The plane channel count for which ``buf`` is exactly one sample (86, 82 or 74)."""
+    """The plane channel count for which ``buf`` is exactly one sample (88, 86, 82 or 74)."""
     for c in CHANNEL_CHOICES:
         try:
             if sample_size(buf, c, version=version) == len(buf):

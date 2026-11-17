@@ -202,7 +202,7 @@ def test_trailer_layout_is_exactly_90_bytes():
         encode_trailer(None, (1.0,) * 19)
 
 
-@pytest.mark.parametrize("channels", [74, 82, 86])
+@pytest.mark.parametrize("channels", [74, 82, 86, 88])
 def test_v6_sample_parse_and_infer(channels):
     raw = fake_sample(1, channels)
     full = raw + encode_trailer((0.0, 1.0), [2.0] + [0.0] * 19)
