@@ -1,0 +1,22 @@
+{
+  "contender": {
+    "name": "stock-centralized-100n",
+    "setup": "centralized",
+    "kind": "hivemind",
+    "nodes": 100,
+    "player_kw": {"serial": true},
+    "group": "target",
+    "weight": 1.0,
+    "path": null
+  },
+  "shares": {"target": 0.8, "snapshot": 0.0, "variant": 0.2},
+  "snapshot_window": 5,
+  "opponents": [
+    {"name": "upstream-v3", "setup": "centralized", "kind": "upstream", "nodes": 800,
+     "player_kw": {"ms_per_node": 0.65}, "group": "target", "weight": 1.0, "path": null},
+    {"name": "upstream-v3-k60", "setup": "centralized", "kind": "upstream", "nodes": 800,
+     "player_kw": {"ms_per_node": 0.65, "clock_k": 60}, "group": "variant", "weight": 1.0, "path": null},
+    {"name": "fairy-sf", "setup": "silent", "kind": "fairy", "nodes": 0,
+     "player_kw": {"charge": "wall"}, "group": "variant", "weight": 1.0, "path": null}
+  ]
+}
