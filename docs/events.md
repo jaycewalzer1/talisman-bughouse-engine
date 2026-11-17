@@ -59,5 +59,32 @@ The arena (`arena/`) emits one JSON object per event. The same stream feeds:
 Message tokens: `need_P|N|B|R|Q` (request a piece), `have_P|N|B|R|Q` (offer), `stall` (I am sitting),
 `go` (move now, stop waiting), `sit` (please wait), `ok`, `no` (reply to a request).
 
-`game_end.result`: `T1`, `T2`, or `draw`. `reason`: `checkmate`, `flag`, `stalemate`, `max_plies`, `aborted`.
-`board`/`loserSeat` are null when not applicable.
+`game_end.result`: `T1`, `T2`, or `draw`. `reason` (spec v3 shared contract 3): `checkmate`, `flag`,
+`double_flag` (draw), `repetition` (draw), `sitoff_adjudicated`, `max_plies` (abort), `aborted`; older replays may
+also hold `stalemate`. `board`/`loserSeat` are null when not applicable. Games ending `max_plies` or `aborted` are
+kept out of training (`arena.recorder.NON_TRAINING_REASONS`).
+
+## Training-sample sidecar (`<chunk>.hvm.pos.jsonl`)
+
+Self-play chunks (`arena/recorder.py`) carry one JSON line per sample, in chunk order:
+
+| key | meaning |
+|---|---|
+| `gameId`, `t`, `seat`, `team`, `ply` | game, search start (ms), searching seat and team, moves landed before the search |
+| `fenA`, `fenB`, `clocks`, `elapsed`, `treeMs`, `nodes`, `timeAdvantage` | the position as sent to the engine (spec v2) |
+| `nodes_requested`, `nodes_searched` | the `go nodes` budget and the visits actually searched (spec v3, WP-C) |
+| `sit_ms` | how long the seat then sat (0 if it moved) |
+| `start_offset_ms` | time-odds offset of the sample's team |
+| `pace` | the four pace values sent (A_white, A_black, B_white, B_black), ms |
+| `clocks_ms`, `elapsed_ms` | exact clocks (A_white, A_black, B_white, B_black) and elapsed times (A, B), floats |
+| `reason`, `opening`, `gameEndMs` | the game's end reason, opening-pair key, and `game_end` ts |
+| `arrivalWindowMs` | the arrivals-label window used for this sample |
+
+The v3 keys are present only when recorded. The converter turns the exact clocks into Parquet columns from which the
+loader rebuilds planes 37-42 of each board block (uint8 planes put clocks on a 1.18 s grid), splits validation by
+`opening`, reports samples by `reason`, and masks an arrivals label whose window passes `gameEndMs`.
+
+**movesLeft** (the HVM sample field, one definition since spec v3): the number of moves landed on either board after
+the sample's search started (moves in the game minus `ply`). The trainer divides by 100 and clamps to [0, 1]. Stock
+`selfplay.cc` counts remaining samples instead, so the clock build trains the moves-left head with weight 0 (the
+spec v3 D6 "discount 0") until a run measures the two against each other.

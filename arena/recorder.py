@@ -28,6 +28,19 @@ The arena recorder writes arrival counts for every sample and masks both think_g
 fills the think_gain labels. Next to each chunk the writer can put ``<chunk>.pos.jsonl``: one JSON line per sample,
 in chunk order, with the position it came from (both FENs, clocks, elapsed times, seat, time, TreeMoveMs), which
 tools/think_labels.py needs to search the position again (the planes alone do not give exact clocks).
+
+Sidecar keys (spec v3, shared contract 2; ``RecordedSample.meta`` + ``finish_game``): ``gameId t seat team ply fenA
+fenB clocks elapsed treeMs nodes timeAdvantage`` (v2), then, when the controller filled them, ``nodes_requested
+nodes_searched sit_ms start_offset_ms pace clocks_ms elapsed_ms`` (WP-C; ``clocks_ms`` = the four exact clocks in
+A_white A_black B_white B_black order, ``elapsed_ms`` = (A, B), floats), and per game ``reason`` (the
+``GameResult.reason``), ``opening`` (the opening-pair key: the opening id when given, else the two start FENs),
+``gameEndMs`` and ``arrivalWindowMs``. The converter (``hivemind.data.convert_selfplay_data``) turns these into
+Parquet columns: exact clock/elapsed scalars that the loader writes into planes 37-42 (the uint8 planes put clocks
+on a 1.18 s grid), the end-reason report, the opening-pair validation split and the arrivals end-of-game mask.
+
+movesLeft (spec v3, one definition): the number of moves landed on either board after the sample's search started
+(all moves in the game minus ``ply``). Only bare ``(now_ms, seq, bytes)`` tuples without positions fall back to the
+number of samples from this one to the end (the stock selfplay.cc count); the arena always records positions.
 """
 
 from __future__ import annotations
@@ -54,6 +67,15 @@ ARRIVAL_PIECES = "PNBRQ"
 ARRIVAL_POCKETS = ("ours_A", "theirs_A", "ours_B", "theirs_B")
 NB_ARRIVALS = len(ARRIVAL_POCKETS) * len(ARRIVAL_PIECES)  # 20
 ARRIVAL_WINDOW_MS = 5000
+# Spec v3 (WP-D): optional pace-scaled arrival window = ARRIVAL_PACE_MOVES x the mean pace of the four seats,
+# clamped to [ARRIVAL_WINDOW_MIN_MS, ARRIVAL_WINDOW_MAX_MS]. Off by default (fixed 5 s window).
+ARRIVAL_PACE_MOVES = 10
+ARRIVAL_WINDOW_MIN_MS = 2000
+ARRIVAL_WINDOW_MAX_MS = 15000
+SIDECAR_V3_KEYS = ("nodes_requested", "nodes_searched", "sit_ms", "start_offset_ms", "pace", "clocks_ms",
+                   "elapsed_ms")
+# GameResult.reason values whose games are kept out of training (spec v3 D4: aborts are scored, not trained on).
+NON_TRAINING_REASONS = ("aborted", "max_plies")
 NO_ARRIVALS = (float("nan"),) * NB_ARRIVALS
 BOARD_VALUES = 64
 NB_POLICY_VALUES = 73 * BOARD_VALUES
@@ -79,12 +101,25 @@ class RecordedSample(NamedTuple):
     tree_ms: int = 0
     nodes: int = 0
     time_advantage: bool = False
+    # spec v3 shared contract 2 (filled by the free-mode controller, WP-C); None = not recorded
+    nodes_requested: int | None = None
+    nodes_searched: int | None = None
+    sit_ms: float | None = None          # how long the seat then sat (0 if it moved)
+    start_offset_ms: float | None = None  # time-odds offset of the sample's team
+    pace: tuple | None = None            # the four pace values sent (A_white A_black B_white B_black), ms
+    clocks_ms: tuple | None = None       # exact clocks (A_white A_black B_white B_black), ms, float
+    elapsed_ms: tuple | None = None      # exact elapsed times (A, B), ms, float
 
     def meta(self, game_id: int) -> dict:
         """The sidecar line (``<chunk>.pos.jsonl``) for this sample."""
-        return {"gameId": int(game_id), "t": self.now_ms, "seat": self.seat, "team": self.team, "ply": self.ply,
-                "fenA": self.fen_a, "fenB": self.fen_b, "clocks": self.clocks, "elapsed": self.elapsed,
-                "treeMs": self.tree_ms, "nodes": self.nodes, "timeAdvantage": bool(self.time_advantage)}
+        out = {"gameId": int(game_id), "t": self.now_ms, "seat": self.seat, "team": self.team, "ply": self.ply,
+               "fenA": self.fen_a, "fenB": self.fen_b, "clocks": self.clocks, "elapsed": self.elapsed,
+               "treeMs": self.tree_ms, "nodes": self.nodes, "timeAdvantage": bool(self.time_advantage)}
+        for key in SIDECAR_V3_KEYS:
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = list(map(float, value)) if key in ("pace", "clocks_ms", "elapsed_ms") else value
+        return out
 
 
 @dataclass(frozen=True)
@@ -283,18 +318,62 @@ def _as_record(s) -> RecordedSample:
     return RecordedSample(t, seq, buf)
 
 
+def game_end_info(events) -> tuple[str | None, int | None]:
+    """(reason, ts) of a game's ``game_end`` event, or (None, None) when the events have none."""
+    for e in reversed(list(events or ())):
+        if e.get("type") == "game_end":
+            return e.get("reason"), int(e["ts"])
+    return None, None
+
+
+def opening_key(events) -> str | None:
+    """The opening-pair key of a game: its two start FENs from ``game_start`` (``"<fenA>|<fenB>"``)."""
+    for e in events or ():
+        if e.get("type") == "game_start" and e.get("fens"):
+            return f"{e['fens'].get('A', '')}|{e['fens'].get('B', '')}"
+    return None
+
+
+def arrival_window_ms(rec: "RecordedSample", mode: str = "fixed") -> int:
+    """The arrivals window of one sample: ARRIVAL_WINDOW_MS (``mode`` "fixed"), or with ``mode`` "pace"
+    ARRIVAL_PACE_MOVES x the mean of the four pace values the sample was searched with, clamped to
+    [ARRIVAL_WINDOW_MIN_MS, ARRIVAL_WINDOW_MAX_MS] (fixed when the sample has no pace)."""
+    if mode == "fixed":
+        return ARRIVAL_WINDOW_MS
+    if mode != "pace":
+        raise ValueError(f"unknown arrival window mode {mode!r}")
+    pace = getattr(rec, "pace", None)
+    if not pace:
+        return ARRIVAL_WINDOW_MS
+    w = ARRIVAL_PACE_MOVES * sum(float(p) for p in pace) / len(pace)
+    return int(round(min(max(w, ARRIVAL_WINDOW_MIN_MS), ARRIVAL_WINDOW_MAX_MS)))
+
+
 def finish_game(samples, result: str, game_id: int, events=None, *, version: int = VERSION,
-                with_meta: bool = False):
+                with_meta: bool = False, mask_arrivals_past_end: bool = False, arrival_window: str = "fixed",
+                opening_id=None, drop_non_training: bool = False):
     """Order a game's samples by search time (``RecordedSample``s, or (now_ms, seq, bytes) tuples, from both
     teams' controllers) and fill gameId, outcome and movesLeft.
 
-    movesLeft (spec v2 D3): with ``events`` (the game's arena events) and ``RecordedSample``s, the number of moves
-    landed after the sample's search started (all moves in the game minus ``ply``); otherwise, as in v1, the
-    number of samples from this one to the end of the game.
+    movesLeft (spec v3, the one definition): the number of moves landed on either board after the sample's search
+    started (all moves in the game, from ``events``, minus ``ply``). Only without events, or for bare tuples, the
+    v1 fallback is used: the number of samples from this one to the end of the game.
     ``version`` 6 appends the HVM6 trailing block: think_gain masked, arrival counts from ``events`` (NaN without
-    events). ``with_meta`` also returns the sidecar dicts, in the same order."""
+    events). ``with_meta`` also returns the sidecar dicts, in the same order; each carries the game's ``reason``,
+    ``opening`` (``opening_id`` or the start FENs), ``gameEndMs`` and the sample's ``arrivalWindowMs``.
+
+    Spec v3 (WP-D), both off by default so older callers get the same bytes:
+    ``mask_arrivals_past_end``: an arrivals label whose window runs past the game end (``game_end`` ts) is written
+    as NaN (no label): pieces that never arrived because the game ended are not "no arrivals". The converter applies
+    the same mask from the sidecar, so data from callers that leave this off is masked there.
+    ``arrival_window``: "fixed" (5 s) or "pace" (``arrival_window_ms``).
+    ``drop_non_training``: return no samples when the game ended by a reason in NON_TRAINING_REASONS."""
     if version not in FORMATS:
         raise ValueError(f"unknown chunk version {version}")
+    reason, end_ms = game_end_info(events)
+    if drop_non_training and reason in NON_TRAINING_REASONS:
+        return ([], []) if with_meta else []
+    opening = str(opening_id) if opening_id is not None else opening_key(events)
     recs = sorted((_as_record(s) for s in samples), key=lambda r: (r.now_ms, r.seq))
     n = len(recs)
     total_moves = None if events is None else len(move_log(events))
@@ -304,13 +383,17 @@ def finish_game(samples, result: str, game_id: int, events=None, *, version: int
         moves_left = n - i if total_moves is None or not r.team else max(0, total_moves - r.ply)
         b = patch_sample(r.buf, game_id=game_id, outcome=outcome_for(META.unpack_from(r.buf, 0)[4], result),
                          moves_left=moves_left)
+        window = arrival_window_ms(r, arrival_window)
         if version >= VERSION_V6:
             arr = None
-            if caps is not None and r.team:
-                arr = arrival_counts(caps, r.team, r.ply, r.now_ms)
+            past_end = mask_arrivals_past_end and end_ms is not None and r.now_ms + window > end_ms
+            if caps is not None and r.team and not past_end:
+                arr = arrival_counts(caps, r.team, r.ply, r.now_ms, window)
             b += encode_trailer(None, arr)
         out.append(b)
-        metas.append(r.meta(game_id))
+        m = r.meta(game_id)
+        m.update({"reason": reason, "opening": opening, "gameEndMs": end_ms, "arrivalWindowMs": window})
+        metas.append(m)
     return (out, metas) if with_meta else out
 
 
