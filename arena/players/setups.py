@@ -68,7 +68,7 @@ SETUPS = ("centralized", "silent", "sharing")
 # Spec v3 WP-C options of HivemindTeamController, passed through when given (see its docstring).
 V3_CONTROLLER_KEYS = ("charge", "min_think_ms", "pace", "pace_alpha", "pace_mixture", "pace_sigma", "lag_ms",
                       "noise", "temperature", "temperature_plies", "pcr_p", "pcr_nodes", "dedupe", "clock_bucket_ms",
-                      "sit_recheck", "recheck_nodes", "think_head_norm", "start_offset_ms", "stock_no_root")
+                      "sit_recheck", "recheck_nodes", "think_head_norm", "start_offset_ms", "stock_no_root", "reps")
 KINDS = ("random", "heuristic", "hivemind", "agent", "upstream", "fairy")
 COMPUTE_MODELS = ("throughput", "nodes")
 
