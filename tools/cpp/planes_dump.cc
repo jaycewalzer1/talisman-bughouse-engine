@@ -3,8 +3,11 @@
 //
 // usage: planes_dump <model.onnx> <out.bin>   (records on stdin)
 // stdin, one record per line, tab separated:
-//   team(w|b)  time_advantage(0|1)  <fenA>|<fenB>  moves
-// where moves is space separated "<board>:<uci>" (may be empty).
+//   team(w|b)  time_advantage(0|1)  <fenA>|<fenB>  moves  [clocks]
+// where moves is space separated "<board>:<uci>" (may be empty) and the
+// optional clocks field is "<aw> <ab> <bw> <bb>" in ms (Board::set_clocks,
+// as UCI 'position ... clocks'). Built against build-clock (planes_dump_clock)
+// the planes have 41 channels per board.
 // out.bin, per record, float32: planes[NB_INPUT_VALUES], value, wdl[3],
 // moves_left, pi_a[NB_POLICY_VALUES], pi_b[NB_POLICY_VALUES].
 #include <fstream>
@@ -77,6 +80,16 @@ int main(int argc, char** argv) {
                 }
                 board.push_move(boardNum, move);
             }
+        }
+
+        if (fields.size() > 4 && !fields[4].empty()) {
+            std::stringstream clocks(fields[4]);
+            int64_t aw, ab, bw, bb;
+            if (!(clocks >> aw >> ab >> bw >> bb)) {
+                std::cerr << "record " << record << ": bad clocks '" << fields[4] << "'\n";
+                return 1;
+            }
+            board.set_clocks(aw, ab, bw, bb);
         }
 
         board_to_planes(board, planes.data(), team, timeAdvantage);

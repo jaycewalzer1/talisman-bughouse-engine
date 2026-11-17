@@ -5,7 +5,11 @@ Replays random bughouse games through hivemind.domain.board.BughouseBoard
 tools/cpp/planes_dump, then compares board2planes vs board_to_planes channel
 by channel, and the network's value/policy on each side.
 
-Usage: .venv/bin/python tools/planes_parity.py [--games N] [--seed S]
+Usage: .venv/bin/python tools/planes_parity.py [--games N] [--seed S] [--clocks]
+
+--clocks: the 41-channel layout. Uses tools/cpp/planes_dump_clock (built against
+engine/build-clock) and hivemind-clock-fp32.onnx, sends random clocks (some near 0,
+some negative, some above 300 s) to both sides, and compares channels 37..40 too.
 """
 
 import argparse
@@ -33,6 +37,32 @@ PER_BOARD = 37
 NB_INPUT = 2 * PER_BOARD * 64
 NB_POLICY = 73 * 64
 RECORD = NB_INPUT + 5 + 2 * NB_POLICY
+
+
+def use_clock_layout():
+    """Switch the module to the 41-channel clock build (--clocks)."""
+    global DUMP, MODEL, PER_BOARD, NB_INPUT, RECORD, CHANNEL_NAMES
+    DUMP = ROOT / "tools" / "cpp" / "planes_dump_clock"
+    MODEL = ROOT / "third_party/hivemind/engine/models/hivemind-clock-fp32.onnx"
+    PER_BOARD = 41
+    NB_INPUT = 2 * PER_BOARD * 64
+    RECORD = NB_INPUT + 5 + 2 * NB_POLICY
+    CHANNEL_NAMES = CHANNEL_NAMES + ["clock_us_lin", "clock_us_exp",
+                                     "clock_them_lin", "clock_them_exp"]
+
+
+def random_clocks(rng):
+    """Four clocks in ms (A_white, A_black, B_white, B_black), edge cases included."""
+    def one():
+        r = rng.random()
+        if r < 0.1:
+            return rng.randint(-2000, 0)
+        if r < 0.3:
+            return rng.randint(1, 15000)
+        if r < 0.9:
+            return rng.randint(15000, 300000)
+        return rng.randint(300000, 900000)
+    return [one() for _ in range(4)]
 
 _PIECES = "PNBRQK"
 CHANNEL_NAMES = (
@@ -134,7 +164,11 @@ def main():
     parser.add_argument("--games", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--examples", type=int, default=3)
+    parser.add_argument("--clocks", action="store_true",
+                        help="41-channel clock build with random clocks")
     args = parser.parse_args()
+    if args.clocks:
+        use_clock_layout()
 
     rng = random.Random(args.seed)
     games = targeted_games() + [random_game(rng) for _ in range(args.games)]
@@ -146,9 +180,15 @@ def main():
         game.board.times = [[rng.randint(100, 1800) for _ in range(2)] for _ in range(2)]
         time_advantage = game.board.time_advantage(team) > 0
         moves = " ".join(f"{b}:{u}" for b, u in game.moves)
-        records.append("\t".join(["w" if team else "b", str(int(time_advantage)),
-                                  f"{START_FEN}|{START_FEN}", moves]))
-        py_planes.append(board2planes(game.board, team))
+        fields = ["w" if team else "b", str(int(time_advantage)),
+                  f"{START_FEN}|{START_FEN}", moves]
+        if args.clocks:
+            clocks = random_clocks(rng)
+            fields.append(" ".join(map(str, clocks)))
+            py_planes.append(board2planes(game.board, team, clocks=clocks))
+        else:
+            py_planes.append(board2planes(game.board, team))
+        records.append("\t".join(fields))
         meta.append((game, team))
     py_planes = np.stack(py_planes)
 

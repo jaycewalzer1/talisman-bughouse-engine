@@ -14,3 +14,14 @@ for tool in policy_dump planes_dump; do
     -L"$ORT/lib" -lonnxruntime -Wl,-rpath,"$ORT/lib" \
     -o "$ROOT/tools/cpp/$tool"
 done
+# planes_dump_clock: the same dump against the hivemind-clock build (41 channels per board).
+if [ -f "$E/build-clock/libhivemind_lib.a" ]; then
+  clang++ -std=gnu++2b -Ofast -fno-finite-math-only -march=native -flto \
+    -Wno-deprecated-ofast \
+    -DHIVEMIND_BACKEND_ONNXRUNTIME -DHIVEMIND_CLOCK_PLANES -DNDEBUG -DNNUE_EMBEDDING_OFF \
+    -I"$E/src" -I"$ORT/include/onnxruntime" \
+    "$ROOT/tools/cpp/planes_dump.cc" \
+    "$E/build-clock/libhivemind_lib.a" "$E/build-clock/src/Fairy-Stockfish/libFairy-Stockfish.a" \
+    -L"$ORT/lib" -lonnxruntime -Wl,-rpath,"$ORT/lib" \
+    -o "$ROOT/tools/cpp/planes_dump_clock"
+fi
