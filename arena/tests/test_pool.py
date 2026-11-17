@@ -152,3 +152,10 @@ def test_for_evaluation_sets_stock_setup_and_node_budgets():
             for_evaluation(pool, lend_share=0.5, **bad)
     spec = make_schedule(central, 1)[0]
     assert spec["teams"][spec["contender_team"]]["nodes"] == 100 and spec["equal_compute"] is False
+
+
+def test_schedule_rules_key_only_when_asked():
+    pool = Pool.from_dict(pool_dict())
+    assert all("rules" not in s for s in make_schedule(pool, 2, seed=1))
+    assert all("rules" not in s for s in make_schedule(pool, 2, seed=1, rules="v2"))
+    assert all(s["rules"] == "v3" for s in make_schedule(pool, 2, seed=1, rules="v3"))

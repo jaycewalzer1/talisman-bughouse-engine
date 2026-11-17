@@ -237,3 +237,29 @@ def test_runner_passes_player_options():
     spec = make_specs(args)[0]
     assert spec["player_kw"] == {"compute": "throughput", "lend": True, "max_consecutive_sits": None,
                                  "sit_ms": 3000}
+
+
+def test_play_game_rules_v3_profile_and_pool_schedule():
+    """Integration (audit wave 1): spec "rules": "v3" plays under arena.sim.RULES_V3 (min move time between one
+    seat's landings), and arena.pool schedules carry the key only when asked."""
+    import pytest
+
+    from arena.openings import paired_schedule
+    from arena.run import play_game
+    from arena.sim import RULES_V3
+
+    pair, _ = next(iter(paired_schedule(2, 3)))
+    spec = {"game_id": "g0001", "t1_setup": "silent", "t2_setup": "silent", "kind": "heuristic", "seed": 3,
+            "nodes": 200, "base_ms": 60000, "increment_ms": 0, "fens": pair.fens, "channel_delay_ms": 0,
+            "max_plies": 400, "charge_wall_time": False, "rules": "v3"}
+    events, result = play_game(spec)
+    last: dict = {}
+    for e in events:
+        if e["type"] == "move":
+            if e["seat"] in last:
+                assert e["ts"] - last[e["seat"]] >= RULES_V3["min_move_ms"]
+            last[e["seat"]] = e["ts"]
+    assert last and result.reason in ("checkmate", "flag", "double_flag", "repetition", "sitoff_adjudicated",
+                                      "max_plies")
+    with pytest.raises(ValueError):
+        play_game({**spec, "rules": "v9"})

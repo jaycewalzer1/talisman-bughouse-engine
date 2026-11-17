@@ -247,7 +247,7 @@ def _compute_kind(kind: str) -> str:
 
 def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "train", base_ms: int = 60000,
                   increment_ms: int = 0, channel_delay_ms: int = 0, max_plies: int = 400,
-                  skip_pairs: int = 0) -> list[dict]:
+                  skip_pairs: int = 0, rules: str | None = None) -> list[dict]:
     """2 * n_pairs game specs (each opening pair twice, teams swapped), opponents rotated by group share.
 
     skip_pairs moves the rotation that many picks along first. Training passes the pairs already played, so a short
@@ -281,6 +281,8 @@ def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "t
                 "base_ms": base_ms, "increment_ms": increment_ms, "channel_delay_ms": channel_delay_ms,
                 "max_plies": max_plies, "charge_wall_time": False,
             })
+            if rules and rules != "v2":
+                specs[-1]["rules"] = rules  # arena.run.play_game: "v3" = arena.sim.RULES_V3
     return specs
 
 
@@ -355,7 +357,7 @@ def format_results(res: dict) -> str:
 
 SUMMARY_KEEP = ("opponent", "group", "equal_compute", "contender", "pair_index")
 _SPEC_IDENTITY = ("game_id", "index", "opening_id", "contender_team", "opponent", "teams", "base_ms",
-                  "increment_ms", "max_plies", "seed")
+                  "increment_ms", "max_plies", "seed", "rules")
 
 
 def game_file(spec: dict) -> str:
@@ -611,6 +613,9 @@ def main(argv=None) -> int:
             p.add_argument("--base-ms", type=int, default=60000)
             p.add_argument("--channel-delay-ms", type=int, default=0)
             p.add_argument("--max-plies", type=int, default=400)
+            p.add_argument("--rules", choices=("v2", "v3"), default="v2",
+                           help="arena rules profile: v2 (default, as before) or v3 (arena.sim.RULES_V3, spec v3 D4: "
+                                "min move time and lag, scaled ply cap with scored aborts, sit-off adjudication)")
             p.add_argument("--agent", action="store_true", help="the contender plays as the scheduler agent")
             p.add_argument("--features", default="", help="comma-separated scheduler feature groups (implies --agent)")
             p.add_argument("--policy", default=None, help="scheduler checkpoint (implies --agent); untrained if left out")
@@ -707,7 +712,8 @@ def main(argv=None) -> int:
     except ValueError as exc:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
-                          channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
+                          channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies,
+                          rules=args.rules)
     if args.cmd == "schedule":
         if args.out:
             with open(args.out, "w") as f:
@@ -737,7 +743,8 @@ def main(argv=None) -> int:
         extra["equal_ms_per_node"] = pool.contender.player_kw.get("ms_per_node")
     if extra:
         specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
-                              channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
+                              channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies,
+                          rules=args.rules)
     report = run_schedule(specs, args.out, workers=args.workers, n_boot=args.boot, seed=args.seed,
                           skip_done=args.skip_done, sprt=sprt, extra=extra)
     print()

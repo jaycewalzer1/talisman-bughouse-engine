@@ -75,7 +75,9 @@ def _close(player) -> None:
 
 def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
     """Build players and run one game. spec keys: game_id, t1_setup, t2_setup, kind, seed, nodes,
-    base_ms, increment_ms, fens, channel_delay_ms, max_plies, charge_wall_time, player_kw (optional).
+    base_ms, increment_ms, fens, channel_delay_ms, max_plies, charge_wall_time, player_kw (optional), rules
+    (optional: "v3" plays under arena.sim.RULES_V3, the spec v3 D4 profile, seeded by the game seed; its scaled
+    ply cap replaces max_plies).
     With "teams" ({"T1": {setup, kind, nodes, player_kw}, "T2": ...}) each team is built from its own
     entry and kind/nodes/player_kw are ignored."""
     from arena.sim import Simulator
@@ -88,11 +90,16 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
                                          nodes=spec["nodes"], player_kw=spec.get("player_kw"))
     try:
         state = BughouseState(spec["base_ms"], spec.get("increment_ms", 0), fens=spec.get("fens"))
+        rules = {"max_plies": spec.get("max_plies", 400)}
+        if spec.get("rules") == "v3":
+            from arena.sim import RULES_V3
+            rules = {**RULES_V3, "seed": spec["seed"]}
+        elif spec.get("rules") not in (None, "v2"):
+            raise ValueError(f"unknown rules profile {spec.get('rules')!r}")
         sim = Simulator(state, players, game_id=spec["game_id"],
                         setup=setup_label(spec["t1_setup"], spec["t2_setup"]),
                         channel_delay_ms=spec.get("channel_delay_ms", 0),
-                        max_plies=spec.get("max_plies", 400),
-                        charge_wall_time=spec.get("charge_wall_time", False), on_event=on_event)
+                        charge_wall_time=spec.get("charge_wall_time", False), on_event=on_event, **rules)
         try:
             result = sim.run()
         except Exception as exc:  # noqa: BLE001 - a player crashed: close the game as aborted
