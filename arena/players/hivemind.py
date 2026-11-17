@@ -82,11 +82,15 @@ BINARY_NAMES = ("hivemind", "hivemind-clock")
 
 def resolve_binary(binary: str | None) -> str:
     """``None`` or ``"hivemind"``: the stock binary. ``"hivemind-clock"``: the clock-plane build (the first of
-    ``CLOCK_BINARY_CANDIDATES`` that exists, else the first candidate). Anything else is a path, used as is."""
+    ``CLOCK_BINARY_CANDIDATES`` that exists, else the first candidate). Anything else is a path: a relative path
+    that exists from the current directory is made absolute (the engine process runs in the engine directory),
+    anything else is used as is."""
     if binary is None or binary == "hivemind":
         return DEFAULT_BINARY
     if binary == "hivemind-clock":
         return next((p for p in CLOCK_BINARY_CANDIDATES if os.path.isfile(p)), CLOCK_BINARY_CANDIDATES[0])
+    if not os.path.isabs(binary) and os.path.isfile(binary):
+        return os.path.abspath(binary)
     return binary
 
 # Fixed cost model: simulated think time per *requested* node (ms). Measured with measure_ms_per_node
