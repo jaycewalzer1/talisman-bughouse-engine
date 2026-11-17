@@ -24,6 +24,7 @@ from arena.recorder import (
     outcome_for,
     patch_sample,
     read_chunk,
+    read_sidecar,
     view_sample,
 )
 from arena.tests.test_players import START, StubProcess, make_obs
@@ -346,13 +347,24 @@ class LegalStub:
         pass
 
 
-def test_selfplay_end_to_end_with_stub_engine(tmp_path):
+def _hivemind_reads(conv, path) -> list[dict] | None:
+    """hivemind's reader on one chunk, or None when that reader does not know the chunk's format/width yet."""
+    try:
+        return conv.read_binary_shard(str(path))
+    except ValueError as exc:
+        if "Unsupported self-play chunk" in str(exc) or "channels" in str(exc):
+            return None
+        raise
+
+
+@pytest.mark.parametrize("version", [5, 6])
+def test_selfplay_end_to_end_with_stub_engine(tmp_path, version):
     from arena.selfplay import parse_args, run
 
     conv = pytest.importorskip("hivemind.data.convert_selfplay_data")
     out = tmp_path / "it00"
     args = parse_args(["--games", "2", "--out", str(out), "--base-ms", "20000", "--max-plies", "120",
-                       "--seed", "4", "--samples-per-chunk", "50"])
+                       "--seed", "4", "--samples-per-chunk", "50", "--shard-version", str(version)])
     stubs = []
 
     def factory(team):
@@ -362,21 +374,33 @@ def test_selfplay_end_to_end_with_stub_engine(tmp_path):
     report = run(args, process_factory=factory)
     r = report["results"]
     assert r["games"] == 2 and r["errors"] == 0 and r["samples"] > 0 and r["channels"] == 82
-    assert r["samples"] == sum(len(s.calls) for s in stubs)
-    for s in stubs:  # free mode on every call
-        assert all(c["clocks"] is not None and c["options"]["FreePass"] and c["sample"] for c in s.calls)
+    # every search either kept its sample or was a counted repeat of the seat's last position (spec v2 D2)
+    assert r["samples"] + r["repeats_dropped"] == sum(len(s.calls) for s in stubs)
+    for s in stubs:  # free mode on every call, with per-board elapsed times (spec v2 A)
+        assert all(c["clocks"] is not None and c["options"]["FreePass"] and c["elapsed"] is not None
+                   for c in s.calls)
     chunks = sorted((out / "training_data").glob("*.hvm"))
     assert [c.name for c in chunks] == r["chunks"] and len(chunks) >= 2
-    if 82 in getattr(conv, "SUPPORTED_INPUT_CHANNELS", (conv.NB_INPUT_CHANNELS,)):
+    own = [(view_sample(b, version=version), m) for c in chunks
+           for b, m in zip(read_chunk(str(c))[1], read_sidecar(str(c)))]
+    assert len(own) == r["samples"]
+    got = None
+    if all(_hivemind_reads(conv, c) is not None for c in chunks[:1]):
         got = [s for c in chunks for s in conv.read_binary_shard(str(c))]
-    else:
-        got = [view_sample(b) for c in chunks for b in read_chunk(str(c))[1]]
-        got = [{"game_id": v.game_id, "team": v.team, "outcome": v.outcome, "y_moves_left": v.moves_left}
-               for v in got]
-    assert len(got) == r["samples"]
+        assert len(got) == r["samples"]
     for g in report["games"]:
-        mine = [s for s in got if s["game_id"] == g["game_num"]]
-        assert len(mine) == g["samples"] and mine[0]["y_moves_left"] == len(mine) and mine[-1]["y_moves_left"] == 1
-        for s in mine:
-            assert s["outcome"] == outcome_for(s["team"], g["result"])
+        mine = [(v, m) for v, m in own if v.game_id == g["game_num"]]
+        assert len(mine) == g["samples"]
+        for v, m in mine:
+            assert v.outcome == outcome_for(v.team, g["result"]) and m["gameId"] == g["game_num"]
+            assert v.moves_left == g["plies"] - m["ply"]  # spec v2 D3: moves landed after the search started
+            if version == 6:
+                assert v.think_mask == (0, 0) and len(v.arrivals) == 20 and all(x >= 0 for x in v.arrivals)
+            else:
+                assert v.arrivals is None
+        if version == 6:
+            assert sum(sum(v.arrivals) for v, _ in mine) > 0  # random play captures within 5 s
+    if got is not None:
+        for (v, _), s in zip(own, got):
+            assert s["game_id"] == v.game_id and s["y_moves_left"] == v.moves_left and s["x"] == v.planes
     assert (out / "summary.json").exists() and len(list((out / "games").glob("*.jsonl"))) == 2
