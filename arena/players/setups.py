@@ -69,7 +69,7 @@ SETUPS = ("centralized", "silent", "sharing")
 V3_CONTROLLER_KEYS = ("charge", "min_think_ms", "pace", "pace_alpha", "pace_mixture", "pace_sigma", "lag_ms",
                       "noise", "temperature", "temperature_plies", "pcr_p", "pcr_nodes", "dedupe", "clock_bucket_ms",
                       "sit_recheck", "recheck_nodes", "think_head_norm", "start_offset_ms", "stock_no_root")
-KINDS = ("random", "heuristic", "hivemind", "agent")
+KINDS = ("random", "heuristic", "hivemind", "agent", "upstream", "fairy")
 COMPUTE_MODELS = ("throughput", "nodes")
 
 
@@ -120,6 +120,16 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         share = float(kw.get("lend_share") or 1.0)  # the part of the partner's idle machine a search borrows
         return {s: HivemindPlayer(s, HivemindProcess(binary, model, **pkw), nodes=half, ms_per_node=ms,
                                   comm=comm, lend=lend, lend_share=share, **skw) for s in seats}
+
+    if kind == "upstream":  # upstream v3 twin-s-clock (WP-G); always one team brain, whatever the setup says
+        from arena.players.upstream import upstream_team
+
+        return upstream_team(team, seed=seed, nodes=nodes, **kw)
+
+    if kind == "fairy":  # Fairy-Stockfish over CECP (WP-G), one process per seat
+        from arena.players.fairy import fairy_team
+
+        return fairy_team(team, seed=seed, nodes=nodes, **kw)
 
     if kind == "agent":  # imported here so that only agent games need torch
         from arena.players.scheduler_player import agent_team

@@ -608,7 +608,7 @@ def main(argv=None) -> int:
         p.add_argument("--pool", default="arena/pools/phase1.json")
         if name in ("schedule", "run"):
             p.add_argument("--pairs", type=int, default=20, help="opening pairs (2 games each)")
-            p.add_argument("--openings", default="train", choices=("train", "eval", "all"))
+            p.add_argument("--openings", default="train", choices=tuple(OPENING_SETS))
             p.add_argument("--seed", type=int, default=0)
             p.add_argument("--base-ms", type=int, default=60000)
             p.add_argument("--channel-delay-ms", type=int, default=0)

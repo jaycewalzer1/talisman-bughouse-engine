@@ -189,7 +189,9 @@ def parse_args(argv=None):
     ap.add_argument("--max-consecutive-sits", type=int, default=None,
                     help="hivemind: sits in a row before a move is forced (default 2)")
     ap.add_argument("--sit-ms", type=int, default=None, help="hivemind: length of one sit (default 1000)")
-    ap.add_argument("--openings", default="all", choices=("all", "train", "eval"),
+    from arena.openings import OPENING_SETS as _SETS
+
+    ap.add_argument("--openings", default="all", choices=tuple(_SETS),
                     help="opening pairs: all (the original 24), train, or eval (held out for the final match)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=1, help="parallel games (processes)")

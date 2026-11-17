@@ -159,3 +159,11 @@ def test_schedule_rules_key_only_when_asked():
     assert all("rules" not in s for s in make_schedule(pool, 2, seed=1))
     assert all("rules" not in s for s in make_schedule(pool, 2, seed=1, rules="v2"))
     assert all(s["rules"] == "v3" for s in make_schedule(pool, 2, seed=1, rules="v3"))
+
+
+def test_upstream_pool_is_buildable_and_takes_every_opening_set():
+    from arena.openings import OPENING_SETS
+    pool = Pool.load("arena/pools/upstream_v3.json")
+    specs = make_schedule(pool, 3, seed=0, openings="eval")
+    assert unbuildable(specs) == []
+    assert set(OPENING_SETS) >= {"bughouse", "eval"}

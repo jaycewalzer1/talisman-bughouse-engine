@@ -5,3 +5,6 @@ tools/cpp/planes_dump
 tools/cpp/planes_dump_clock
 runs/
 docs/pace_access.md
+
+# upstream v3 clone (WP-G), not part of this repo
+third_party/upstream-hivemind/
