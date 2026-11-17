@@ -1,0 +1,408 @@
+{
+ "engine": "stock it04 (build-ninja/hivemind, hivemind-fp32.onnx)",
+ "nodes": 800,
+ "pairs": {
+  "Barbeau / Alekhine sacrifice": {
+   "balance": 0.028,
+   "q_t1": -0.559,
+   "q_t2": -0.615
+  },
+  "Barbeau / Exchange French": {
+   "balance": 0.078,
+   "q_t1": -0.521,
+   "q_t2": -0.677
+  },
+  "Barbeau / Federkevic": {
+   "balance": -0.02,
+   "q_t1": -0.621,
+   "q_t2": -0.581
+  },
+  "Barbeau / Fortress": {
+   "balance": 0.031,
+   "q_t1": -0.574,
+   "q_t2": -0.635
+  },
+  "Barbeau / French no ...c5": {
+   "balance": 0.053,
+   "q_t1": -0.557,
+   "q_t2": -0.662
+  },
+  "Barbeau / Hungarian": {
+   "balance": 0.001,
+   "q_t1": -0.63,
+   "q_t2": -0.631
+  },
+  "Barbeau / Leaf Gambit": {
+   "balance": 0.057,
+   "q_t1": -0.553,
+   "q_t2": -0.666
+  },
+  "Barbeau / Qe7 anti-f7": {
+   "balance": -0.001,
+   "q_t1": -0.612,
+   "q_t2": -0.611
+  },
+  "Barbeau / Scandinavian retreat": {
+   "balance": 0.027,
+   "q_t1": -0.58,
+   "q_t2": -0.633
+  },
+  "Barbeau / Two Knights": {
+   "balance": 0.031,
+   "q_t1": -0.604,
+   "q_t2": -0.666
+  },
+  "Barbeau / d4 d5 Nc3": {
+   "balance": 0.093,
+   "q_t1": -0.509,
+   "q_t2": -0.695
+  },
+  "Barbeau / d4 d5 Nf3": {
+   "balance": 0.087,
+   "q_t1": -0.521,
+   "q_t2": -0.694
+  },
+  "Barbeau / e6-Nc6": {
+   "balance": 0.052,
+   "q_t1": -0.553,
+   "q_t2": -0.658
+  },
+  "Barbeau / e6-Nf6 ...Be7": {
+   "balance": -0.031,
+   "q_t1": -0.634,
+   "q_t2": -0.573
+  },
+  "Barbeau / e6-Nf6 ...d5": {
+   "balance": 0.057,
+   "q_t1": -0.543,
+   "q_t2": -0.658
+  },
+  "Federkevic / Alekhine sacrifice": {
+   "balance": 0.037,
+   "q_t1": -0.562,
+   "q_t2": -0.635
+  },
+  "Federkevic / Barbeau": {
+   "balance": 0.016,
+   "q_t1": -0.602,
+   "q_t2": -0.633
+  },
+  "Federkevic / Exchange French": {
+   "balance": 0.056,
+   "q_t1": -0.57,
+   "q_t2": -0.683
+  },
+  "Federkevic / Fortress": {
+   "balance": 0.035,
+   "q_t1": -0.592,
+   "q_t2": -0.661
+  },
+  "Federkevic / French no ...c5": {
+   "balance": 0.056,
+   "q_t1": -0.576,
+   "q_t2": -0.688
+  },
+  "Federkevic / Hungarian": {
+   "balance": 0.014,
+   "q_t1": -0.619,
+   "q_t2": -0.646
+  },
+  "Federkevic / Leaf Gambit": {
+   "balance": 0.057,
+   "q_t1": -0.564,
+   "q_t2": -0.678
+  },
+  "Federkevic / Qe7 anti-f7": {
+   "balance": 0.005,
+   "q_t1": -0.621,
+   "q_t2": -0.631
+  },
+  "Federkevic / Scandinavian retreat": {
+   "balance": 0.005,
+   "q_t1": -0.616,
+   "q_t2": -0.627
+  },
+  "Federkevic / Two Knights": {
+   "balance": 0.054,
+   "q_t1": -0.592,
+   "q_t2": -0.7
+  },
+  "Federkevic / d4 d5 Nc3": {
+   "balance": 0.09,
+   "q_t1": -0.532,
+   "q_t2": -0.713
+  },
+  "Federkevic / d4 d5 Nf3": {
+   "balance": 0.078,
+   "q_t1": -0.557,
+   "q_t2": -0.714
+  },
+  "Federkevic / e6-Nc6": {
+   "balance": 0.058,
+   "q_t1": -0.564,
+   "q_t2": -0.681
+  },
+  "Federkevic / e6-Nf6 ...Be7": {
+   "balance": 0.01,
+   "q_t1": -0.608,
+   "q_t2": -0.628
+  },
+  "Federkevic / e6-Nf6 ...d5": {
+   "balance": 0.078,
+   "q_t1": -0.539,
+   "q_t2": -0.695
+  },
+  "Fortress / Alekhine sacrifice": {
+   "balance": 0.018,
+   "q_t1": -0.577,
+   "q_t2": -0.614
+  },
+  "Fortress / Barbeau": {
+   "balance": -0.013,
+   "q_t1": -0.635,
+   "q_t2": -0.609
+  },
+  "Fortress / Exchange French": {
+   "balance": 0.042,
+   "q_t1": -0.585,
+   "q_t2": -0.67
+  },
+  "Fortress / Federkevic": {
+   "balance": -0.044,
+   "q_t1": -0.665,
+   "q_t2": -0.577
+  },
+  "Fortress / French no ...c5": {
+   "balance": 0.033,
+   "q_t1": -0.593,
+   "q_t2": -0.659
+  },
+  "Fortress / Hungarian": {
+   "balance": -0.003,
+   "q_t1": -0.63,
+   "q_t2": -0.624
+  },
+  "Fortress / Leaf Gambit": {
+   "balance": 0.043,
+   "q_t1": -0.567,
+   "q_t2": -0.653
+  },
+  "Fortress / Qe7 anti-f7": {
+   "balance": -0.027,
+   "q_t1": -0.66,
+   "q_t2": -0.607
+  },
+  "Fortress / Scandinavian retreat": {
+   "balance": -0.003,
+   "q_t1": -0.627,
+   "q_t2": -0.62
+  },
+  "Fortress / Two Knights": {
+   "balance": 0.038,
+   "q_t1": -0.597,
+   "q_t2": -0.672
+  },
+  "Fortress / d4 d5 Nc3": {
+   "balance": 0.064,
+   "q_t1": -0.562,
+   "q_t2": -0.689
+  },
+  "Fortress / d4 d5 Nf3": {
+   "balance": 0.058,
+   "q_t1": -0.573,
+   "q_t2": -0.688
+  },
+  "Fortress / e6-Nc6": {
+   "balance": 0.035,
+   "q_t1": -0.593,
+   "q_t2": -0.663
+  },
+  "Fortress / e6-Nf6 ...Be7": {
+   "balance": -0.025,
+   "q_t1": -0.648,
+   "q_t2": -0.598
+  },
+  "Fortress / e6-Nf6 ...d5": {
+   "balance": 0.045,
+   "q_t1": -0.579,
+   "q_t2": -0.668
+  },
+  "e6-Nc6 / Barbeau": {
+   "balance": -0.043,
+   "q_t1": -0.671,
+   "q_t2": -0.584
+  },
+  "e6-Nc6 / Federkevic": {
+   "balance": -0.074,
+   "q_t1": -0.692,
+   "q_t2": -0.543
+  },
+  "e6-Nc6 / Fortress": {
+   "balance": -0.021,
+   "q_t1": -0.647,
+   "q_t2": -0.606
+  },
+  "e6-Nc6 / e6-Nf6 ...Be7": {
+   "balance": -0.06,
+   "q_t1": -0.675,
+   "q_t2": -0.556
+  },
+  "e6-Nc6 / e6-Nf6 ...d5": {
+   "balance": 0.011,
+   "q_t1": -0.614,
+   "q_t2": -0.636
+  },
+  "e6-Nf6 ...Be7 / Alekhine sacrifice": {
+   "balance": 0.075,
+   "q_t1": -0.516,
+   "q_t2": -0.665
+  },
+  "e6-Nf6 ...Be7 / Barbeau": {
+   "balance": 0.042,
+   "q_t1": -0.567,
+   "q_t2": -0.651
+  },
+  "e6-Nf6 ...Be7 / Exchange French": {
+   "balance": 0.117,
+   "q_t1": -0.493,
+   "q_t2": -0.727
+  },
+  "e6-Nf6 ...Be7 / Federkevic": {
+   "balance": -0.005,
+   "q_t1": -0.621,
+   "q_t2": -0.612
+  },
+  "e6-Nf6 ...Be7 / Fortress": {
+   "balance": 0.055,
+   "q_t1": -0.557,
+   "q_t2": -0.668
+  },
+  "e6-Nf6 ...Be7 / French no ...c5": {
+   "balance": 0.089,
+   "q_t1": -0.521,
+   "q_t2": -0.699
+  },
+  "e6-Nf6 ...Be7 / Hungarian": {
+   "balance": 0.056,
+   "q_t1": -0.581,
+   "q_t2": -0.694
+  },
+  "e6-Nf6 ...Be7 / Leaf Gambit": {
+   "balance": 0.097,
+   "q_t1": -0.502,
+   "q_t2": -0.695
+  },
+  "e6-Nf6 ...Be7 / Qe7 anti-f7": {
+   "balance": 0.018,
+   "q_t1": -0.604,
+   "q_t2": -0.64
+  },
+  "e6-Nf6 ...Be7 / Scandinavian retreat": {
+   "balance": 0.057,
+   "q_t1": -0.553,
+   "q_t2": -0.666
+  },
+  "e6-Nf6 ...Be7 / Two Knights": {
+   "balance": 0.082,
+   "q_t1": -0.55,
+   "q_t2": -0.714
+  },
+  "e6-Nf6 ...Be7 / d4 d5 Nc3": {
+   "balance": 0.106,
+   "q_t1": -0.498,
+   "q_t2": -0.71
+  },
+  "e6-Nf6 ...Be7 / d4 d5 Nf3": {
+   "balance": 0.097,
+   "q_t1": -0.516,
+   "q_t2": -0.709
+  },
+  "e6-Nf6 ...Be7 / e6-Nc6": {
+   "balance": 0.081,
+   "q_t1": -0.531,
+   "q_t2": -0.692
+  },
+  "e6-Nf6 ...Be7 / e6-Nf6 ...d5": {
+   "balance": 0.095,
+   "q_t1": -0.511,
+   "q_t2": -0.7
+  },
+  "e6-Nf6 ...d5 / Alekhine sacrifice": {
+   "balance": 0.004,
+   "q_t1": -0.592,
+   "q_t2": -0.599
+  },
+  "e6-Nf6 ...d5 / Barbeau": {
+   "balance": -0.035,
+   "q_t1": -0.647,
+   "q_t2": -0.577
+  },
+  "e6-Nf6 ...d5 / Exchange French": {
+   "balance": 0.017,
+   "q_t1": -0.607,
+   "q_t2": -0.642
+  },
+  "e6-Nf6 ...d5 / Federkevic": {
+   "balance": -0.076,
+   "q_t1": -0.687,
+   "q_t2": -0.536
+  },
+  "e6-Nf6 ...d5 / Fortress": {
+   "balance": -0.013,
+   "q_t1": -0.632,
+   "q_t2": -0.606
+  },
+  "e6-Nf6 ...d5 / French no ...c5": {
+   "balance": 0.009,
+   "q_t1": -0.613,
+   "q_t2": -0.631
+  },
+  "e6-Nf6 ...d5 / Hungarian": {
+   "balance": -0.013,
+   "q_t1": -0.649,
+   "q_t2": -0.622
+  },
+  "e6-Nf6 ...d5 / Leaf Gambit": {
+   "balance": 0.018,
+   "q_t1": -0.585,
+   "q_t2": -0.622
+  },
+  "e6-Nf6 ...d5 / Qe7 anti-f7": {
+   "balance": -0.055,
+   "q_t1": -0.668,
+   "q_t2": -0.559
+  },
+  "e6-Nf6 ...d5 / Scandinavian retreat": {
+   "balance": -0.026,
+   "q_t1": -0.636,
+   "q_t2": -0.585
+  },
+  "e6-Nf6 ...d5 / Two Knights": {
+   "balance": 0.008,
+   "q_t1": -0.63,
+   "q_t2": -0.646
+  },
+  "e6-Nf6 ...d5 / d4 d5 Nc3": {
+   "balance": 0.019,
+   "q_t1": -0.602,
+   "q_t2": -0.64
+  },
+  "e6-Nf6 ...d5 / d4 d5 Nf3": {
+   "balance": 0.016,
+   "q_t1": -0.606,
+   "q_t2": -0.639
+  },
+  "e6-Nf6 ...d5 / e6-Nc6": {
+   "balance": 0.007,
+   "q_t1": -0.612,
+   "q_t2": -0.626
+  },
+  "e6-Nf6 ...d5 / e6-Nf6 ...Be7": {
+   "balance": -0.058,
+   "q_t1": -0.666,
+   "q_t2": -0.55
+  }
+ },
+ "status": "PARTIAL: 80 of 247 pairs (run stopped; machine shared with other agents)",
+ "time_advantage": false
+}
