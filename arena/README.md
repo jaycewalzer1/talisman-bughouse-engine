@@ -128,3 +128,30 @@ cd viewer && npm run dev   # http://localhost:5173
 The server sends each event as one JSON text frame. A viewer that connects mid-game first gets every
 event of the current game so far, then live events. A new game always starts with a `game_start` event,
 so a viewer should reset its boards when it sees one.
+
+## Custom engine: out-of-step self-play
+
+Contract: `docs/custom_engine_spec.md` section 3. Everything here is off by default; stock behaviour is unchanged.
+
+- `HivemindTeamController(free=True)` (player option `free`): every `position` carries the four clocks, `FreePass` and
+  `MateProbeAnyTime` are set, `TreeMoveMs` is the search's own think time, `RequireMoveOn` is never sent and there is
+  no sit cap. Think time is remaining clock / k with k drawn per game and team from `k_range` (60..300), clamped to
+  `min_nodes..max_nodes`; searches are always `serial`; each search's think time is multiplied by a factor from
+  `jitter` (0.5..2.0). A pass is a wait that ends at the next move on either board or after `free_sit_ms` (500), then
+  the controller searches again. Needs the `hivemind-clock` build (`binary="hivemind-clock"`). The legacy
+  `TimeAdvantage` input is still set from the clocks, as for stock.
+- `jitter` also works on a stock controller; `arena.pool run --jitter 0.5,2.0` sets it on every centralized Hivemind
+  team on both sides, so stock-vs-new evaluations run out of step.
+- `record=True` searches with `go nodes N sample`; `arena/recorder.py` fills gameId, outcome (+1/0/-1 from the
+  sample's team, flags count as wins, move-limit games 0) and movesLeft at game end and writes HVM5 chunks that
+  `convert_selfplay_data.read_binary_shard` reads (round trip tested in `arena/tests/test_custom_engine.py`).
+
+```bash
+.venv/bin/python -m arena.selfplay --games 200 --workers 1 --out runs/selfplay/it01 \
+    --model third_party/hivemind/engine/models/hivemind-clock-fp32.onnx --binary hivemind-clock \
+    --k-range 60,300 --jitter 0.5,2.0 --nodes-range 16,1600
+```
+
+Writes `runs/selfplay/it01/training_data/chunk_<run id>_NNNNNN.hvm`, `games/game_NNNN.jsonl` and `summary.json`
+(results: outcomes, reasons, flag rate, plies, sit spells per search, samples). The whole loop (generate, convert,
+train, export, gate against stock) is `cluster/iterate.sh`.

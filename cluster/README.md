@@ -35,3 +35,18 @@ per GPU-hour, or if GPU utilization stays low.
 ```bash
 .venv/bin/python cluster/engine_parity.py record runs/<some run>/game_*.jsonl
 ```
+
+## Custom engine loop
+
+`docs/custom_engine_spec.md`. Needs the `hivemind-clock` build (set `HIVEMIND_CLOCK_BINARY` if it is not at
+`third_party/hivemind/engine/build-clock/hivemind-clock`) and the widened network from `tools/make_clock_net.py` in the
+hivemind repo (`engine/models/hivemind-clock-fp32.onnx` and `hivemind-clock.tar`).
+
+```bash
+NAME=custom/sp/it01 MODEL=third_party/hivemind/engine/models/hivemind-clock-fp32.onnx sbatch --array=0-7 cluster/selfplay.sbatch
+RUN=main ITERS=3 STOCK_NODES=100 sbatch cluster/iterate.sh    # generate -> convert -> train -> export -> gate
+```
+
+`iterate.sh` keeps a marker per finished step, so resubmitting with the same `RUN` continues. Set `STOCK_NODES` to
+stock's best fixed budget from the beat-stock checks. Per-iteration results go to `runs/custom/<RUN>/results.tsv`
+and show up in `bash cluster/results.sh`.

@@ -53,3 +53,13 @@ $PY tools/compare_evals.py $Bt/same_100_v100 $Bt/clock55_v100 $Bt/clock110_v100 
 $PY tools/compare_evals.py $Bt/same_50_v50 $Bt/clock55_v50 $Bt/clock110_v50 $Bt/clock220_v50
 echo "-- 3 minute clock"
 $PY tools/compare_evals.py $Bt/long_c100_v300 $Bt/long_clock110_v300
+
+echo; echo "== custom engine (cluster/iterate.sh, docs/custom_engine_spec.md): self-play and gate per iteration"
+loops=(runs/custom/*/results.tsv)
+if [ "${#loops[@]}" -eq 0 ]; then echo "not started"; fi
+for r in "${loops[@]}"; do echo "-- $r"; column -t -s $'\t' "$r"; done
+gates=(runs/custom/*/it*/gate)
+if [ "${#gates[@]}" -gt 0 ]; then
+  echo "-- gates: new network (free mode) against stock Hivemind, both jittered, held-out openings"
+  $PY tools/compare_evals.py "${gates[@]}"
+fi
