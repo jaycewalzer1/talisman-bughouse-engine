@@ -151,3 +151,44 @@ def test_pass_stats_runs_on_a_recorded_shard():
     assert sum(g["n"] for g in rep["pass_by_diag_sign"].values()) == rep["shard_rows"]
     assert set(rep["value_labels"]["by_reason"]) <= {"checkmate", "flag", "?", "double_flag", "repetition",
                                                      "sitoff_adjudicated", "max_plies", "aborted"}
+
+
+# ------------------------------------------------------------------------------------------- implied_values, clock_response
+
+import clock_response as cr  # noqa: E402
+import implied_values as iv  # noqa: E402
+
+
+def test_pocket_colours_and_roles():
+    assert [iv.pocket_color("T1", p) for p in iv.POCKETS] == ["w", "b", "b", "w"]
+    assert [iv.pocket_color("T2", p) for p in iv.POCKETS] == ["b", "w", "w", "b"]
+    assert [cr.role_seat("T1", r) for r in iv.POCKETS] == ["A_white", "A_black", "B_black", "B_white"]
+    assert [cr.role_seat("T2", r) for r in iv.POCKETS] == ["A_black", "A_white", "B_white", "B_black"]
+    assert iv.add_to_pocket("8/8/8/8/8/8/8/K6k[Pq] w - - 0 1", "N", "b") == "8/8/8/8/8/8/8/K6k[Pqn] w - - 0 1"
+    assert iv.add_to_pocket("8/8/8/8/8/8/8/K6k w - - 0 1", "Q", "w") == "8/8/8/8/8/8/8/K6k[Q] w - - 0 1"
+
+
+@needs_chunk
+@needs_it04
+def test_implied_values_signs_on_a_shard():
+    d = os.path.dirname(_chunks()[0])
+    rep = iv.run(iv.parse_args(["--shards", d, "--model", IT04, "--positions", "12", "--threads", "2"]))
+    assert rep["dv"]["ours_A"]["Q"]["mean_dv"] > 0 > rep["dv"]["theirs_A"]["Q"]["mean_dv"]
+    assert rep["dv"]["ours_B"]["Q"]["mean_dv"] > 0 > rep["dv"]["theirs_B"]["Q"]["mean_dv"]
+
+
+@needs_chunk
+@needs_it04
+@needs_v2
+@pytest.mark.parametrize("model", [IT04, V2])
+def test_clock_response_is_zero_without_clock_planes(model):
+    """it04 has no clock planes and v2's clock columns are zero-initialised: with TimeAdvantage held, no clock
+    change may move the value or the pass prior."""
+    d = os.path.dirname(_chunks()[0])
+    rep = cr.run(cr.parse_args(["--shards", d, "--model", model, "--positions", "8", "--hold-ta",
+                                "--diagonals=-10,10", "--threads", "2"]))
+    for row in rep["dv_per_10s"].values():
+        for c in row.values():
+            assert c["abs_dv_plus10"] < 2e-3 and c["abs_dv_minus10"] < 2e-3
+    sweep = rep["pass_vs_diagonal"]
+    assert abs(sweep["-10"]["mean_p_pass"] - sweep["10"]["mean_p_pass"]) < 2e-3
