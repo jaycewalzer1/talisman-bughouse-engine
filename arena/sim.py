@@ -355,6 +355,7 @@ class Simulator:
             ply=self.plies,
             partner_machine_free=self._machine_free(PARTNER[seat]),
             last_move_ms=dict(self._last_move_ms),
+            reps=({b: st.repetition_count(b) for b in BOARDS} if hasattr(st, "repetition_count") else None),
         )
 
     def _machine_free(self, seat: str) -> bool:

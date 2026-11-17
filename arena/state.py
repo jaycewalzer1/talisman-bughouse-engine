@@ -56,6 +56,11 @@ class BughouseState:
     def fen(self, board: str) -> str:
         return self.boards[board].fen()
 
+    def repetition_count(self, board: str) -> int:
+        """How often the current board-only position of ``board`` occurred since the last drop there (>= 1),
+        the count the repetition rule uses; the engine's ``reps`` suffix (spec v3 E1) takes it."""
+        return max(1, self._seen[board].get(repetition_key(self.boards[board]), 1))
+
     def to_move(self, board: str) -> str:
         return seat_of(board, _color_name(self.boards[board].turn))
 

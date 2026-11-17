@@ -101,6 +101,9 @@ class Observation:
     # Simulated ms at which the last move landed on each board ({"A": ms, "B": ms}; the game start when no move
     # has landed there yet). None when the caller does not track it (players then send no elapsed times).
     last_move_ms: dict | None = None
+    # Occurrences of each board's current position under the arena's FICS repetition rule ({"A": n, "B": n},
+    # n >= 1; board only, reset by a drop). None when the state does not count repetitions.
+    reps: dict | None = None
 
 
 @dataclass(frozen=True)

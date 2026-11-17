@@ -140,12 +140,14 @@ CLOCK_SEATS = ("A_white", "A_black", "B_white", "B_black")  # order of the ``clo
 
 
 def position_command(fen_a: str, fen_b: str, clocks: dict | None = None, elapsed: dict | None = None,
-                     pace: dict | None = None) -> str:
+                     pace: dict | None = None, reps: dict | None = None) -> str:
     """``position fen <A> | <B>``, with ``clocks <aw> <ab> <bw> <bb>`` (remaining ms, >= 0) when clocks are given,
     and then ``elapsed <ea> <eb>`` (ms since the last move landed on board A / B, >= 0; spec v2 A) when elapsed
     times are given too. Elapsed times without clocks are not sent (the suffix extends the clocks suffix).
     ``pace`` ({seat: ms}, spec v3 contract 1) appends ``pace <paw> <pab> <pbw> <pbb>``, each seat's expected move
-    time, again only with clocks. An engine that does not parse it skips the unknown tokens."""
+    time, again only with clocks. ``reps`` ({"A": n, "B": n}) appends ``reps <ra> <rb>``, the arena's repetition
+    count of each board's position (spec v3 E1, the engine's repetition planes). An engine that does not parse
+    these skips the unknown tokens."""
     cmd = f"position fen {fen_a} | {fen_b}"
     if clocks is not None:
         cmd += " clocks " + " ".join(str(max(0, int(clocks[s]))) for s in CLOCK_SEATS)
@@ -153,6 +155,8 @@ def position_command(fen_a: str, fen_b: str, clocks: dict | None = None, elapsed
             cmd += " elapsed " + " ".join(str(max(0, int(elapsed[b]))) for b in ("A", "B"))
         if pace is not None:
             cmd += " pace " + " ".join(str(max(0, int(round(pace[s])))) for s in CLOCK_SEATS)
+    if reps is not None:
+        cmd += " reps " + " ".join(str(max(1, int(reps[b]))) for b in ("A", "B"))
     return cmd
 
 
@@ -266,7 +270,8 @@ class HivemindProcess:
     def search(self, fen_a: str, fen_b: str, *, team: str, nodes: int, time_advantage: bool = False,
                require: str | None = None, multipv: int = 1, clocks: dict | None = None, sample: bool = False,
                options: dict | None = None, require_option: bool = True,
-               elapsed: dict | None = None, pace: dict | None = None) -> SearchResult:
+               elapsed: dict | None = None, pace: dict | None = None,
+               reps: dict | None = None) -> SearchResult:
         """Joint search for ``team`` ("T1"/"T2") from the two bracket-form FENs. ``multipv`` > 1 also fills
         ``SearchResult.multi`` with that many candidate lines.
 
@@ -286,7 +291,7 @@ class HivemindProcess:
                 self.set_option(k, v)
             if self.reset_tree:
                 self._send("ucinewgame")
-            self._send(position_command(fen_a, fen_b, clocks, elapsed, pace))
+            self._send(position_command(fen_a, fen_b, clocks, elapsed, pace, reps))
             self._sync()  # drains stale output (late info strings) before the search
             lines: list[str] = []
             t0 = time.perf_counter()
@@ -761,7 +766,8 @@ class HivemindTeamController:
                  noise: bool = False, temperature: float = 0.0, temperature_plies: int = 20,
                  pcr_p: float | None = None, pcr_nodes: int = 400, dedupe: str = "position",
                  clock_bucket_ms: int = 5000, sit_recheck: bool = False, recheck_nodes: int = 32,
-                 think_head_norm: bool = False, start_offset_ms: int = 0, stock_no_root: str = "wait") -> None:
+                 think_head_norm: bool = False, start_offset_ms: int = 0, stock_no_root: str = "wait",
+                 reps: bool = False) -> None:
         if clock_k is not None and clock_k <= 0:
             raise ValueError(f"clock_k must be > 0, got {clock_k}")
         if record and not free:
@@ -782,6 +788,7 @@ class HivemindTeamController:
             raise ValueError(f"pace_alpha must be in (0, 1], got {pace_alpha}")
         self.team = team
         self.process = process
+        self.send_reps = bool(reps)  # free mode: send the arena's repetition counts ('reps', spec v3 E1)
         self.nodes = int(nodes)
         self.ms_per_node = float(ms_per_node)
         self.max_consecutive_sits = max_consecutive_sits
@@ -1072,6 +1079,8 @@ class HivemindTeamController:
         options = {"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": tree_ms}
         options.update(self._exploration_options(None if recheck else full, obs.ply))
         kw = {"pace": pace} if pace is not None else {}
+        if self.send_reps and getattr(obs, "reps", None) is not None:
+            kw["reps"] = obs.reps
         res = self.process.search(fen_a, fen_b, team=self.team, nodes=request, time_advantage=ahead,
                                   clocks=obs.clocks_ms, sample=want_sample, options=options,
                                   require_option=False, elapsed=elapsed, **kw)
