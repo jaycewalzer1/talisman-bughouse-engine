@@ -49,23 +49,37 @@
 # GATE_OPPONENT_KW (extra JSON members, e.g. '"max_nodes": 3200'), PROMOTE (1), PROMOTE_MARGIN (0).
 #
 # Self-play (WP-C) and convert/train (WP-D) options. Each is passed only when the program lists the flag in its
-# --help (or, for convert, takes the keyword), so this file runs before and after those packages land; a set
-# option the program does not have yet is reported and skipped:
-#   BASE_MIX        --base-ms-mix      self-play base time per game (spec v3 D2 default
-#                                      60000:0.25,120000:0.25,180000:0.35,300000:0.15; "" = BASE_MS only)
-#   TIME_ODDS       --time-odds        per-game start-clock offsets (WP-C self-play 1; off)
-#   THINK_TARGET_MS --think-target-ms  node budget decoupled from base time, k = base / target (off)
-#   PACE_MIX        --pace-mix         per-seat pace mixture with additive lag, replaces JITTER (off)
-#   EXPLORE_NOISE   --opening-noise    root Dirichlet on every recorded search, "ALPHA,EPS" (off)
-#   MOVE_TEMP       --move-temperature move temperature for the first TEMP_PLIES plies (off)
+# --help (or, for convert, takes the keyword); a set option the program does not have is reported and skipped.
+# Empty = the program's own default (for self-play: the REGIME's).
+#   REGIME          --regime            self-play regime (v3 = spec v3: base-time mix 60/120/180/300 s at
+#                                       0.25/0.25/0.35/0.15 (D2), think target, time odds, searched charge, pace,
+#                                       noise, temperature, playout caps, bucket dedupe; v2 = the old regime). v3
+#   BASE_MIX        --base-mix          e.g. 60000:0.25,120000:0.25,180000:0.35,300000:0.15 ('off' = BASE_MS)
+#   TIME_ODDS       --time-odds         on/off
+#   THINK_TARGET_MS --think-target-ms   LO,HI move-1 think time; k = base / target
+#   SP_CHARGE       --charge            requested/searched
+#   MIN_THINK_MS    --min-think-ms      think-time floor
+#   PACE_MIX        --pace-mixture      on/off (replaces JITTER)
+#   LAG_MS          --lag-ms            mean additive lag
+#   EXPLORE_NOISE   --noise             root noise on recorded searches, on/off
+#   MOVE_TEMP       --temperature       move temperature
 #   TEMP_PLIES      --temperature-plies
-#   FULL_SEARCH_P   --full-search-prob playout-cap randomisation: share of full-budget recorded searches (off)
-#   SP_MS_PER_NODE  --ms-per-node      self-play cost model (arena.selfplay default)
+#   FULL_SEARCH_P   --pcr-p             playout-cap share of full searches
+#   PCR_NODES       --pcr-nodes
+#   DEDUPE          --dedupe            position/bucket
+#   SP_MS_PER_NODE  --ms-per-node       self-play cost model
 #   SP_EXTRA        appended to the self-play command as is
-#   Q_VALUE_RATIO   convert keyword q_value_ratio (and train_loop --q-value-ratio if it has one) (off)
-#   CONVERT_KW      JSON object of further convert_to_split_parquet keywords, e.g. '{"replay_iterations": 3}'
-#   TRUNK_LR        train_loop --trunk-lr  (two parameter groups; off)
-#   HEAD_LR         train_loop --head-lr
+#   Q_VALUE_RATIO   convert keyword q_value_ratio (value target = (1-r) outcome + r root_q)
+#   WEIGHT_NODES_REF convert keyword weight_nodes_ref (sample weight min(1, nodes / N))
+#   SPLIT_BY        convert keyword split_by (auto/game/opening)
+#   REPLAY_ITERS    replay chunks from the last N iterations (1 = the previous one only, the old behaviour; the
+#                   audit asks for 3)
+#   CONVERT_KW      JSON object of further convert_to_split_parquet keywords
+#   RECIPE          train_loop --recipe (auto/clock/stock; clock = two learning rates for trunk and new columns)
+#   TRUNK_LR        train_loop --trunk-lr  (not a train_loop flag yet: reported and skipped)
+#   HEAD_LR         train_loop --head-lr   (same)
+#   DRIFT_SHARD     train_loop --drift-shard (frozen SL validation shard) and --drift-out <it>/drift.json
+#   DRIFT_REFERENCE train_loop --drift-reference (default: the start checkpoint; use it04)
 #   TRAIN_EXTRA     appended to the train_loop command as is
 # A <it>/drift.json written by training (WP-D drift metric) is copied into results.tsv as one JSON column.
 set -uo pipefail
@@ -127,20 +141,32 @@ if [ -z "${GATE_STOCK_K:-}" ]; then
 fi
 
 # ---- self-play / convert / train options (WP-C, WP-D)
-BASE_MIX="${BASE_MIX-60000:0.25,120000:0.25,180000:0.35,300000:0.15}"
+REGIME="${REGIME:-v3}"
+BASE_MIX="${BASE_MIX:-}"
 TIME_ODDS="${TIME_ODDS:-}"
 THINK_TARGET_MS="${THINK_TARGET_MS:-}"
+SP_CHARGE="${SP_CHARGE:-}"
+MIN_THINK_MS="${MIN_THINK_MS:-}"
 PACE_MIX="${PACE_MIX:-}"
+LAG_MS="${LAG_MS:-}"
 EXPLORE_NOISE="${EXPLORE_NOISE:-}"
 MOVE_TEMP="${MOVE_TEMP:-}"
 TEMP_PLIES="${TEMP_PLIES:-}"
 FULL_SEARCH_P="${FULL_SEARCH_P:-}"
+PCR_NODES="${PCR_NODES:-}"
+DEDUPE="${DEDUPE:-}"
 SP_MS_PER_NODE="${SP_MS_PER_NODE:-}"
 SP_EXTRA="${SP_EXTRA:-}"
 Q_VALUE_RATIO="${Q_VALUE_RATIO:-}"
+WEIGHT_NODES_REF="${WEIGHT_NODES_REF:-}"
+SPLIT_BY="${SPLIT_BY:-}"
+REPLAY_ITERS="${REPLAY_ITERS:-1}"
 CONVERT_KW="${CONVERT_KW:-}"
+RECIPE="${RECIPE:-}"
 TRUNK_LR="${TRUNK_LR:-}"
 HEAD_LR="${HEAD_LR:-}"
+DRIFT_SHARD="${DRIFT_SHARD:-}"
+DRIFT_REFERENCE="${DRIFT_REFERENCE:-}"
 TRAIN_EXTRA="${TRAIN_EXTRA:-}"
 
 mkdir -p "$ROOT"
@@ -207,38 +233,53 @@ gate_all() {
 # Programs' flags, read once: options WP-C / WP-D add are passed only once the program has them.
 SP_HELP="$($PY -m arena.selfplay --help 2>/dev/null)"
 TRAIN_HELP=""
-if [ -n "$TRUNK_LR$HEAD_LR$Q_VALUE_RATIO" ]; then
+if [ -n "$RECIPE$TRUNK_LR$HEAD_LR$DRIFT_SHARD$DRIFT_REFERENCE" ]; then
   TRAIN_HELP="$(cd "$HM" && "$PY" -m hivemind.training.train_loop --help 2>/dev/null)"
 fi
 has_flag() { grep -qE -- "$1([] =,]|\$)" <<< "$2"; }
 SP_OPTS=()
 sp_opt() {  # flag value env-name
   [ -z "$2" ] && return 0
-  if has_flag "$1" "$SP_HELP"; then SP_OPTS+=("$1" "$2"); else echo "iterate: arena.selfplay has no $1 yet: $3=$2 not used" >&2; fi
+  if has_flag "$1" "$SP_HELP"; then SP_OPTS+=("$1" "$2"); else echo "iterate: arena.selfplay has no $1: $3=$2 not used" >&2; fi
 }
-sp_opt --base-ms-mix "$BASE_MIX" BASE_MIX
+sp_opt --regime "$REGIME" REGIME
+sp_opt --base-mix "$BASE_MIX" BASE_MIX
 sp_opt --time-odds "$TIME_ODDS" TIME_ODDS
 sp_opt --think-target-ms "$THINK_TARGET_MS" THINK_TARGET_MS
-sp_opt --pace-mix "$PACE_MIX" PACE_MIX
-sp_opt --opening-noise "$EXPLORE_NOISE" EXPLORE_NOISE
-sp_opt --move-temperature "$MOVE_TEMP" MOVE_TEMP
+sp_opt --charge "$SP_CHARGE" SP_CHARGE
+sp_opt --min-think-ms "$MIN_THINK_MS" MIN_THINK_MS
+sp_opt --pace-mixture "$PACE_MIX" PACE_MIX
+sp_opt --lag-ms "$LAG_MS" LAG_MS
+sp_opt --noise "$EXPLORE_NOISE" EXPLORE_NOISE
+sp_opt --temperature "$MOVE_TEMP" MOVE_TEMP
 sp_opt --temperature-plies "$TEMP_PLIES" TEMP_PLIES
-sp_opt --full-search-prob "$FULL_SEARCH_P" FULL_SEARCH_P
+sp_opt --pcr-p "$FULL_SEARCH_P" FULL_SEARCH_P
+sp_opt --pcr-nodes "$PCR_NODES" PCR_NODES
+sp_opt --dedupe "$DEDUPE" DEDUPE
 sp_opt --ms-per-node "$SP_MS_PER_NODE" SP_MS_PER_NODE
 TRAIN_OPTS=()
 train_opt() {  # flag value env-name
   [ -z "$2" ] && return 0
-  if has_flag "$1" "$TRAIN_HELP"; then TRAIN_OPTS+=("$1" "$2"); else echo "iterate: train_loop has no $1 yet: $3=$2 not used" >&2; fi
+  if has_flag "$1" "$TRAIN_HELP"; then TRAIN_OPTS+=("$1" "$2"); else echo "iterate: train_loop has no $1: $3=$2 not used" >&2; fi
 }
+train_opt --recipe "$RECIPE" RECIPE
 train_opt --trunk-lr "$TRUNK_LR" TRUNK_LR
 train_opt --head-lr "$HEAD_LR" HEAD_LR
-[ -n "$Q_VALUE_RATIO" ] && has_flag --q-value-ratio "$TRAIN_HELP" && TRAIN_OPTS+=(--q-value-ratio "$Q_VALUE_RATIO")
+train_opt --drift-shard "$DRIFT_SHARD" DRIFT_SHARD
+train_opt --drift-reference "$DRIFT_REFERENCE" DRIFT_REFERENCE
+CONVERT_ALL="$("$PY" -c "
+import json, sys
+kw = json.loads(sys.argv[4]) if sys.argv[4] else {}
+for k, v, f in (('q_value_ratio', sys.argv[1], float), ('weight_nodes_ref', sys.argv[2], float), ('split_by', sys.argv[3], str)):
+    if v:
+        kw[k] = f(v)
+print(json.dumps(kw) if kw else '')" "$Q_VALUE_RATIO" "$WEIGHT_NODES_REF" "$SPLIT_BY" "$CONVERT_KW")" || die "bad CONVERT_KW"
 
 echo "commit $(git rev-parse HEAD)  loop $ROOT  iterations $START..$((START + ITERS - 1))  games $GAMES  workers $WORKERS"
 echo "self-play: k $K_RANGE  jitter $JITTER  nodes $NODES_RANGE  clock $BASE_MS ms  options: ${SP_OPTS[*]:-none} ${SP_EXTRA}"
 echo "gate rows: $GATE_TAG_LIST  pairs $GATE_PAIRS  seed $GATE_SEED  openings $GATE_OPENINGS  contender k $GATE_K_RANGE unjittered"
 echo "gate opponent: stock, $( [ "$GATE_STOCK_K" = 0 ] && echo "$STOCK_NODES fixed nodes" || echo "clock / $GATE_STOCK_K" )  charge ${GATE_CHARGE:-default}  measured ms/node $GATE_MEASURE  sprt ${GATE_SPRT:-off}  it00 row $GATE_IT00  promote $PROMOTE (margin $PROMOTE_MARGIN)"
-echo "convert/train: q_value_ratio ${Q_VALUE_RATIO:-default}  convert kw ${CONVERT_KW:-none}  train options: ${TRAIN_OPTS[*]:-none} ${TRAIN_EXTRA}"
+echo "convert: replay from the last $REPLAY_ITERS iteration(s)  keywords ${CONVERT_ALL:-none}  train options: ${TRAIN_OPTS[*]:-none} ${TRAIN_EXTRA}"
 echo "shards v$SHARD_VERSION  think head $THINK_HEAD  think labels $THINK_LABELS (N $THINK_NODES, fraction $THINK_FRACTION, cap $THINK_MAX, repeat $THINK_REPEAT)"
 $PY -c "from arena.players.hivemind import resolve_binary as r; print('binaries', r('hivemind'), r('hivemind-clock'))"
 
@@ -293,26 +334,29 @@ for ((i = START; i < START + ITERS; i++)); do
 
   # ------------------------------------------------------------------ convert
   if ! is_done "$DIR" convert; then
+    # Replay chunks from the last REPLAY_ITERS iterations that have data (newest first), as a JSON list.
     PREV_DATA=""
-    [ "$i" -gt 1 ] && [ -d "$(data_of "$ROOT/$(label $((i - 1)))")" ] && \
-      PREV_DATA="$(data_of "$ROOT/$(label $((i - 1)))")"
+    for ((j = i - 1; j >= 1 && j >= i - REPLAY_ITERS; j--)); do
+      P="$(data_of "$ROOT/$(label "$j")")"
+      [ -d "$P" ] && PREV_DATA="${PREV_DATA:+$PREV_DATA,}\"$REPO/$P\""
+    done
+    [ -n "$PREV_DATA" ] && PREV_DATA="[$PREV_DATA]"
     rm -rf "$DIR/rl_data"
     # Resolve the chunk dir here: inside the subshell below the cwd is $HM, where data_of's relative marker test
     # would always miss .done_think and fall back to the unlabelled chunks.
     DATA="$(data_of "$DIR")"
     echo "convert reads $DATA"
-    (cd "$HM" && "$PY" - "$REPO/$DIR" "${PREV_DATA:+$REPO/$PREV_DATA}" "${VAL_FRACTION:-}" "$REPO/$DATA" \
-        "$Q_VALUE_RATIO" "$CONVERT_KW" <<'EOF'
+    (cd "$HM" && "$PY" - "$REPO/$DIR" "$PREV_DATA" "${VAL_FRACTION:-}" "$REPO/$DATA" "$CONVERT_ALL" <<'EOF'
 import inspect, json, sys
 from pathlib import Path
 from hivemind.data.convert_selfplay_data import convert_to_split_parquet
 it = Path(sys.argv[1]).resolve()
-replay = sys.argv[2] or None
+replay = json.loads(sys.argv[2]) if sys.argv[2] else None
+if replay and len(replay) == 1:
+    replay = replay[0]  # one directory: the form every converter version takes
 kw = {"validation_fraction": float(sys.argv[3])} if sys.argv[3] else {}
 if sys.argv[5]:
-    kw["q_value_ratio"] = float(sys.argv[5])
-if sys.argv[6]:
-    kw.update(json.loads(sys.argv[6]))
+    kw.update(json.loads(sys.argv[5]))
 params = inspect.signature(convert_to_split_parquet).parameters
 takes_any = any(p.kind == p.VAR_KEYWORD for p in params.values())
 for k in [k for k in kw if k not in params and not takes_any]:
@@ -332,7 +376,8 @@ EOF
     # shellcheck disable=SC2086  # TRAIN_EXTRA is split on purpose
     (cd "$HM" && HIVEMIND_WORKSPACE="$WS" "$PY" -m hivemind.training.train_loop --mode rl --architecture "$ARCH" \
       --checkpoint "$CKPT" --rl-data-dir "$REPO/$DIR/rl_data/train" --val-data-dir "$REPO/$DIR/rl_data/val" \
-      --iteration "$IT" ${BATCH_SIZE:+--batch-size "$BATCH_SIZE"} ${TRAIN_OPTS[@]+"${TRAIN_OPTS[@]}"} $TRAIN_EXTRA) \
+      --iteration "$IT" ${BATCH_SIZE:+--batch-size "$BATCH_SIZE"} ${TRAIN_OPTS[@]+"${TRAIN_OPTS[@]}"} \
+      ${DRIFT_SHARD:+--drift-out "$REPO/$DIR/drift.json"} $TRAIN_EXTRA) \
       || die "$IT: training failed"
     done_step "$DIR" train
   fi
