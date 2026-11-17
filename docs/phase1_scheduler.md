@@ -1,5 +1,8 @@
 # Phase 1 scheduler: agreed design
 
+**Retired 2026-11-17.** The project now builds one clock-aware engine with the hard-coded rules removed and no
+communication (`docs/custom_engine_spec.md`). This file is kept as the record of the earlier design.
+
 Agreed 2026-11-02, revised 2026-11-09. Hivemind stays frozen and picks the moves. A small new policy decides
 around it, trained with REINFORCE on team wins. The policy is `arena/players/scheduler.py`, the arena player
 `arena/players/scheduler_player.py` and the training loop `arena/train_scheduler.py`. Tests:

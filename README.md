@@ -8,6 +8,15 @@ and [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish).
 git clone --recurse-submodules https://github.com/jaycewalzer1/talisman-bughouse-engine.git
 ```
 
+## Current direction (2026-11-17)
+
+A custom engine built from Hivemind's it04 weights: **one engine plays both of its team's boards, sees the real
+clocks, and has the hand-written time and stalling rules removed**, trained on games where the two boards run
+independently on running clocks. The goal is to beat original Hivemind. The earlier work on split teammates who
+talk to each other is retired: a split team at best tied one program, so there is no communication in the new
+engine. Contract: [docs/custom_engine_spec.md](docs/custom_engine_spec.md) (branch `custom-engine`). Evidence that
+led here: [docs/beat_stock.md](docs/beat_stock.md).
+
 Setup, baseline status and parity results are in [NOTES.md](NOTES.md).
 
 - `third_party/hivemind`: fork of Hivemind, branch `talisman/baseline-fixes`

@@ -1,5 +1,26 @@
 # talisman-bughouse-engine — working notes
 
+
+## Direction (2026-11-17)
+One engine, both boards, real clocks, hard-coded time/stall rules removed, no communication. Spec:
+`docs/custom_engine_spec.md`; branches `custom-engine` (here) and `talisman/custom-engine` (hivemind fork). The
+split-teammate scheduler work (`docs/phase1_scheduler.md`) is retired; its results are in `cluster/results.sh` and
+`docs/beat_stock.md`.
+
+Clock build (separate binary `engine/build-clock/hivemind-clock`, 41 planes per board; the default build is unchanged):
+```bash
+cd third_party/hivemind/engine
+cmake --preset ninja-release -B build-clock -DHIVEMIND_CLOCK_PLANES=ON -DHIVEMIND_BACKEND=onnxruntime \
+  -DONNXRuntime_ROOT=/opt/homebrew/opt/onnxruntime -DHIVEMIND_USE_CCACHE=OFF
+cmake --build build-clock -j4
+```
+Widened net: `python tools/make_clock_net.py --check` in the hivemind repo -> `engine/models/hivemind-clock{.tar,-fp32.onnx,-fp16.onnx}`.
+Planes parity for the clock layout: `sh tools/cpp/build.sh` (also builds `planes_dump_clock`), then
+`.venv/bin/python tools/planes_parity.py --clocks --games 400`.
+Local smoke of the whole loop (2 games, CPU training, 1 gate pair):
+`OMP_NUM_THREADS=4 RUN=smoke ITERS=1 GAMES=2 GATE_PAIRS=1 WORKERS=1 NODES_RANGE=32,64 STOCK_NODES=64 BATCH_SIZE=16 VAL_FRACTION=0.26 bash cluster/iterate.sh`
+(the game-level split is a hash of run id and game id; 0.26 is the value that splits the two `smoke-it01` games).
+
 ## Layout
 - `third_party/hivemind` — submodule tracking the fork `jaycewalzer1/hivemind`, branch `talisman/baseline-fixes` (based on `1d01d6d`, the commit cited in the proposal).
 - `third_party/Fairy-Stockfish` — submodule at `9f778da` (upstream master, 2026-09-23). Note Hivemind also vendors its own trimmed Fairy-Stockfish copy under `engine/src/Fairy-Stockfish`.
