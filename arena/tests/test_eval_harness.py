@@ -1,0 +1,267 @@
+"""Tests for the evaluation harness (audit 2026-11-17 WP-A): resumable rows, rescoring, GSPRT, per-arm ms_per_node."""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import random
+import shutil
+
+import pytest
+
+from arena.pool import (Pool, apply_ms_per_node, arm_key, for_evaluation, main, make_schedule, run_schedule,
+                        summary_from_game_file)
+from tools import rescore as rescore_mod
+from tools import sprt
+
+REAL_ROW = "runs/custom/local1h/it01/gate"
+
+
+def pool_dict():
+    return {
+        "contender": {"name": "me", "setup": "centralized", "kind": "heuristic", "nodes": 200},
+        "opponents": [{"name": "stock", "setup": "centralized", "kind": "heuristic", "group": "target"}],
+    }
+
+
+def _row(tmp_path, pairs=3, extra=()):
+    path, out = tmp_path / "pool.json", tmp_path / "row"
+    path.write_text(json.dumps(pool_dict()))
+    assert main(["run", "--pool", str(path), "--pairs", str(pairs), "--boot", "200", "--base-ms", "20000",
+                 "--out", str(out), *extra]) == 0
+    return path, out
+
+
+def _comparable(results):
+    return json.loads(json.dumps(results))
+
+
+# ---------------------------------------------------------------- rescore
+
+def test_rescore_equals_summary_of_a_fresh_row(tmp_path):
+    _, out = _row(tmp_path)
+    report = json.loads((out / "summary.json").read_text())
+    rep = rescore_mod.rescore(str(out), n_boot=200, seed=0)
+    assert _comparable(rep["results"]) == report["results"]
+    by_id = {g["game_id"]: g for g in report["games"]}
+    for g in rep["games"]:
+        old = {k: v for k, v in by_id[g["game_id"]].items() if k != "wall_s"}
+        assert {k: v for k, v in g.items()} == old
+    # results.jsonl has every game as it landed
+    lines = [json.loads(l) for l in (out / "results.jsonl").read_text().splitlines()]
+    assert sorted(l["game_id"] for l in lines) == sorted(by_id)
+    assert report["results"]["by_opponent"]["stock"]["reasons"]
+    assert "contender_nodes_per_game" in report["results"]["by_opponent"]["stock"]
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(REAL_ROW, "summary.json")), reason="local1h gate row not present")
+def test_rescore_of_an_existing_run_equals_its_summary(tmp_path):
+    row = tmp_path / "gate"
+    shutil.copytree(REAL_ROW, row)
+    old = json.loads((row / "summary.json").read_text())
+    rep = rescore_mod.rescore(str(row))  # same n_boot and seed as the row (2000, seed 1 for it01)
+    rep1 = rescore_mod.rescore(str(row), seed=1)
+    for name, r in old["results"]["by_opponent"].items():
+        new = rep1["results"]["by_opponent"][name] if rep1["results"]["by_opponent"][name]["ci95"] == r["ci95"] \
+            else rep["results"]["by_opponent"][name]
+        assert {k: new[k] for k in r} == r
+    assert len(rep["games"]) == len(old["games"])
+    for a, b in zip(rep["games"], sorted(old["games"], key=lambda g: g["game_id"])):
+        assert (a["result"], a["reason"], a["teams"]) == (b["result"], b["reason"], b["teams"])
+
+
+# ---------------------------------------------------------------- resume
+
+def test_skip_done_plays_only_missing_cut_and_crashed_games(tmp_path):
+    from arena.run import run_one
+
+    _, out = _row(tmp_path, pairs=4)
+    full = json.loads((out / "summary.json").read_text())
+    (out / "summary.json").unlink()
+    (out / "game_0002.jsonl").unlink()  # never written (job cut off)
+    lines = (out / "game_0005.jsonl").read_text().splitlines()
+    (out / "game_0005.jsonl").write_text("\n".join(lines[:-1]) + "\n")  # cut mid-write: no game_end
+    lines = (out / "game_0007.jsonl").read_text().splitlines()
+    end = json.loads(lines[-1])
+    end["error"] = "RuntimeError: engine died"
+    (out / "game_0007.jsonl").write_text("\n".join(lines[:-1] + [json.dumps(end)]) + "\n")
+
+    played = []
+
+    def counting(spec):
+        played.append(spec["index"])
+        return run_one(spec)
+
+    pool = Pool.from_dict(pool_dict())
+    specs = make_schedule(pool, 4, seed=0, base_ms=20000)
+    report = run_schedule(specs, str(out), n_boot=200, skip_done=True, run_one=counting)
+    assert sorted(played) == [2, 5, 7]
+    assert report["results"]["by_opponent"]["stock"]["games"] == full["results"]["by_opponent"]["stock"]["games"]
+    assert len([json.loads(l) for l in (out / "results.jsonl").read_text().splitlines()]) == 8
+    # a different schedule into the same folder is refused
+    with pytest.raises(ValueError, match="different schedule"):
+        run_schedule(make_schedule(pool, 4, seed=1, base_ms=20000), str(out), skip_done=True, run_one=counting)
+
+
+def test_summary_from_game_file_rejects_missing_and_partial(tmp_path):
+    spec = {"index": 1, "game_id": "p00001", "contender_team": "T1"}
+    assert summary_from_game_file(spec, str(tmp_path / "nope.jsonl")) is None
+    (tmp_path / "g.jsonl").write_text('{"type":"game_start"}\n{"type":"move"')
+    assert summary_from_game_file(spec, str(tmp_path / "g.jsonl")) is None
+
+
+# ---------------------------------------------------------------- SPRT
+
+def _game_probs(target_nelo: float, draw: float = 0.2) -> tuple[float, float, float]:
+    """(win, draw, loss) of independent games whose normalised Elo is target_nelo."""
+    def nelo_of(d):
+        w, l = (1 - draw) / 2 + d, (1 - draw) / 2 - d
+        mu = w + draw / 2
+        var = w + draw / 4 - mu * mu
+        return (mu - 0.5) / math.sqrt(var) * sprt.NELO_PER_NT
+    lo, hi = -0.39, 0.39
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if nelo_of(mid) < target_nelo else (lo, mid)
+    d = (lo + hi) / 2
+    return (1 - draw) / 2 + d, draw, (1 - draw) / 2 - d
+
+
+def _simulate(target: float, runs: int, seed: int, max_pairs: int = 20000) -> dict:
+    rng = random.Random(seed)
+    w, d, _ = _game_probs(target)
+    out = {"H0": 0, "H1": 0, "continue": 0}
+    lo, hi = sprt.bounds()
+    for _ in range(runs):
+        counts = [0] * 5
+        decision = "continue"
+        for n in range(max_pairs):
+            pts = 0.0
+            for _g in range(2):
+                u = rng.random()
+                pts += 1.0 if u < w else 0.5 if u < w + d else 0.0
+            counts[int(pts * 2)] += 1
+            if n % 10 == 9:  # look every 10 pairs (cheaper; slightly conservative)
+                v = sprt.llr(counts, 0.0, 20.0)
+                if v >= hi or v <= lo:
+                    decision = "H1" if v >= hi else "H0"
+                    break
+        out[decision] += 1
+    return out
+
+
+def test_sprt_on_simulated_pairs_hits_nominal_alpha_and_beta():
+    runs = 200
+    at0 = _simulate(0.0, runs, seed=1)
+    at1 = _simulate(20.0, runs, seed=2)
+    # nominal 5% each; 200 runs -> standard error ~1.5%, so allow up to 10%
+    assert at0["H1"] / runs <= 0.10, at0
+    assert at1["H0"] / runs <= 0.10, at1
+    assert at0["continue"] == 0 and at1["continue"] == 0
+    # and it is not trivially conservative: a clearly better side is accepted
+    assert _simulate(40.0, 50, seed=3)["H1"] >= 48
+    # the LLR under each hypothesis' maximum-likelihood distribution honours the constraint
+    phat = [0.05, 0.2, 0.4, 0.25, 0.1]
+    for t in (0.0, 0.08):
+        p = sprt.mle_t(phat, t)
+        xs = [b / 2 for b in sprt.BUCKETS]
+        mu = sum(x * q for x, q in zip(xs, p))
+        sd = math.sqrt(sum(q * (x - mu) ** 2 for x, q in zip(xs, p)))
+        assert (mu - 0.5) / sd == pytest.approx(t, abs=1e-6) and sum(p) == pytest.approx(1.0)
+
+
+def test_pentanomial_counts_whole_pairs_only():
+    g = lambda i, res, ct="T1", **kw: {"game_id": f"p{i:05d}", "pair_index": (i - 1) // 2, "result": res,
+                                       "contender_team": ct, "opponent": "x", **kw}
+    games = [g(1, "T1"), g(2, "T1", "T2"), g(3, "draw"), g(4, "T2"), g(5, "T1"), g(7, "T1"), g(8, "T2", error="x")]
+    assert sprt.pentanomial(games) == [0, 1, 1, 0, 0]  # pairs 0 (1+0) and 1 (0.5+0); 2 and 3 incomplete/errored
+    st = sprt.status([0, 0, 0, 0, 0])
+    assert st["decision"] == "continue" and st["llr"] == 0.0
+
+
+def test_run_schedule_stops_when_sprt_is_decided(tmp_path):
+    pool = Pool.from_dict(pool_dict())
+    specs = make_schedule(pool, 400, seed=0)
+
+    def always_contender(spec):
+        return {"game_id": spec["game_id"], "contender_team": spec["contender_team"], "opening_id": spec["opening_id"],
+                "result": spec["contender_team"], "reason": "checkmate", "flag": False, "loser_team": None,
+                "teams": {t: {"decisions": 1, "think_ms": 1, "nodes": 1, "moves": 1, "messages": 0, "stalls": 0,
+                              "captures": 0} for t in ("T1", "T2")}}
+
+    report = run_schedule(specs, str(tmp_path / "r"), n_boot=50, run_one=always_contender,
+                          sprt={"elo0": 0.0, "elo1": 20.0, "alpha": 0.05, "beta": 0.05})
+    assert report["sprt"]["decision"] == "H1"
+    assert report["unplayed"] > 0 and len(report["games"]) < len(specs)
+
+
+# ---------------------------------------------------------------- per-arm ms_per_node
+
+def _engine_pool(contender_kw=None, opponent_kw=None):
+    return Pool.from_dict({
+        "contender": {"name": "me", "setup": "centralized", "kind": "hivemind", "nodes": 100,
+                      "player_kw": contender_kw or {}},
+        "opponents": [{"name": "stock", "setup": "centralized", "kind": "hivemind", "nodes": 100,
+                       "player_kw": opponent_kw or {}, "group": "target"}],
+    })
+
+
+def test_ms_per_node_measured_once_per_binary_and_network(tmp_path):
+    calls = []
+
+    def fake(binary, model, nodes, repeats):
+        calls.append(model)
+        return {"ms_per_node": 0.25 if model.endswith("clock.onnx") else 0.5}
+
+    # same binary+network on both arms (a same_* control): one measurement, both charged the same
+    same, used = apply_ms_per_node(_engine_pool(), str(tmp_path / "ms.json"), measure=fake)
+    assert len(calls) == 1 and len(used) == 1
+    assert same.contender.player_kw["ms_per_node"] == same.opponents[0].player_kw["ms_per_node"] == 0.5
+
+    # different networks: each arm its own value; the cache file is reused on resume (no new measurement)
+    pool = _engine_pool({"binary": "hivemind-clock", "model": str(tmp_path / "clock.onnx")})
+    mixed, used = apply_ms_per_node(pool, str(tmp_path / "ms.json"), measure=fake)
+    assert len(calls) == 2 and len(used) == 2
+    assert mixed.contender.player_kw["ms_per_node"] == 0.25 and mixed.opponents[0].player_kw["ms_per_node"] == 0.5
+    again, _ = apply_ms_per_node(pool, str(tmp_path / "ms.json"), measure=fake)
+    assert len(calls) == 2 and again == mixed
+
+    # an explicit value is kept; "measure" asks for one
+    fixed, used = apply_ms_per_node(_engine_pool({"ms_per_node": 5.5}, {"ms_per_node": "measure"}),
+                                    str(tmp_path / "ms2.json"), measure=fake)
+    assert fixed.contender.player_kw["ms_per_node"] == 5.5 and fixed.opponents[0].player_kw["ms_per_node"] == 0.5
+    assert list(used) == [arm_key(fixed.opponents[0])]
+
+    # the value reaches each team's player options in the schedule
+    spec = make_schedule(mixed, 1)[0]
+    ct, ot = spec["contender_team"], "T2" if spec["contender_team"] == "T1" else "T1"
+    assert spec["teams"][ct]["player_kw"]["ms_per_node"] == 0.25
+    assert spec["teams"][ot]["player_kw"]["ms_per_node"] == 0.5
+
+
+def test_ms_per_node_reaches_the_controller():
+    from arena.players import setups
+
+    seen = {}
+
+    class FakeController:
+        def __init__(self, team, process, nodes, ms_per_node, **kw):
+            seen[team] = ms_per_node
+
+        def player(self, seat):
+            return seat
+
+    real_ctl, real_proc = setups.HivemindTeamController, setups.HivemindProcess
+    setups.HivemindTeamController, setups.HivemindProcess = FakeController, lambda *a, **k: None
+    try:
+        setups.team_players("T1", "centralized", "hivemind", seed=0, nodes=100, ms_per_node=0.125)
+    finally:
+        setups.HivemindTeamController, setups.HivemindProcess = real_ctl, real_proc
+    assert seen == {"T1": 0.125}
+
+
+def test_for_evaluation_keeps_an_unjittered_contender():
+    pool = _engine_pool()
+    ev = for_evaluation(pool, contender_kw={"jitter": [1.0, 1.0]}, opponent_kw={"serial": True})
+    assert ev.contender.player_kw["jitter"] == [1.0, 1.0] and ev.opponents[0].player_kw == {"serial": True}

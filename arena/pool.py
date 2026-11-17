@@ -32,6 +32,23 @@ which is how the team setups and think budgets are compared with no scheduler in
 
 A schedule game is a normal arena.run spec with per-team players under ``teams``, so arena.run.play_game
 plays it. ``equal_compute`` marks games where both teams had the same kind and node budget.
+
+Evaluation harness (docs/custom_engine_spec_v3.md, audit WP-A), all off by default:
+
+* ``run --skip-done`` resumes a row: games whose ``game_NNNN.jsonl`` already ends in a clean ``game_end`` are
+  rescored from that file instead of played again, so a row cut off by a job's time limit is finished by
+  submitting it again with the same arguments. ``specs.jsonl`` (the schedule) is written at the start of every
+  run and a resume refuses a different schedule. ``results.jsonl`` gets one game summary per line as each game
+  lands (tools/sprt.py and tools/rescore.py read it).
+* ``run --sprt ELO0,ELO1[,ALPHA,BETA]`` runs the GSPRT of tools/sprt.py over normalised Elo after every finished
+  game pair and stops the row when it is decided (the decision goes into summary.json either way).
+* Per-arm ``ms_per_node``: ``measure --name X`` measures wall ms per *searched* node for X's binary+network on
+  this machine and stores it in X's ``player_kw`` in the pool file; ``run --measure-ms-per-node`` does the same at
+  run time for every engine team whose ``player_kw`` has no ``ms_per_node`` (or ``"ms_per_node": "measure"``),
+  one measurement per distinct binary+network, kept in ``<out>/ms_per_node.json`` so a resumed row charges the
+  same values. Without either, the player's default (``hivemind.MS_PER_NODE``) applies as before.
+* Results per opponent also carry ``contender_nodes_per_game`` / ``baseline_nodes_per_game``, the ``reasons``
+  count (``GameResult.reason``), the pentanomial pair counts and Elo / normalised Elo.
 """
 
 from __future__ import annotations
@@ -41,10 +58,14 @@ import json
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, replace
 
 from arena.openings import OPENING_SETS, paired_schedule
+
+_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _REPO not in sys.path:  # tools.sprt is imported from the repo root (a namespace package)
+    sys.path.append(_REPO)
 
 GROUPS = ("target", "snapshot", "variant")
 DEFAULT_SHARES = {"target": 0.5, "snapshot": 0.3, "variant": 0.2}
@@ -271,8 +292,11 @@ def unbuildable(specs: list[dict]) -> list[str]:
 
 
 def results_by_opponent(summaries: list[dict], n_boot: int = 2000, seed: int = 0) -> dict:
-    """Contender score per opponent and per group, with cluster-bootstrap CIs (arena.stats)."""
+    """Contender score per opponent and per group, with cluster-bootstrap CIs (arena.stats), the nodes each side
+    searched per game, game-end reasons, and the pentanomial pair counts with Elo / normalised Elo
+    (tools/sprt.py)."""
     from arena.stats import compute_stats
+    from tools.sprt import elo, nelo, pentanomial
 
     ok = [s for s in summaries if "error" not in s]
     out: dict = {"by_group": {}, "by_opponent": {}}
@@ -281,50 +305,258 @@ def results_by_opponent(summaries: list[dict], n_boot: int = 2000, seed: int = 0
             sub = [s for s in ok if s[key] == name]
             st = compute_stats(sub, n_boot=n_boot, seed=seed)
             sc = st["metrics"]["score"]
-            out[bucket][name] = {"games": st["games"], "wins": st["wins"], "losses": st["losses"],
-                                 "score": sc["est"], "ci95": [sc["lo"], sc["hi"]]}
+            reasons: dict[str, int] = {}
+            for s in sub:
+                reasons[str(s.get("reason"))] = reasons.get(str(s.get("reason")), 0) + 1
+            row = {"games": st["games"], "wins": st["wins"], "losses": st["losses"],
+                   "score": sc["est"], "ci95": [sc["lo"], sc["hi"]], "draws": st["draws"],
+                   "clusters": sc["clusters"], "reasons": dict(sorted(reasons.items()))}
+            for m in ("contender_nodes_per_game", "baseline_nodes_per_game", "flag_rate"):
+                c = st["metrics"][m]
+                row[m] = c["est"]
+                row[m + "_ci95"] = [c["lo"], c["hi"]]
+            try:
+                penta = pentanomial(sub)
+            except ValueError:
+                penta = [0] * 5
+            row.update({"pentanomial": penta, "elo": elo(penta), "nelo": nelo(penta)})
+            out[bucket][name] = row
     return out
 
 
 def format_results(res: dict) -> str:
-    lines = [f"{'':<26} {'games':>6} {'contender score':>16} {'95% CI':>18}"]
+    lines = [f"{'':<26} {'games':>6} {'contender score':>16} {'95% CI':>18} {'nodes/game c':>13} "
+             f"{'nodes/game b':>13}  reasons"]
     for bucket, title in (("by_group", "group"), ("by_opponent", "opponent")):
         lines.append(f"-- by {title}")
         for name, r in res[bucket].items():
             ci = f"[{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}]"
-            lines.append(f"{name:<26} {r['games']:>6} {r['score']:>16.3f} {ci:>18}")
+            cn, bn = r.get("contender_nodes_per_game", float("nan")), r.get("baseline_nodes_per_game", float("nan"))
+            reasons = " ".join(f"{k}={v}" for k, v in r.get("reasons", {}).items())
+            lines.append(f"{name:<26} {r['games']:>6} {r['score']:>16.3f} {ci:>18} {cn:>13.0f} {bn:>13.0f}  {reasons}")
     return "\n".join(lines)
 
 
-def run_schedule(specs: list[dict], out: str, workers: int = 1, n_boot: int = 2000, seed: int = 0) -> dict:
-    from arena.run import run_one
+# ---------------------------------------------------------------------- resume and rescoring
+
+SUMMARY_KEEP = ("opponent", "group", "equal_compute", "contender", "pair_index")
+_SPEC_IDENTITY = ("game_id", "index", "opening_id", "contender_team", "opponent", "teams", "base_ms",
+                  "increment_ms", "max_plies", "seed")
+
+
+def game_file(spec: dict) -> str:
+    """The per-game event file arena.run.run_one writes for this spec."""
+    return f"game_{spec['index']:04d}.jsonl"
+
+
+def summary_from_game_file(spec: dict, path: str) -> dict | None:
+    """The summary run_one would have returned for this game, rebuilt from its event file; None when the file is
+    missing, cut short (no final ``game_end``) or records a crashed game (those are played again)."""
+    from arena.stats import summarize_game
+
+    if not os.path.exists(path):
+        return None
+    events = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                return None
+    if not events or events[-1].get("type") != "game_end" or events[-1].get("error"):
+        return None
+    summary = summarize_game(events)
+    summary.update({k: spec[k] for k in ("game_id", "contender_team", "opening_id", "opening", "swap",
+                                         "t1_setup", "t2_setup") if k in spec})
+    summary["file"] = os.path.basename(path)
+    summary.update({k: spec[k] for k in SUMMARY_KEEP if k in spec})
+    return summary
+
+
+def _spec_identity(spec: dict) -> dict:
+    return {k: spec.get(k) for k in _SPEC_IDENTITY}
+
+
+def _write_jsonl(path: str, rows: list[dict]) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r, separators=(",", ":")) + "\n")
+    os.replace(tmp, path)
+
+
+def _check_resume_schedule(out: str, specs: list[dict]) -> None:
+    path = os.path.join(out, "specs.jsonl")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        old = {d["game_id"]: _spec_identity(d) for d in (json.loads(l) for l in f if l.strip())}
+    for s in specs:
+        if s["game_id"] in old and old[s["game_id"]] != json.loads(json.dumps(_spec_identity(s))):
+            raise ValueError(f"{out} was started with a different schedule ({s['game_id']} differs): resume it "
+                             "with the same arguments, or use another --out")
+
+
+# ---------------------------------------------------------------------- per-arm ms_per_node
+
+ENGINE_KINDS = ("hivemind", "agent")
+
+
+def measure_searched_ms_per_node(binary: str | None = None, model: str | None = None, nodes: int = 400,
+                                 repeats: int = 3) -> dict:
+    """Wall ms per *searched* node for one binary+network on this machine: startpos, ``go nodes N`` ``repeats``
+    times after a warm-up, total wall / total nodes the engine reports (contract 5 charges searched nodes, so the
+    rate is per searched node; hivemind.measure_ms_per_node divides by the requested count instead). Also returns
+    the per-requested-node rate for comparison with the old fixed MS_PER_NODE."""
+    from arena.players.hivemind import DEFAULT_MODEL, HivemindProcess, resolve_binary
+
+    binary, model = resolve_binary(binary), os.path.abspath(model or DEFAULT_MODEL)
+    start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+    p = HivemindProcess(binary, model)
+    try:
+        p.search(start, start, team="T1", nodes=8)  # warm-up (a TensorRT engine file builds here on first use)
+        res = [p.search(start, start, team="T1", nodes=nodes) for _ in range(repeats)]
+    finally:
+        p.close()
+    wall, searched = sum(r.wall_ms for r in res), sum(max(1, r.nodes) for r in res)
+    return {"binary": binary, "model": model, "nodes_requested": nodes, "repeats": repeats,
+            "nodes_searched_mean": searched / repeats, "wall_ms_mean": wall / repeats,
+            "ms_per_node": wall / searched, "ms_per_requested_node": wall / (nodes * repeats),
+            "host": os.uname().nodename, "when": time.strftime("%Y-%m-%dT%H:%M:%S")}
+
+
+def arm_key(team: TeamSpec) -> str:
+    """binary|model of an engine team, resolved to absolute paths (one ms_per_node per key)."""
+    from arena.players.hivemind import DEFAULT_MODEL, resolve_binary
+
+    kw = team.player_kw
+    return f"{resolve_binary(kw.get('binary'))}|{os.path.abspath(kw.get('model') or DEFAULT_MODEL)}"
+
+
+def _wants_measure(team: TeamSpec) -> bool:
+    return team.kind in ENGINE_KINDS and team.player_kw.get("ms_per_node") in (None, "measure")
+
+
+def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int = 400, repeats: int = 3,
+                      measure=measure_searched_ms_per_node, override: dict | None = None) -> tuple[Pool, dict]:
+    """Every engine team without an ``ms_per_node`` gets the measured one for its binary+network. One measurement
+    per key; ``cache_path`` (JSON {key: measurement}) is read first and written after, so a resumed row reuses
+    the values it started with. ``override`` {key: ms} skips the measurement for those keys. Returns the new pool
+    and {key: measurement} for the keys used."""
+    cache: dict = {}
+    if cache_path and os.path.exists(cache_path):
+        with open(cache_path) as f:
+            cache = json.load(f)
+    for key, ms in (override or {}).items():
+        cache[key] = {"ms_per_node": float(ms), "source": "override"}
+    used: dict = {}
+
+    def fix(t: TeamSpec) -> TeamSpec:
+        if not _wants_measure(t):
+            return t
+        key = arm_key(t)
+        if key not in cache:
+            binary, model = key.split("|", 1)
+            print(f"measuring ms_per_node for {binary} with {model} ...", flush=True)
+            cache[key] = measure(binary, model, nodes=nodes, repeats=repeats)
+            print(f"  {cache[key]['ms_per_node']:.4f} ms per searched node", flush=True)
+        used[key] = cache[key]
+        return replace(t, player_kw={**t.player_kw, "ms_per_node": float(cache[key]["ms_per_node"])})
+
+    new = replace(pool, contender=fix(pool.contender), opponents=[fix(o) for o in pool.opponents])
+    if cache_path and used:
+        os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(cache, f, indent=2)
+    return new, used
+
+
+def run_schedule(specs: list[dict], out: str, workers: int = 1, n_boot: int = 2000, seed: int = 0, *,
+                 skip_done: bool = False, sprt: dict | None = None, extra: dict | None = None,
+                 run_one=None) -> dict:
+    """Play the specs into ``out`` and write summary.json. ``skip_done`` rescores finished games from their files
+    instead of playing them; ``sprt`` ({"elo0", "elo1", "alpha", "beta"}) stops the row once the GSPRT is decided;
+    ``extra`` is merged into summary.json (e.g. the measured ms_per_node)."""
+    if run_one is None:
+        from arena.run import run_one
+    from tools.sprt import pentanomial, status
 
     os.makedirs(out, exist_ok=True)
     for s in specs:
         s["out"] = out
-    keep = ("opponent", "group", "equal_compute", "contender")
+    if skip_done:
+        _check_resume_schedule(out, specs)
+    _write_jsonl(os.path.join(out, "specs.jsonl"), [{k: v for k, v in s.items() if k != "out"} for s in specs])
     summaries: list[dict] = []
+    todo = specs
+    if skip_done:
+        todo = []
+        for s in specs:
+            prev = summary_from_game_file(s, os.path.join(out, game_file(s)))
+            if prev is None:
+                todo.append(s)
+            else:
+                summaries.append(prev)
+        if summaries:
+            print(f"resuming {out}: {len(summaries)} of {len(specs)} games already played", flush=True)
+    _write_jsonl(os.path.join(out, "results.jsonl"), summaries)
+    results_f = open(os.path.join(out, "results.jsonl"), "a")
+    stopped: dict = {}
+
+    def decided() -> bool:
+        if not sprt:
+            return False
+        st = status(pentanomial(summaries), sprt["elo0"], sprt["elo1"], sprt["alpha"], sprt["beta"])
+        if st["decision"] != "continue" and not stopped:
+            stopped.update(st)
+            print(f"SPRT decided {st['decision']} after {st['games']} games (LLR {st['llr']:+.2f}, "
+                  f"nElo {st['nelo']:+.1f}): stopping the row", flush=True)
+        return bool(stopped)
 
     def done(spec: dict, summary: dict) -> None:
-        summary.update({k: spec[k] for k in keep})
+        summary.update({k: spec[k] for k in SUMMARY_KEEP if k in spec})
         summaries.append(summary)
+        results_f.write(json.dumps(summary, separators=(",", ":")) + "\n")
+        results_f.flush()
         tag = summary.get("error") or f"{summary['result']} by {summary['reason']}"
         print(f"[{len(summaries)}/{len(specs)}] {spec['game_id']} vs {spec['opponent']:<22} "
               f"contender={spec['contender_team']} -> {tag}", flush=True)
 
     t0 = time.perf_counter()
-    if workers <= 1:
-        for s in specs:
-            done(s, run_one(s))
-    else:
-        with ProcessPoolExecutor(max_workers=workers) as ex:
-            futs = {ex.submit(run_one, s): s for s in specs}
-            for fut in as_completed(futs):
-                done(futs[fut], fut.result())
+    try:
+        if not decided():
+            if workers <= 1:
+                for s in todo:
+                    done(s, run_one(s))
+                    if decided():
+                        break
+            else:
+                with ProcessPoolExecutor(max_workers=workers) as ex:
+                    futs = {ex.submit(run_one, s): s for s in todo}
+                    for fut in as_completed(futs):
+                        try:
+                            res = fut.result()
+                        except CancelledError:
+                            continue
+                        done(futs[fut], res)
+                        if decided():
+                            for f in futs:
+                                f.cancel()
+    finally:
+        results_f.close()
     summaries.sort(key=lambda s: s["game_id"])
     res = results_by_opponent(summaries, n_boot=n_boot, seed=seed)
+    played = {s["game_id"] for s in summaries}
     report = {"wall_s": round(time.perf_counter() - t0, 1), "mix": schedule_mix(specs), "results": res,
-              "errors": sum("error" in s for s in summaries), "games": summaries}
+              "errors": sum("error" in s for s in summaries), "games": summaries,
+              "unplayed": sum(s["game_id"] not in played for s in specs)}
+    if sprt:
+        report["sprt"] = stopped or status(pentanomial(summaries), sprt["elo0"], sprt["elo1"], sprt["alpha"],
+                                           sprt["beta"])
+    report.update(extra or {})
     with open(os.path.join(out, "summary.json"), "w") as f:
         json.dump(report, f, indent=2)
     return report
@@ -341,11 +573,21 @@ def _jitter_arg(text: str | None) -> tuple[float, float] | None:
     return lo, hi
 
 
+def _sprt_arg(text: str | None) -> dict | None:
+    if not text:
+        return None
+    vals = [float(v) for v in text.split(",")]
+    if len(vals) not in (2, 4) or vals[0] >= vals[1]:
+        raise ValueError(f"--sprt must be ELO0,ELO1 or ELO0,ELO1,ALPHA,BETA with ELO0 < ELO1, got {text!r}")
+    alpha, beta = (vals[2], vals[3]) if len(vals) == 4 else (0.05, 0.05)
+    return {"elo0": vals[0], "elo1": vals[1], "alpha": alpha, "beta": beta}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m arena.pool", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("show", "schedule", "run", "add-snapshot"):
+    for name in ("show", "schedule", "run", "add-snapshot", "measure"):
         p = sub.add_parser(name)
         p.add_argument("--pool", default="arena/pools/phase1.json")
         if name in ("schedule", "run"):
@@ -379,6 +621,17 @@ def main(argv=None) -> int:
             p.add_argument("--workers", type=int, default=1)
             p.add_argument("--boot", type=int, default=2000)
             p.add_argument("--out", default="runs/pool")
+            p.add_argument("--skip-done", action="store_true",
+                           help="resume: rescore games already played into --out instead of playing them again")
+            p.add_argument("--sprt", default=None, metavar="ELO0,ELO1[,ALPHA,BETA]",
+                           help="GSPRT over normalised Elo after every game pair; stop the row when decided")
+            p.add_argument("--measure-ms-per-node", action="store_true",
+                           help="measure ms per searched node per binary+network for engine teams without one")
+            p.add_argument("--measure-nodes", type=int, default=400)
+        if name == "measure":
+            p.add_argument("--name", required=True, help="the contender's or an opponent's name")
+            p.add_argument("--nodes", type=int, default=400)
+            p.add_argument("--repeats", type=int, default=3)
         if name == "add-snapshot":
             p.add_argument("--name", required=True)
             p.add_argument("--path", required=True)
@@ -400,6 +653,22 @@ def main(argv=None) -> int:
         snap = pool.add_snapshot(args.name, args.path, kind=args.kind)
         pool.save(args.pool)
         print(f"added snapshot {snap.name} ({snap.path}); {len(pool.members('snapshot'))} active")
+        return 0
+
+    if args.cmd == "measure":
+        team = next((t for t in [pool.contender, *pool.opponents] if t.name == args.name), None)
+        if team is None:
+            ap.error(f"no team named {args.name!r} in {args.pool}")
+        m = measure_searched_ms_per_node(team.player_kw.get("binary"), team.player_kw.get("model"),
+                                         nodes=args.nodes, repeats=args.repeats)
+        new = replace(team, player_kw={**team.player_kw, "ms_per_node": round(m["ms_per_node"], 5)})
+        if team is pool.contender:
+            pool.contender = new
+        else:
+            pool.opponents = [new if o is team else o for o in pool.opponents]
+        pool.save(args.pool)
+        print(json.dumps(m, indent=2))
+        print(f"stored ms_per_node {new.player_kw['ms_per_node']} for {args.name} in {args.pool}")
         return 0
 
     features = [f for f in args.features.split(",") if f]
@@ -433,10 +702,27 @@ def main(argv=None) -> int:
     if bad:
         print(f"cannot play these opponents yet (no player kind for them): {', '.join(bad)}", file=sys.stderr)
         return 1
-    report = run_schedule(specs, args.out, workers=args.workers, n_boot=args.boot, seed=args.seed)
+    try:
+        sprt = _sprt_arg(args.sprt)
+    except ValueError as exc:
+        ap.error(str(exc))
+    extra: dict = {}
+    if args.measure_ms_per_node or any(t.player_kw.get("ms_per_node") == "measure"
+                                       for t in [pool.contender, *pool.opponents]):
+        pool, used = apply_ms_per_node(pool, os.path.join(args.out, "ms_per_node.json"), nodes=args.measure_nodes)
+        extra["ms_per_node"] = used
+        specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
+                              channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies)
+    report = run_schedule(specs, args.out, workers=args.workers, n_boot=args.boot, seed=args.seed,
+                          skip_done=args.skip_done, sprt=sprt, extra=extra)
     print()
     print(format_results(report["results"]))
-    print(f"\nwrote {args.out}/summary.json ({report['wall_s']:.0f}s, {report['errors']} errors)")
+    if "sprt" in report:
+        from tools.sprt import format_status
+
+        print(format_status(report["sprt"], "SPRT"))
+    print(f"\nwrote {args.out}/summary.json ({report['wall_s']:.0f}s, {report['errors']} errors, "
+          f"{report['unplayed']} unplayed)")
     return 0
 
 
