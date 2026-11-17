@@ -13,8 +13,17 @@
 # With LEND=1, LEND_SHARE=0.5 borrows only half of the partner's idle machine (default: all of it).
 # CONTENDER_KW and OPPONENT_KW are JSON player options, e.g. CONTENDER_KW='{"clock_k": 110, "serial": true}'.
 # BASE_MS is each player's starting clock (default 60000).
-# NODES and OPPONENT_NODES replace the node budgets (200 each). PAIRS=800 is 1600 games, about 4 hours. A job that
-# is cut off leaves no result, so keep it inside the time limit and use another SEED and NAME for more games.
+# NODES and OPPONENT_NODES replace the node budgets (200 each). PAIRS=800 is 1600 games, about 4 hours at 60 s.
+# Resumable: every finished game is kept (runs/<NAME>/game_NNNN.jsonl, results.jsonl), so a job cut off by the time
+# limit is finished by submitting it again with the same NAME and settings (the row refuses a different schedule).
+# Long rows (180 s, 1600+ games) are run that way over several jobs. Read a running row with
+#   .venv/bin/python tools/sprt.py runs/<NAME>   or   .venv/bin/python tools/compare_evals.py runs/<NAME>
+# Audit 2026-11-17 WP-A, all off unless set:
+#   MEASURE=1     measure ms per searched node per binary+network for every engine team without an ms_per_node
+#                 in its options (kept in runs/<NAME>/ms_per_node.json; MEASURE_NODES, default 400)
+#   SPRT=0,20     GSPRT over normalised Elo [ELO0,ELO1(,ALPHA,BETA)] after every game pair; stops when decided
+#   JITTER=lo,hi  think-time factor per search for every centralized Hivemind team (both sides)
+#   WORKERS       parallel games (default 3)
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 source cluster/env.sh
@@ -23,9 +32,10 @@ NAME="${NAME:?set NAME, the result folder under runs/}"
 OUT="runs/$NAME"
 PY=.venv/bin/python
 if [ -f "$OUT/summary.json" ]; then
-  echo "$OUT already has a result: pick another NAME" >&2
+  echo "$OUT already has a result: pick another NAME (tools/rescore.py rebuilds a result from the game files)" >&2
   exit 1
 fi
+[ -d "$OUT" ] && echo "resuming $OUT: $(ls "$OUT"/game_*.jsonl 2>/dev/null | wc -l | tr -d ' ') game files already there"
 
 ARGS=()
 if [ -n "${SETUP:-}" ]; then
@@ -43,13 +53,18 @@ fi
 [ -n "${OPPONENT_NODES:-}" ] && ARGS+=(--opponent-nodes "$OPPONENT_NODES")
 [ -n "${CONTENDER_KW:-}" ] && ARGS+=(--contender-kw "$CONTENDER_KW")
 [ -n "${OPPONENT_KW:-}" ] && ARGS+=(--opponent-kw "$OPPONENT_KW")
+[ "${MEASURE:-0}" = 1 ] && ARGS+=(--measure-ms-per-node --measure-nodes "${MEASURE_NODES:-400}")
+[ -n "${SPRT:-}" ] && ARGS+=(--sprt "$SPRT")
+[ -n "${JITTER:-}" ] && ARGS+=(--jitter "$JITTER")
 
 echo "commit $(git rev-parse HEAD)  eval $OUT  $WHO  nodes ${NODES:-200}"
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
 echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
+echo "measure ms/node ${MEASURE:-0}  sprt ${SPRT:-off}  jitter ${JITTER:-off}  workers ${WORKERS:-3}"
 $PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', DEFAULT_MODEL)"
 $PY cluster/warm_engine.py || exit 1
 $PY cluster/engine_parity.py check || exit 1
 
 $PY -m arena.pool run "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings eval \
-  --pairs "${PAIRS:-800}" --workers 3 --seed "${SEED:-0}" --base-ms "${BASE_MS:-60000}" --out "$OUT"
+  --pairs "${PAIRS:-800}" --workers "${WORKERS:-3}" --seed "${SEED:-0}" --base-ms "${BASE_MS:-60000}" \
+  --skip-done --out "$OUT"

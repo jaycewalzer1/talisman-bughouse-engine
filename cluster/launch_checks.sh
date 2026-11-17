@@ -7,11 +7,13 @@
 #   bash cluster/launch_checks.sh rules      # hand-written: does waiting for a mating piece win, alone or when asked for?
 #   bash cluster/launch_checks.sh lend       # how much of the partner's idle machine is it best to borrow?
 #   bash cluster/launch_checks.sh beat       # can one Hivemind that manages its clock beat stock Hivemind? (20 jobs)
+#   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
+#   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (6 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -89,9 +91,10 @@ if [ "$WHAT" = beat ]; then  # not part of "all": 20 jobs
   # asked for while the other seat's search runs waits for it), which is the fair accounting once the boards
   # stop moving in step. The decision rule for these results is in docs/beat_stock.md: read it before the numbers.
   SER='{"serial": true}'
-  beat() {  # name, nodes, opponent nodes, contender options, pairs, clock ms, opponent options
+  beat() {  # name, nodes, opponent nodes, contender options, pairs, clock ms, opponent options, seed
     NAME="beat/$1" SETUP=centralized LEND=0 NODES="$2" OPPONENT=stock-centralized OPPONENT_NODES="$3" \
-      CONTENDER_KW="$4" OPPONENT_KW="${7:-$SER}" PAIRS="$5" BASE_MS="$6" sbatch -J "$1" cluster/eval.sbatch
+      CONTENDER_KW="$4" OPPONENT_KW="${7:-$SER}" PAIRS="$5" BASE_MS="$6" SEED="${8:-0}" \
+      sbatch -J "$1" cluster/eval.sbatch
   }
   #     name                 nodes opp  contender options                                  pairs clock
   # controls: identical teams, should come out at 0.50
@@ -120,5 +123,41 @@ if [ "$WHAT" = beat ]; then  # not part of "all": 20 jobs
   # a 3 minute clock: does the speed effect and the clock rule hold with more time? (fewer games: slower)
   beat  long_c100_v300       100   300  "$SER"                                             300   180000
   beat  long_clock110_v300   300   300  '{"serial": true, "clock_k": 110}'                 300   180000
+fi
+SER='{"serial": true}'
+if [ "$WHAT" = controls ]; then  # not part of "all": 3 jobs
+  # Three more seeds of the identical-teams control (audit D3 item 5). Their pooled spread with the two existing
+  # same_* rows is the noise floor every 1600-game row is read against; publish it in docs/beat_stock.md.
+  #     name                 nodes opp  contender options  pairs clock  opponent options  seed
+  for seed in 1 2 3; do
+    NAME="beat/same_100_v100_s$seed" SETUP=centralized LEND=0 NODES=100 OPPONENT=stock-centralized \
+      OPPONENT_NODES=100 CONTENDER_KW="$SER" OPPONENT_KW="$SER" PAIRS=800 BASE_MS=60000 SEED="$seed" \
+      sbatch -J "same_s$seed" cluster/eval.sbatch
+  done
+fi
+if [ "$WHAT" = harness ]; then  # not part of "all": 6 jobs
+  # The equal-clock harness (docs/beat_stock.md "Headline metric from 2026-11-17", spec v3 contract 5): each arm is
+  # charged the nodes it searched x its own ms_per_node, measured on the job's GPU (MEASURE=1). Needs WP-C's
+  # charge="searched" in arena/players/hivemind.py. SPRT=0,20 stops a row once it is decided.
+  CHG='"serial": true, "charge": "searched"'
+  harness() {  # name, contender options, opponent options, clock ms, pairs, extra env
+    env NAME="harness/$1" SETUP=centralized LEND=0 NODES=100 OPPONENT=stock-centralized OPPONENT_NODES=100 \
+      CONTENDER_KW="$2" OPPONENT_KW="$3" BASE_MS="$4" PAIRS="$5" MEASURE=1 ${6:-} sbatch -J "h_$1" cluster/eval.sbatch
+  }
+  #        name               contender options                                 opponent options                    clock   pairs
+  # identical arms, ms_per_node measured once for the shared binary+network: must read 0.50
+  harness  same_meas_120      "{$CHG, \"clock_k\": 110}"                          "{$CHG, \"clock_k\": 110}"            120000  800
+  # identical network, one arm modelled 55x faster (0.1 vs 5.5 ms/node, explicit values): the fast side must win
+  harness  speed_01_v55       "{$CHG, \"clock_k\": 110, \"ms_per_node\": 0.1}"    "{$CHG, \"clock_k\": 110, \"ms_per_node\": 5.5}" 60000 200 "SPRT=0,20"
+  # the c25/c50 rows of "beat" again, now charged the nodes actually searched (audit eval 3)
+  harness  c25_v100_searched  "{$CHG}"                                          "{$CHG}"                            60000   800 "NODES=25"
+  harness  c50_v100_searched  "{$CHG}"                                          "{$CHG}"                            60000   800 "NODES=50"
+  # M0 parity arm: the widened network (clock build, stock rules, zero clock weights) vs stock it04 at equal clock
+  # must read 0.50 +- the row's range before any training (audit D1; doubles as the parity gate)
+  W="third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx"
+  harness  m0_widened_120     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 120000 800
+  harness  m0_widened_180     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 180000 800
+  # M0 third arm (upstream v3 twin-s-clock under its own time manager) is WP-G's player kind; add it here once
+  # arena/players/upstream.py is in KINDS and arena/pools has an "upstream-v3" opponent.
 fi
 squeue -u "$USER"
