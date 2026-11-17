@@ -1,7 +1,7 @@
 """Out-of-step self-play for the custom engine (docs/custom_engine_spec.md section 3).
 
     python -m arena.selfplay --games 200 --workers 1 --out runs/selfplay/it01 \
-        --model third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx --binary hivemind-clock
+        --model third_party/hivemind/engine/models/hivemind-clock-v3-fp32.onnx --binary hivemind-clock
 
 Both teams are one free-mode ``HivemindTeamController`` (real clocks, FreePass, no sit rules, think time =
 remaining clock / k with k drawn per game and team from ``--k-range``, a jitter factor per search from
@@ -63,7 +63,7 @@ from arena.stats import summarize_game
 # What each v3 setting is under --regime v2 (the controller's own defaults).
 _V2_VALUES = {"time_odds": False, "charge": None, "min_think_ms": None, "pace": None, "pace_mixture": False,
               "lag_ms": None, "noise": None, "temperature": None, "pcr_p": None, "dedupe": None,
-              "sit_recheck": None, "scale_max_plies": False}
+              "sit_recheck": None, "scale_max_plies": False, "rules": "v2", "reps": False}
 
 
 def _onoff(text: str) -> bool:
@@ -116,9 +116,21 @@ V3_DEFAULTS = {
     "base_mix": BASE_MIX, "think_target_ms": (200.0, 1000.0), "time_odds": True, "charge": "searched",
     "min_think_ms": 100.0, "pace": True, "pace_mixture": True, "lag_ms": 50.0, "noise": True,
     "temperature": 1.0, "pcr_p": 0.25, "dedupe": "bucket", "sit_recheck": True, "scale_max_plies": True,
+    "rules": "v3", "reps": True,
 }
 V3_CONTROLLER = ("charge", "min_think_ms", "pace", "lag_ms", "noise", "temperature", "temperature_plies", "pcr_p",
-                 "pcr_nodes", "dedupe", "clock_bucket_ms", "sit_recheck", "recheck_nodes")
+                 "pcr_nodes", "dedupe", "clock_bucket_ms", "sit_recheck", "recheck_nodes", "reps")
+
+
+def sim_rules(spec: dict) -> dict:
+    """Simulator keywords for one game. ``rules`` "v3": arena.sim.RULES_V3 (spec v3 D4: min move time, scaled
+    ply cap with aborts scored, sit-off adjudication), seeded by the game seed, with the spec's own ply cap and
+    no simulator lag: the v3 controller already charges its own additive lag (``--lag-ms``), and charging both
+    would count the lag twice. Otherwise the old keywords (``max_plies`` only)."""
+    if spec.get("rules") != "v3":
+        return {"max_plies": spec["max_plies"]}
+    from arena.sim import RULES_V3
+    return {**RULES_V3, "seed": spec["seed"], "max_plies": spec["max_plies"], "lag_max_ms": 0}
 
 
 def draw_base_ms(rng: random.Random, mix) -> int:
@@ -232,7 +244,7 @@ def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes], list[
     try:
         players, ctls = build_players(spec, process_factory)
         sim = Simulator(make_state(spec), players, game_id=spec["game_id"],
-                        setup="selfplay-free", max_plies=spec["max_plies"])
+                        setup="selfplay-free", **sim_rules(spec))
         result = sim.run()
     except Exception as exc:  # noqa: BLE001 - one bad game should not kill the batch
         close_engines()  # an engine in an unknown state is not reused
@@ -241,8 +253,12 @@ def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes], list[
         c.finish(sim.now)
     events = list(sim.events)
     samples = [s for c in ctls for s in c.samples]
+    v3_kw = {}
+    if spec.get("rules") == "v3":  # spec v3 WP-D: aborts and ply-cap games kept out, arrivals masked past the end
+        v3_kw = {"drop_non_training": True, "mask_arrivals_past_end": True, "opening_id": spec.get("opening_id")}
     finished, metas = ([], []) if result.reason == "aborted" else finish_game(
-        samples, result.result, spec["game_num"], events, version=spec.get("shard_version", 6), with_meta=True)
+        samples, result.result, spec["game_num"], events, version=spec.get("shard_version", 6), with_meta=True,
+        **v3_kw)
     if spec.get("out") and not spec.get("no_events"):
         gdir = os.path.join(spec["out"], "games")
         os.makedirs(gdir, exist_ok=True)
@@ -285,7 +301,7 @@ def make_specs(args) -> list[dict]:
             "free_sit_ms": args.free_sit_ms, "nodes_range": args.nodes_range, "ms_per_node": args.ms_per_node,
             "binary": args.binary, "model": args.model, "out": args.out, "no_events": args.no_events,
             "shard_version": args.shard_version, "think_head": args.think_head, "send_elapsed": not args.no_elapsed,
-            "regime": args.regime,
+            "regime": args.regime, "rules": args.rules,
         }
         spec.update(v3_spec(args, i))
         specs.append(spec)
@@ -419,8 +435,8 @@ def parse_args(argv=None):
     ap.add_argument("--games", type=int, default=20)
     ap.add_argument("--workers", type=int, default=1, help="parallel games (processes); 1 on the shared Mac")
     ap.add_argument("--out", required=True, help="output dir, e.g. runs/selfplay/it01")
-    ap.add_argument("--model", default=os.path.join(ENGINE_DIR, "models", "hivemind-clock-v2-fp32.onnx"),
-                    help="ONNX network (the 43-plane spec v2 clock network; a 41-plane v1 network also loads with the ONNX Runtime backend only, its elapsed planes dropped)")
+    ap.add_argument("--model", default=os.path.join(ENGINE_DIR, "models", "hivemind-clock-v3-fp32.onnx"),
+                    help="ONNX network (the 44-plane spec v3 clock network; 43-plane v2 and 41-plane v1 networks also load with the ONNX Runtime backend only, their missing planes dropped)")
     ap.add_argument("--binary", default="hivemind-clock",
                     help=f"engine: one of {', '.join(BINARY_NAMES)} or a path (default hivemind-clock)")
     ap.add_argument("--k-range", type=lambda t: parse_range(t, "--k-range"), default=(60.0, 300.0),
@@ -474,6 +490,11 @@ def parse_args(argv=None):
     v3.add_argument("--recheck-nodes", type=int, default=32, help="nodes of a sitter re-look (default 32)")
     v3.add_argument("--scale-max-plies", type=_onoff, default=None,
                     help="max plies x base / 60 s (v3: on)")
+    v3.add_argument("--rules", choices=("v2", "v3"), default=None,
+                    help="arena rules profile (v3: arena.sim.RULES_V3 without simulator lag; aborts and ply-cap "
+                         "games kept out of training)")
+    v3.add_argument("--reps", type=_onoff, default=None,
+                    help="send the arena's repetition counts as 'reps <ra> <rb>' (repetition planes; v3: on)")
     args = ap.parse_args(argv)
     for k, v in V3_DEFAULTS.items():
         if getattr(args, k) is None:

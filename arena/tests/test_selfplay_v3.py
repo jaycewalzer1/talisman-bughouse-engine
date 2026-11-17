@@ -424,8 +424,8 @@ def test_v3_selfplay_end_to_end_persistent_engines(tmp_path):
     from arena.selfplay import parse_args, run
 
     args = parse_args(["--games", "2", "--out", str(tmp_path / "v3"), "--regime", "v3", "--base-mix",
-                       "20000:1", "--max-plies", "240", "--seed", "5", "--no-events"])
-    made = []
+                       "20000:1", "--max-plies", "240", "--seed", "5", "--no-events", "--rules", "v2"])
+    made = []  # rules v2: the stub never mates, so under RULES_V3 every game hits the cap and is kept out
 
     def factory(team):
         made.append(CountingStub(len(made) + 20))
@@ -447,3 +447,26 @@ def test_v3_selfplay_end_to_end_persistent_engines(tmp_path):
         assert m["search_kind"] in ("full", "fast", "recheck") and m["nodes_searched"] >= 1
     assert any(m["search_kind"] == "full" for m in metas)
     assert all(m["search_kind"] != "fast" or m["transition"] for m in metas)  # fast ones only as transitions
+
+
+def test_v3_rules_keep_ply_cap_games_out_and_send_reps(tmp_path):
+    """Integration (audit wave 1): --regime v3 plays under RULES_V3, so a game that hits the scaled ply cap is
+    scored by the clocks (reason max_plies) and its samples are dropped; every search carries the arena's
+    repetition counts."""
+    from arena.selfplay import parse_args, run
+
+    args = parse_args(["--games", "2", "--out", str(tmp_path / "v3r"), "--regime", "v3", "--base-mix",
+                       "20000:1", "--max-plies", "240", "--seed", "5", "--no-events"])
+    assert args.rules == "v3" and args.reps is True
+    made = []
+
+    def factory(team):
+        made.append(CountingStub(len(made) + 20))
+        return made[-1]
+
+    report = run(args, process_factory=factory)
+    r = report["results"]
+    assert r["games"] == 2 and r["errors"] == 0, report["games"]
+    assert r["reasons"] == {"max_plies": 2} and r["samples"] == 0
+    calls = [c for s in made for c in s.calls]
+    assert calls and all(set(c["reps"]) == {"A", "B"} and min(c["reps"].values()) >= 1 for c in calls)
