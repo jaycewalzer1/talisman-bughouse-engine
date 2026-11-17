@@ -99,13 +99,20 @@ def make_configs(n: int, seed: int) -> list[dict]:
             "wait": [rng.choice([1, 40, 150, 200, 450]) for _ in SEATS],
             "wait_pct": rng.choice([0, 0, 3, 10, 25]),
         })
+    # Arena rules v3 (WP-B): min move time and additive lag per game, from their own stream so the draws above
+    # stay what they were.
+    rng3 = random.Random(seed + 991)
+    for c in out:
+        c["min_move"] = rng3.choice([0, 100, 100, 250])
+        c["lag"] = rng3.choice([0, 50, 150, 400])
     return out
 
 
 def to_tsv(c: dict) -> str:
     return "\t".join([c["game_id"], c["fenA"], c["fenB"], str(c["base_ms"]), str(c["inc_ms"]),
                       str(c["max_plies"]), str(c["seed"]), ",".join(map(str, c["think"])),
-                      ",".join(map(str, c["wait"])), str(c["wait_pct"])])
+                      ",".join(map(str, c["wait"])), str(c["wait_pct"]), str(c.get("min_move", 0)),
+                      str(c.get("lag", 0))])
 
 
 def run_python(c: dict) -> dict:
@@ -113,7 +120,8 @@ def run_python(c: dict) -> dict:
     state = BughouseState(c["base_ms"], c["inc_ms"], fens={"A": c["fenA"], "B": c["fenB"]})
     players = {s: StubPlayer(s, c["seed"], c["think"][k], c["wait"][k], c["wait_pct"], trace)
                for k, s in enumerate(SEATS)}
-    sim = Simulator(state, players, game_id=c["game_id"], setup="stub", max_plies=c["max_plies"])
+    sim = Simulator(state, players, game_id=c["game_id"], setup="stub", max_plies=c["max_plies"],
+                    min_move_ms=c.get("min_move", 0), lag_max_ms=c.get("lag", 0), seed=c["seed"])
     sim.run()
     # round-trip through JSON so both sides compare as plain JSON values
     return json.loads(json.dumps({"game_id": c["game_id"], "events": sim.events, "trace": trace}))
