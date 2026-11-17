@@ -1,14 +1,22 @@
 """Out-of-step self-play for the custom engine (docs/custom_engine_spec.md section 3).
 
     python -m arena.selfplay --games 200 --workers 1 --out runs/selfplay/it01 \
-        --model third_party/hivemind/engine/models/hivemind-clock-fp32.onnx --binary hivemind-clock
+        --model third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx --binary hivemind-clock
 
 Both teams are one free-mode ``HivemindTeamController`` (real clocks, FreePass, no sit rules, think time =
 remaining clock / k with k drawn per game and team from ``--k-range``, a jitter factor per search from
 ``--jitter``, one machine per team) on the same network. Every search records a training sample; at game end the
 samples get their game id, outcome (+1/0/-1 for the sample's team, flags included, draws and move-limit games 0)
-and moves left, and go into HVM5 chunks under ``<out>/training_data`` (what ``train_loop.py --mode rl
---selfplay-dir <out>`` and ``convert_selfplay_data.py`` read). Games that crash are dropped from the data.
+and moves left (moves landed after the sample's search started), and go into chunks under ``<out>/training_data``
+(what ``train_loop.py --mode rl --selfplay-dir <out>`` and ``convert_selfplay_data.py`` read). Games that crash are
+dropped from the data.
+
+Spec v2 (docs/custom_engine_spec_v2.md): chunks are HVM6 by default (``--shard-version 5`` writes the v1 format):
+each sample carries piece-arrival counts (pieces landing in each pocket within 5 s after its search started) and
+masked think_gain labels (filled later by ``tools/think_labels.py``); each chunk gets a ``.pos.jsonl`` sidecar with
+the positions. Every ``position`` carries the per-board elapsed times (``--no-elapsed`` turns that off). At most one
+sample per seat per unchanged position in a row is kept; the dropped repeats are counted per game.
+``--think-head`` scales each move's node budget by the network's think_gain (off by default).
 
 Writes ``<out>/training_data/chunk_<run id>_NNNNNN.hvm``, ``<out>/games/game_NNNN.jsonl`` (unless
 ``--no-events``) and ``<out>/summary.json``, and prints a results table.
@@ -47,7 +55,8 @@ def parse_range(text: str, name: str, cast=float) -> tuple | None:
 def controller_kw(spec: dict) -> dict:
     return {"free": True, "record": True, "k_range": spec["k_range"], "jitter": spec["jitter"],
             "free_sit_ms": spec["free_sit_ms"], "min_nodes": spec["nodes_range"][0],
-            "max_nodes": spec["nodes_range"][1], "ms_per_node": spec["ms_per_node"]}
+            "max_nodes": spec["nodes_range"][1], "ms_per_node": spec["ms_per_node"],
+            "think_head": spec.get("think_head", False), "send_elapsed": spec.get("send_elapsed", True)}
 
 
 def build_players(spec: dict, process_factory=None) -> tuple[dict, list]:
@@ -67,8 +76,9 @@ def build_players(spec: dict, process_factory=None) -> tuple[dict, list]:
     return players, ctls
 
 
-def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes]]:
-    """Play one self-play game. Returns its summary and its finished samples (empty when the game crashed)."""
+def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes], list[dict]]:
+    """Play one self-play game. Returns its summary, its finished samples (empty when the game crashed) and their
+    sidecar position dicts."""
     from arena.sim import Simulator
     from arena.state import BughouseState
 
@@ -81,10 +91,11 @@ def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes]]:
                         setup="selfplay-free", max_plies=spec["max_plies"])
         result = sim.run()
     except Exception as exc:  # noqa: BLE001 - one bad game should not kill the batch
-        return {**meta, "error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}, []
+        return {**meta, "error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}, [], []
     events = list(sim.events)
     samples = [s for c in ctls for s in c.samples]
-    finished = [] if result.reason == "aborted" else finish_game(samples, result.result, spec["game_num"])
+    finished, metas = ([], []) if result.reason == "aborted" else finish_game(
+        samples, result.result, spec["game_num"], events, version=spec.get("shard_version", 6), with_meta=True)
     if spec.get("out") and not spec.get("no_events"):
         gdir = os.path.join(spec["out"], "games")
         os.makedirs(gdir, exist_ok=True)
@@ -97,9 +108,15 @@ def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes]]:
     summary["k"] = {c.team: round(c.clock_k, 1) for c in ctls}
     summary["searches"] = {c.team: c.searches for c in ctls}
     summary["samples"] = len(finished)
+    summary["repeats_dropped"] = sum(c.repeats_dropped for c in ctls)
+    if spec.get("think_head"):
+        looks = sum(c.quick_looks for c in ctls)
+        missing = sum(c.think_head_missing for c in ctls)
+        summary["think_head"] = {"looks": looks, "missing": missing, "mean_p": round(
+            sum(c.think_gain_sum for c in ctls) / (looks - missing), 3) if looks > missing else None}
     summary["sit_spells"] = sum(1 for e in events if e["type"] == "stall" and e.get("active"))
     summary["wall_s"] = round(time.perf_counter() - t0, 2)
-    return summary, finished
+    return summary, finished, metas
 
 
 def make_specs(args) -> list[dict]:
@@ -111,6 +128,7 @@ def make_specs(args) -> list[dict]:
             "base_ms": args.base_ms, "max_plies": args.max_plies, "k_range": args.k_range, "jitter": args.jitter,
             "free_sit_ms": args.free_sit_ms, "nodes_range": args.nodes_range, "ms_per_node": args.ms_per_node,
             "binary": args.binary, "model": args.model, "out": args.out, "no_events": args.no_events,
+            "shard_version": args.shard_version, "think_head": args.think_head, "send_elapsed": not args.no_elapsed,
         })
     return specs
 
@@ -129,6 +147,7 @@ def results(summaries: list[dict], writer: ShardWriter | None = None) -> dict:
         "searches": searches,
         "sit_spells_per_search": round(sum(s["sit_spells"] for s in ok) / searches, 3) if searches else 0.0,
         "samples": sum(s["samples"] for s in ok),
+        "repeats_dropped": sum(s.get("repeats_dropped", 0) for s in ok),
         "chunks": [os.path.basename(p) for p in writer.paths] if writer else [],
         "channels": writer.channels if writer else None,
     }
@@ -138,23 +157,26 @@ def format_results(r: dict) -> str:
     lines = [f"games {r['games']} ({r['errors']} errors)   samples {r['samples']}   channels {r['channels']}",
              f"results {r['results']}   reasons {r['reasons']}",
              f"flag rate {r['flag_rate']:.3f}   mean plies {r['mean_plies']}   mean length {r['mean_duration_s']} s",
-             f"searches {r['searches']}   sit spells per search {r['sit_spells_per_search']:.3f}   chunks {len(r['chunks'])}"]
+             f"searches {r['searches']}   sit spells per search {r['sit_spells_per_search']:.3f}   chunks {len(r['chunks'])}",
+             f"repeated-position samples dropped {r.get('repeats_dropped', 0)}"]
     return "\n".join(lines)
 
 
 def run(args, process_factory=None) -> dict:
     os.makedirs(args.out, exist_ok=True)
     run_id = args.run_id or f"{os.path.basename(os.path.normpath(args.out))}-s{args.seed}"
-    writer = ShardWriter(os.path.join(args.out, "training_data"), run_id, samples_per_chunk=args.samples_per_chunk)
+    writer = ShardWriter(os.path.join(args.out, "training_data"), run_id, samples_per_chunk=args.samples_per_chunk,
+                         version=args.shard_version)
     specs = make_specs(args)
     summaries: list[dict] = []
     t0 = time.perf_counter()
 
-    def done(summary: dict, samples: list[bytes]) -> None:
+    def done(summary: dict, samples: list[bytes], metas: list[dict]) -> None:
         summaries.append(summary)
-        writer.append(samples)
+        writer.append(samples, None if args.no_positions else metas)
         tag = summary.get("error") or (f"{summary['result']} by {summary['reason']} in {summary['plies']} plies, "
-                                       f"{summary['samples']} samples, k {summary['k']}")
+                                       f"{summary['samples']} samples ({summary['repeats_dropped']} repeats "
+                                       f"dropped), k {summary['k']}")
         print(f"[{len(summaries)}/{len(specs)}] {summary['game_id']} {tag}", flush=True)
 
     if args.workers <= 1 or process_factory is not None:
@@ -182,8 +204,8 @@ def parse_args(argv=None):
     ap.add_argument("--games", type=int, default=20)
     ap.add_argument("--workers", type=int, default=1, help="parallel games (processes); 1 on the shared Mac")
     ap.add_argument("--out", required=True, help="output dir, e.g. runs/selfplay/it01")
-    ap.add_argument("--model", default=os.path.join(ENGINE_DIR, "models", "hivemind-clock-fp32.onnx"),
-                    help="ONNX network (the 41-plane clock network)")
+    ap.add_argument("--model", default=os.path.join(ENGINE_DIR, "models", "hivemind-clock-v2-fp32.onnx"),
+                    help="ONNX network (the 43-plane spec v2 clock network; a 41-plane v1 network also loads with the ONNX Runtime backend only, its elapsed planes dropped)")
     ap.add_argument("--binary", default="hivemind-clock",
                     help=f"engine: one of {', '.join(BINARY_NAMES)} or a path (default hivemind-clock)")
     ap.add_argument("--k-range", type=lambda t: parse_range(t, "--k-range"), default=(60.0, 300.0),
@@ -203,6 +225,14 @@ def parse_args(argv=None):
     ap.add_argument("--samples-per-chunk", type=int, default=DEFAULT_SAMPLES_PER_CHUNK)
     ap.add_argument("--no-events", action="store_true", help="do not write per-game event logs")
     ap.add_argument("--summary", default=None, help="summary file (default <out>/summary.json)")
+    ap.add_argument("--shard-version", type=int, choices=(5, 6), default=6,
+                    help="chunk format: 6 = HVM6 with arrival / think_gain block (spec v2, default), 5 = v1 HVM5")
+    ap.add_argument("--no-positions", action="store_true",
+                    help="do not write the <chunk>.pos.jsonl sidecars (tools/think_labels.py needs them)")
+    ap.add_argument("--think-head", action="store_true",
+                    help="scale each move's budget by 0.5 + 1.5 p, p = think_gain from a 16-node look (spec v2 B)")
+    ap.add_argument("--no-elapsed", action="store_true",
+                    help="do not send per-board elapsed times in 'position' (v1 behaviour)")
     args = ap.parse_args(argv)
     if args.jitter is None:
         args.jitter = (1.0, 1.0)

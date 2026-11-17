@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 import chess
 
 from arena.interfaces import BOARD_OF, PARTNER, TEAM_OF, Decision, Message, Observation
+from arena.recorder import RecordedSample
 from arena.players.heuristic import (
     LETTER,
     PTYPE,
@@ -124,6 +125,9 @@ class SearchResult:
     sample: bytes | None = None
     # ``bestmove (none)``: the engine found no root (it judged the team mated or not on turn on either board).
     no_root: bool = False
+    # ``info string think_gain <pa> <pb>`` (spec v2 B, networks with a think-time head): per board, the chance that
+    # a 4x longer search plays a different move there. None when the engine printed no such line.
+    think_gain: tuple[float, float] | None = None
 
     def move_for(self, board: str) -> str | None:
         return self.move_a if board == "A" else self.move_b
@@ -131,15 +135,39 @@ class SearchResult:
 
 _INFO_RE = re.compile(r"^info depth (\d+)(?: multipv (\d+))? score (cp|mate) (-?\d+) nodes (\d+)")
 SAMPLE_PREFIX = "info string sample "
+THINK_GAIN_PREFIX = "info string think_gain "
 CLOCK_SEATS = ("A_white", "A_black", "B_white", "B_black")  # order of the ``clocks`` suffix
 
 
-def position_command(fen_a: str, fen_b: str, clocks: dict | None = None) -> str:
-    """``position fen <A> | <B>``, with ``clocks <aw> <ab> <bw> <bb>`` (remaining ms, >= 0) when clocks are given."""
+def position_command(fen_a: str, fen_b: str, clocks: dict | None = None, elapsed: dict | None = None) -> str:
+    """``position fen <A> | <B>``, with ``clocks <aw> <ab> <bw> <bb>`` (remaining ms, >= 0) when clocks are given,
+    and then ``elapsed <ea> <eb>`` (ms since the last move landed on board A / B, >= 0; spec v2 A) when elapsed
+    times are given too. Elapsed times without clocks are not sent (the suffix extends the clocks suffix)."""
     cmd = f"position fen {fen_a} | {fen_b}"
     if clocks is not None:
         cmd += " clocks " + " ".join(str(max(0, int(clocks[s]))) for s in CLOCK_SEATS)
+        if elapsed is not None:
+            cmd += " elapsed " + " ".join(str(max(0, int(elapsed[b]))) for b in ("A", "B"))
     return cmd
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x)) if x >= 0 else math.exp(x) / (1.0 + math.exp(x))
+
+
+def parse_think_gain(line: str) -> tuple[float, float] | None:
+    """``info string think_gain <pa> <pb>`` -> (pa, pb) as probabilities. Values already in [0, 1] are taken as
+    probabilities; a value outside [0, 1] is read as a logit and passed through a sigmoid. Malformed: None."""
+    parts = line[len(THINK_GAIN_PREFIX):].split()
+    if len(parts) < 2:
+        return None
+    try:
+        vals = [float(parts[0]), float(parts[1])]
+    except ValueError:
+        return None
+    if not all(math.isfinite(v) for v in vals):
+        return None
+    return tuple(v if 0.0 <= v <= 1.0 else _sigmoid(v) for v in vals)  # type: ignore[return-value]
 
 
 def _parse_joint(tok: str) -> tuple[str | None, str | None] | None:
@@ -157,7 +185,8 @@ class HivemindProcess:
     def __init__(self, binary: str = DEFAULT_BINARY, model: str = DEFAULT_MODEL, *, options: dict | None = None,
                  reset_tree: bool = True, timeout_s: float = 120.0, refs: int = 1) -> None:
         self.binary = binary
-        self.model = model
+        # The engine runs with cwd=ENGINE_DIR, so a model path relative to the caller's cwd must be made absolute.
+        self.model = os.path.abspath(model)
         self.extra_options = dict(options or {})
         self.reset_tree = reset_tree
         self.timeout_s = timeout_s
@@ -231,13 +260,15 @@ class HivemindProcess:
 
     def search(self, fen_a: str, fen_b: str, *, team: str, nodes: int, time_advantage: bool = False,
                require: str | None = None, multipv: int = 1, clocks: dict | None = None, sample: bool = False,
-               options: dict | None = None, require_option: bool = True) -> SearchResult:
+               options: dict | None = None, require_option: bool = True,
+               elapsed: dict | None = None) -> SearchResult:
         """Joint search for ``team`` ("T1"/"T2") from the two bracket-form FENs. ``multipv`` > 1 also fills
         ``SearchResult.multi`` with that many candidate lines.
 
         Custom-engine extras, all off by default: ``clocks`` ({seat: ms}) adds the ``clocks`` suffix to
         ``position``; ``sample`` searches with ``go nodes N sample`` and fills ``SearchResult.sample``; ``options``
-        are set before the search (e.g. FreePass, TreeMoveMs); ``require_option=False`` never sends RequireMoveOn."""
+        are set before the search (e.g. FreePass, TreeMoveMs); ``require_option=False`` never sends RequireMoveOn;
+        ``elapsed`` ({"A": ms, "B": ms}, with ``clocks`` only) adds ``elapsed <ea> <eb>`` (spec v2 A)."""
         with self._lock:
             self.start()
             self.set_option("Team", TEAM_OPTION[team])
@@ -249,7 +280,7 @@ class HivemindProcess:
                 self.set_option(k, v)
             if self.reset_tree:
                 self._send("ucinewgame")
-            self._send(position_command(fen_a, fen_b, clocks))
+            self._send(position_command(fen_a, fen_b, clocks, elapsed))
             self._sync()  # drains stale output (late info strings) before the search
             lines: list[str] = []
             t0 = time.perf_counter()
@@ -275,6 +306,9 @@ class HivemindProcess:
         for line in lines:
             if line.startswith(SAMPLE_PREFIX):
                 res.sample = base64.b64decode(line[len(SAMPLE_PREFIX):].strip(), validate=True)
+                continue
+            if line.startswith(THINK_GAIN_PREFIX):
+                res.think_gain = parse_think_gain(line) or res.think_gain  # the last well-formed line wins
                 continue
             m = _INFO_RE.match(line)
             if m:
@@ -579,17 +613,29 @@ class HivemindTeamController:
     always ``serial``; ``jitter`` defaults to (0.5, 2.0). A pass on the seat's board becomes a wait that ends
     when the next move (and so any captured piece) lands on either board, or after ``free_sit_ms``, whichever
     is first; then the controller searches again. ``record=True`` searches with ``go nodes N sample`` and keeps
-    every sample in ``samples`` as (now_ms, seq, bytes) for arena.recorder."""
+    the samples in ``samples`` as ``arena.recorder.RecordedSample`` (time, order, bytes and the position it came
+    from) for arena.recorder.
+
+    Spec v2, free mode only: every ``position`` also carries ``elapsed <ea> <eb>`` (ms since the last move landed
+    on each board, from ``Observation.last_move_ms``; ``send_elapsed=False`` or an observation without it sends
+    none). With ``record``, at most one sample per seat per unchanged position in a row (same two FENs, clocks
+    ignored): a repeated search while sitting runs without ``sample`` and is counted in ``repeats_dropped``.
+    ``think_head=True`` (off by default): before each new search a ``quick_nodes`` (16) look reads the root
+    ``think_gain`` p for the seat's board, and the move's node budget becomes clock budget x (0.5 + 1.5 p),
+    clamped to ``min_nodes..max_nodes``, with the quick look's nodes charged to that same budget. A network
+    without the head prints no think_gain: then the clock budget is used unchanged (``think_head_missing``)."""
 
     def __init__(self, team: str, process: HivemindProcess, nodes: int = 400, ms_per_node: float = MS_PER_NODE,
                  *, max_consecutive_sits: int = 2, sit_ms: int = 1000, clock_k: float | None = None,
                  min_nodes: int = 16, max_nodes: int = 1600, serial: bool = False, free: bool = False,
                  free_sit_ms: int = 500, k_range=(60.0, 300.0), jitter=None, record: bool = False,
-                 seed: int = 0) -> None:
+                 seed: int = 0, think_head: bool = False, quick_nodes: int = 16, send_elapsed: bool = True) -> None:
         if clock_k is not None and clock_k <= 0:
             raise ValueError(f"clock_k must be > 0, got {clock_k}")
         if record and not free:
             raise ValueError("record needs free=True (samples come from the hivemind-clock build)")
+        if think_head and not free:
+            raise ValueError("think_head needs free=True (the think_gain output comes from the clock network)")
         self.team = team
         self.process = process
         self.nodes = int(nodes)
@@ -610,8 +656,16 @@ class HivemindTeamController:
             if self.jitter is None:
                 self.jitter = (0.5, 2.0)
             self.clock_k = self._rng.uniform(*self.k_range)
-        self.samples: list[tuple[int, int, bytes]] = []
+        self.think_head = bool(think_head)
+        self.quick_nodes = max(1, int(quick_nodes))
+        self.send_elapsed = bool(send_elapsed)
+        self.samples: list[RecordedSample] = []
         self.searches = 0
+        self.repeats_dropped = 0  # record: searches whose sample was dropped (same seat, same position in a row)
+        self.quick_looks = 0  # think_head: 16-node looks run
+        self.think_head_missing = 0  # think_head: looks that gave no think_gain (clock budget used unchanged)
+        self.think_gain_sum = 0.0  # think_head: sum of the p values used (mean = sum / (looks - missing))
+        self._last_sample_pos: dict[str, tuple[str, str]] = {}
         self.no_root_results = 0  # free mode: searches that returned bestmove (none) although the seat could move
         self._busy_until = 0  # serial: the one machine is searching until then
         self._cache: tuple[tuple[str, str, bool], SearchResult, int] | None = None
@@ -674,6 +728,28 @@ class HivemindTeamController:
         self._sits[seat] = 0
         return Decision(kind="move", uci=move, think_ms=think, nodes=nodes, eval=res.q)
 
+    def _elapsed(self, obs: Observation) -> dict | None:
+        if not self.send_elapsed or obs.last_move_ms is None:
+            return None
+        return {b: max(0, obs.now_ms - int(obs.last_move_ms[b])) for b in ("A", "B")}
+
+    def _think_head_nodes(self, seat: str, obs: Observation, budget: int, elapsed: dict | None,
+                          ahead: bool) -> tuple[int, int]:
+        """(total nodes for this move, nodes already spent on the quick look). Spec v2 B."""
+        quick = min(self.quick_nodes, budget)
+        look = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=quick, time_advantage=ahead,
+                                   clocks=obs.clocks_ms, elapsed=elapsed, require_option=False,
+                                   options={"FreePass": True, "MateProbeAnyTime": True,
+                                            "TreeMoveMs": int(round(budget * self.ms_per_node))})
+        self.quick_looks += 1
+        if look.think_gain is None or look.no_root:
+            self.think_head_missing += 1
+            return budget, quick
+        p = min(1.0, max(0.0, float(look.think_gain[0 if BOARD_OF[seat] == "A" else 1])))
+        self.think_gain_sum += p
+        total = min(self.max_nodes, max(self.min_nodes, int(round(budget * (0.5 + 1.5 * p)))))
+        return max(total, quick + 1), quick
+
     def _decide_free(self, seat: str, obs: Observation) -> Decision:
         board = BOARD_OF[seat]
         ahead = team_time_edge(obs.clocks_ms, self.team) > 0  # the legacy TimeAdvantage input plane only
@@ -684,12 +760,18 @@ class HivemindTeamController:
             res, ready = cached[1], cached[2]
             think, nodes = max(0, ready - obs.now_ms), 0
         else:
+            elapsed = self._elapsed(obs)
             budget = self.budget(obs.clocks_ms[seat])
-            own = self._charged_ms(budget)
-            res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=budget,
-                                      time_advantage=ahead, clocks=obs.clocks_ms, sample=self.record,
+            total, spent = (self._think_head_nodes(seat, obs, budget, elapsed, ahead) if self.think_head
+                            else (budget, 0))
+            own = self._charged_ms(total)
+            pos = (obs.fens["A"], obs.fens["B"])
+            repeat = self.record and self._last_sample_pos.get(seat) == pos
+            want_sample = self.record and not repeat
+            res = self.process.search(obs.fens["A"], obs.fens["B"], team=self.team, nodes=total - spent,
+                                      time_advantage=ahead, clocks=obs.clocks_ms, sample=want_sample,
                                       options={"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": own},
-                                      require_option=False)
+                                      require_option=False, elapsed=elapsed)
             self.searches += 1
             if res.no_root:
                 # The seat has legal moves (decide() returned early otherwise), so the engine should have a
@@ -699,15 +781,21 @@ class HivemindTeamController:
                 _LOG.error("hivemind returned bestmove (none) for %s (%s) with %d legal moves; "
                            "fenA=%s fenB=%s clocks=%s time_advantage=%s", seat, self.team,
                            len(obs.legal_moves), obs.fens["A"], obs.fens["B"], obs.clocks_ms, ahead)
+            elif repeat:
+                self.repeats_dropped += 1
             elif self.record:
                 if res.sample is None:
                     raise RuntimeError("record=True but the search returned no sample")
                 if len(res.sample) <= SAMPLE_TEAM_OFFSET or \
                         res.sample[SAMPLE_TEAM_OFFSET] != SAMPLE_TEAM_BYTE[self.team]:
                     raise ValueError(f"sample team byte does not match team {self.team}")
-                self.samples.append((obs.now_ms, next(_SAMPLE_SEQ), res.sample))
+                self.samples.append(RecordedSample(
+                    now_ms=obs.now_ms, seq=next(_SAMPLE_SEQ), buf=res.sample, seat=seat, team=self.team,
+                    ply=obs.ply, fen_a=obs.fens["A"], fen_b=obs.fens["B"], clocks=dict(obs.clocks_ms),
+                    elapsed=elapsed, tree_ms=own, nodes=total, time_advantage=ahead))
+                self._last_sample_pos[seat] = pos
             queued = max(0, self._busy_until - obs.now_ms)
-            think, nodes = queued + own, budget
+            think, nodes = queued + own, total
             self._busy_until = obs.now_ms + think
             self._cache = (key, res, obs.now_ms + think)
         move = _legalize(res.move_for(board), list(obs.legal_moves))

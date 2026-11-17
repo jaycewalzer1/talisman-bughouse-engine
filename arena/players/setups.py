@@ -40,7 +40,8 @@ Centralized hivemind teams also take ``clock_k`` (think time from the remaining 
 ``max_nodes`` (its clamp) and ``serial`` (one machine: overlapping searches queue). See HivemindTeamController.
 Custom engine (all off by default): ``free`` (no time/sit rules, real clocks; needs ``binary="hivemind-clock"``),
 ``free_sit_ms``, ``k_range``, ``jitter`` (out-of-step think times; also usable on a stock controller) and
-``record`` (training samples). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
+``record`` (training samples), and from spec v2 ``think_head`` / ``quick_nodes`` (budget scaled by the network's
+think_gain) and ``send_elapsed`` (per-board elapsed times in ``position``, on by default in free mode). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
 an ONNX path.
 
 ``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
@@ -92,12 +93,13 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         skw = {k: kw[k] for k in ("max_consecutive_sits", "sit_ms") if k in kw and kw[k] is not None}
         if setup == "centralized":
             ckw = {k: kw[k] for k in ("clock_k", "min_nodes", "max_nodes", "serial", "free", "free_sit_ms",
-                                      "k_range", "jitter", "record") if kw.get(k) is not None}
+                                      "k_range", "jitter", "record", "think_head", "quick_nodes", "send_elapsed")
+                   if kw.get(k) is not None}
             ctl = HivemindTeamController(team, HivemindProcess(binary, model, **pkw), nodes=nodes,
                                          ms_per_node=ms, seed=seed, **skw, **ckw)
             return {s: ctl.player(s) for s in seats}
-        if any(kw.get(k) for k in ("free", "jitter", "record")):
-            raise ValueError("free, jitter and record need setup='centralized'")
+        if any(kw.get(k) for k in ("free", "jitter", "record", "think_head")):
+            raise ValueError("free, jitter, record and think_head need setup='centralized'")
         half = max(1, nodes // 2)
         compute = kw.get("compute") or "throughput"
         if compute not in COMPUTE_MODELS:
