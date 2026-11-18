@@ -289,9 +289,9 @@ def play_one(spec: dict, process_factory=None) -> tuple[dict, list[bytes], list[
         summary["base_ms"] = spec["base_ms"]
         summary["start_offsets"] = spec["start_offsets"]
         summary["think_target_ms"] = spec["think_target_ms"]
-        for k in ("unrecorded_fast", "transitions", "rechecks", "rechecks_skipped", "nodes_requested",
+        for k in ("unrecorded_fast", "transitions", "first_passes", "rechecks", "rechecks_skipped", "nodes_requested",
                   "nodes_searched"):
-            summary[k] = sum(getattr(c, k) for c in ctls)
+            summary[k] = sum(getattr(c, k, 0) for c in ctls)
         summary["stalls"] = [st for c in ctls for st in c.stalls]
     summary["wall_s"] = round(time.perf_counter() - t0, 2)
     return summary, finished, metas
@@ -358,7 +358,7 @@ def results(summaries: list[dict], writer: ShardWriter | None = None) -> dict:
         "channels": writer.channels if writer else None,
     }
     if any("nodes_requested" in s for s in ok):
-        for k in ("unrecorded_fast", "transitions", "rechecks", "rechecks_skipped", "nodes_requested",
+        for k in ("unrecorded_fast", "transitions", "first_passes", "rechecks", "rechecks_skipped", "nodes_requested",
                   "nodes_searched"):
             out[k] = sum(s.get(k, 0) for s in ok)
         out["base_ms"] = dict(Counter(str(s["base_ms"]) for s in ok))
@@ -391,6 +391,7 @@ def format_results(r: dict) -> str:
         ratio = r["nodes_searched"] / r["nodes_requested"] if r["nodes_requested"] else 0.0
         lines += [f"base times {r['base_ms']}   time-odds games {r['time_odds_games']}",
                   f"unrecorded fast searches {r['unrecorded_fast']}   sit->move samples {r['transitions']}   "
+                  f"sit-start pass samples {r.get('first_passes', 0)}   "
                   f"re-looks {r['rechecks']} (skipped wakes {r['rechecks_skipped']})",
                   f"nodes searched / requested {ratio:.2f}   stalls {r['stalls']}"]
     return "\n".join(lines)

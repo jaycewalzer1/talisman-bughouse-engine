@@ -446,7 +446,8 @@ def test_v3_selfplay_end_to_end_persistent_engines(tmp_path):
         assert m["sit_ms"] is not None and m["sit_ms"] >= 0 and len(m["pace"]) == 4
         assert m["search_kind"] in ("full", "fast", "recheck") and m["nodes_searched"] >= 1
     assert any(m["search_kind"] == "full" for m in metas)
-    assert all(m["search_kind"] != "fast" or m["transition"] for m in metas)  # fast ones only as transitions
+    # fast ones only as transitions or as the pass that starts a sit spell
+    assert all(m["search_kind"] != "fast" or m["transition"] or m["sit_start"] for m in metas)
 
 
 def test_v3_rules_keep_ply_cap_games_out_and_send_reps(tmp_path):
@@ -562,3 +563,27 @@ def test_v3_self_play_sitoff_and_pass_exploration_defaults():
     assert sim_rules(v2) == {"max_plies": 400} and "pass_exploration" not in controller_kw(v2, "T1")
     assert controller_kw(make_specs(_args("--regime", "v3", "--pass-exploration", "0"))[0], "T1")[
         "pass_exploration"] == 0
+
+
+def test_sit_spell_keeps_its_first_pass_and_one_transition_under_playout_caps():
+    """Audit 2026-11-17: with pcr_p=0.25 a spell's first pass was kept only on a full draw and the pass->move
+    transition twice (the re-look and the search after it). Now the first pass is always kept (fast or full) and
+    exactly one transition: the search that moves, not the 32-node re-look."""
+    stub = ScriptStub([(None, None), (None, None), ("e2e4", None)])
+    ctl = free_ctl(stub, record=True, dedupe="bucket", pcr_p=0.0, sit_recheck=True, recheck_nodes=20,
+                   free_sit_ms=500, clock_bucket_ms=60_000)
+    seat = ctl.player("A_white")
+    fens = {"A": START, "B": START}
+    d = seat.decide(obs_at("A_white", fens, now_ms=1000))  # fast search (pcr_p 0), passes: spell starts
+    assert d.kind == "wait" and len(ctl.samples) == 1
+    first = ctl.samples[0]
+    assert first.extra["search_kind"] == "fast" and not first.extra["transition"] and ctl.first_passes == 1
+    assert first.extra["sit_start"]
+    d = seat.decide(obs_at("A_white", fens, now_ms=3000, clocks={**CLOCKS, "A_white": 57000}))  # re-look, passes
+    assert d.kind == "wait" and len(ctl.samples) == 1
+    # re-look wants to move -> a clock-budget search follows; only that one is the transition
+    d = seat.decide(obs_at("A_white", fens, now_ms=5000, clocks={**CLOCKS, "A_white": 55000}))
+    assert d.kind == "move" and stub.calls[-2]["nodes"] == 20
+    kinds = [(s.extra["search_kind"], s.extra["transition"]) for s in ctl.samples]
+    assert kinds == [("fast", False), ("fast", True)] and ctl.transitions == 1
+    assert first.extra["sit_ms"] == 4000.0

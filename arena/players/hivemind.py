@@ -854,6 +854,7 @@ class HivemindTeamController:
         self.repeats_dropped = 0  # record: searches whose sample was dropped as a repeat (dedupe)
         self.unrecorded_fast = 0  # record + pcr_p: clock-budget searches not recorded
         self.transitions = 0  # dedupe="bucket": sit->move searches kept
+        self.first_passes = 0  # dedupe="bucket": first searches of a sit spell kept (they passed)
         self.rechecks = 0  # sit_recheck: small re-look searches run
         self.rechecks_skipped = 0  # sit_recheck: wakes answered without a search
         self.nodes_requested = 0  # every search, requested nodes
@@ -1117,7 +1118,7 @@ class HivemindTeamController:
                        "fenA=%s fenB=%s clocks=%s time_advantage=%s", seat, self.team,
                        len(obs.legal_moves), fen_a, fen_b, obs.clocks_ms, ahead)
         elif self.record:
-            transition = False
+            transition = first_pass = False
             if self.dedupe == "position":
                 keep = not legacy_repeat
                 if legacy_repeat:
@@ -1126,11 +1127,18 @@ class HivemindTeamController:
                 bkey = pos + tuple(int(obs.clocks_ms[s]) // self.clock_bucket_ms for s in CLOCK_SEATS)
                 if self._seen_pos.get(seat) != pos:
                     self._seen_pos[seat], self._seen[seat] = pos, set()
-                transition = seat in self._sitting and not passed
-                keep = transition or (full and bkey not in self._seen[seat])
+                # A sit spell keeps its first search (the pass that starts it, full or not) and one sit->move
+                # transition: the full or clock-budget search that moves, not the re-look before it. Under
+                # playout caps the spell's pass was otherwise kept only on a full draw, and the transition
+                # twice (audit 2026-11-17: 8 pass vs 40 move samples in sit spells).
+                sitting = seat in self._sitting
+                first_pass = passed and not sitting
+                transition = sitting and not passed and not recheck
+                keep = first_pass or transition or (full and bkey not in self._seen[seat])
                 if keep:
                     self._seen[seat].add(bkey)
                     self.transitions += transition
+                    self.first_passes += first_pass
                 elif not full:
                     self.unrecorded_fast += 1
                 else:
@@ -1144,7 +1152,7 @@ class HivemindTeamController:
                 # spec v3 contract 2: seat-ordered (A_white A_black B_white B_black) and (A, B) float tuples
                 extra = {"sit_ms": None if passed else 0.0,
                          "search_kind": "recheck" if recheck else ("full" if full else "fast"),
-                         "transition": transition}
+                         "transition": transition, "sit_start": first_pass}
                 sample = make_sample(
                     extra, now_ms=obs.now_ms, seq=next(_SAMPLE_SEQ), buf=res.sample, seat=seat, team=self.team,
                     ply=obs.ply, fen_a=fen_a, fen_b=fen_b, clocks=dict(obs.clocks_ms), elapsed=elapsed,
