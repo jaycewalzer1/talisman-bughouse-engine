@@ -305,7 +305,8 @@ class NetEval:
             c = tuple(int(clocks[s]) for s in SEATS) if clocks else None
             if self.per_board >= 43:
                 e = (int(elapsed["A"]), int(elapsed["B"])) if (elapsed and c) else None
-                x = board2planes(board, side, clocks=c, elapsed=e, elapsed_planes=True)
+                x = board2planes(board, side, clocks=c, elapsed=e, elapsed_planes=True,
+                                 diagonal_plane=self.per_board >= 44)
             else:
                 x = board2planes(board, side, clocks=c, clock_planes=True)
         if time_advantage is None:
@@ -391,7 +392,7 @@ def score_case(case: Case, net_row: dict, engine_move: str | None | object = ...
     return row
 
 
-def engine_moves(cases: list[Case], binary: str, model: str, nodes: int, tree_ms: int) -> list:
+def engine_moves(cases: list[Case], binary: str, model: str, nodes: int, tree_ms: int, pass_exploration: int = 0) -> list:
     from arena.players.hivemind import HivemindProcess, resolve_binary
     path = resolve_binary(binary)
     clock = os.path.basename(path).startswith("hivemind-clock") or binary == "hivemind-clock"
@@ -402,7 +403,8 @@ def engine_moves(cases: list[Case], binary: str, model: str, nodes: int, tree_ms
             if clock:
                 res = proc.search(c.fen_a, c.fen_b, team=c.team, nodes=nodes, time_advantage=c.time_advantage,
                                   clocks=c.clocks, elapsed=c.elapsed, require_option=False,
-                                  options={"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": tree_ms})
+                                  options={"FreePass": True, "MateProbeAnyTime": True, "TreeMoveMs": tree_ms,
+                                           **({"PassExploration": pass_exploration} if pass_exploration else {})})
             else:
                 res = proc.search(c.fen_a, c.fen_b, team=c.team, nodes=nodes, time_advantage=c.time_advantage)
             out.append("no_root" if res.no_root else res.move_for(c.board))
@@ -481,6 +483,8 @@ def parse_args(argv=None):
     r.add_argument("--binary", default=None,
                    help="engine binary: hivemind (stock) or hivemind-clock; default by the network's channels")
     r.add_argument("--tree-ms", type=int, default=500, help="TreeMoveMs for the clock binary (default 500)")
+    r.add_argument("--pass-exploration", type=int, default=0,
+                   help="clock binary: send PassExploration N (spec v3 E3; 0 = off, the engine default)")
     r.add_argument("--out", default=None, help="write rows and summary as JSON")
     r.add_argument("--baseline", default=None, help="an earlier --out file: print the changed verdicts")
     r.add_argument("--threads", type=int, default=4)
@@ -512,7 +516,7 @@ def main(argv=None) -> int:
     if args.engine_nodes:
         if binary is None:
             binary = "hivemind" if net.per_board == 37 else "hivemind-clock"
-        moves = engine_moves(cases, binary, args.model, args.engine_nodes, args.tree_ms)
+        moves = engine_moves(cases, binary, args.model, args.engine_nodes, args.tree_ms, args.pass_exploration)
     rows = [score_case(c, nr, m) for c, nr, m in zip(cases, net_rows, moves)]
     summary = summarize(rows)
     print(f"model {args.model} ({net.channels} channels)"
