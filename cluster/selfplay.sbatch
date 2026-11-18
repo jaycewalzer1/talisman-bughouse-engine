@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J selfplay -A paceship-bughouse -q inferno
-#SBATCH -N1 -n8 --mem=32G --gres=gpu:rtx_6000:1 -t 08:00:00
+#SBATCH -N1 -n6 --mem=32G --gres=gpu:rtx_6000:1 -t 08:00:00
 #SBATCH -o selfplay_%x_%j.log
 # Out-of-step self-play for the custom engine (docs/custom_engine_spec.md section 3) into runs/<NAME>.
 # Both teams are the free-mode controller on the same network: real clocks, FreePass, no sit rules, think time =
