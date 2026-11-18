@@ -4,6 +4,7 @@
 #
 #   sh tools/build_upstream.sh            # clone/checkout TAG, build engine, fetch + convert the network
 #   TAG=v3.0.3 JOBS=2 sh tools/build_upstream.sh
+#   BACKEND=tensorrt sh tools/build_upstream.sh   # on PACE (after source cluster/env.sh: TensorRT_DIR, CUDA root)
 #
 # Result:
 #   third_party/upstream-hivemind/engine/build-ninja/hivemind          (ONNX Runtime CPU backend, -O3 release preset)
@@ -17,6 +18,7 @@ DEST="$ROOT/third_party/upstream-hivemind"
 TAG=${TAG:-v3.0.3}                 # latest v3.0.x tag on 2026-11-17
 JOBS=${JOBS:-2}                    # several agents/builds share this Mac
 ORT_ROOT=${ONNXRuntime_ROOT:-/opt/homebrew/opt/onnxruntime}
+BACKEND=${BACKEND:-onnxruntime}    # onnxruntime (Mac, CPU) or tensorrt (PACE GPU nodes)
 PY=${PY:-$ROOT/.venv/bin/python}
 # twin-s-clock iteration 13 ("latest promoted network" per the model card) at HF revision edaa246 (2026-10-26).
 HF_REPO=aminwoo/bughouse-twin-s-clock
@@ -32,8 +34,13 @@ fi
 echo "upstream: $(git -C "$DEST" describe --tags) $(git -C "$DEST" rev-parse --short HEAD)"
 
 cd "$DEST/engine"
-cmake --preset ninja-release -DHIVEMIND_BACKEND=onnxruntime -DONNXRuntime_ROOT="$ORT_ROOT" \
-  -DHIVEMIND_USE_CCACHE=OFF
+if [ "$BACKEND" = tensorrt ]; then
+  cmake --preset ninja-release -DHIVEMIND_BACKEND=tensorrt -DTensorRT_DIR="$TensorRT_DIR" \
+    -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_TOOLKIT_ROOT_DIR" -DHIVEMIND_USE_CCACHE=OFF -DHIVEMIND_NATIVE_ARCH=OFF
+else
+  cmake --preset ninja-release -DHIVEMIND_BACKEND=onnxruntime -DONNXRuntime_ROOT="$ORT_ROOT" \
+    -DHIVEMIND_USE_CCACHE=OFF
+fi
 cmake --build build-ninja --target hivemind -j "$JOBS"
 
 mkdir -p models
@@ -42,7 +49,7 @@ if [ ! -f "$NET" ]; then
   curl -fL --retry 3 -o "$NET.part" "https://huggingface.co/$HF_REPO/resolve/$HF_REV/twin-s-clock.onnx"
   mv "$NET.part" "$NET"
 fi
-SUM=$(shasum -a 256 "$NET" | cut -d' ' -f1)
+if command -v sha256sum >/dev/null 2>&1; then SUM=$(sha256sum "$NET" | cut -d' ' -f1); else SUM=$(shasum -a 256 "$NET" | cut -d' ' -f1); fi
 echo "network sha256: $SUM"
 if [ -n "$NET_SHA256" ] && [ "$SUM" != "$NET_SHA256" ]; then
   echo "sha256 mismatch: expected $NET_SHA256" >&2

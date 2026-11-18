@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J iterate -A paceship-bughouse -q inferno
-#SBATCH -N1 -n8 --mem=64G --gres=gpu:rtx_6000:1 -t 16:00:00
+#SBATCH -N1 -n6 --mem=64G --gres=gpu:rtx_6000:1 -t 16:00:00
 #SBATCH -o iterate_%x_%j.log
 # Custom-engine training loop (docs/custom_engine_spec.md section 3, spec v3), one or more iterations into
 # runs/custom/<RUN>:

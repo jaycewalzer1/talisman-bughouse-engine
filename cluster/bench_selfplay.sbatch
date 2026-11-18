@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH -J bench_selfplay -A paceship-bughouse -q inferno
-#SBATCH -N1 -n8 --mem=32G --gres=gpu:rtx_6000:1 -t 01:30:00
+#SBATCH -N1 -n6 --mem=32G --gres=gpu:rtx_6000:1 -t 01:30:00
 #SBATCH -o bench_selfplay_%j.log
 # WP-I throughput bench (docs/audit_2026-11-17.md WP-I, docs/measurements_bench.md): games per GPU-hour and GPU
 # utilisation of arena.selfplay at production settings, on the same allocation as cluster/selfplay.sbatch (one
-# RTX 6000, 8 cores, 6 workers = 6 games at once, 2 engine processes per game, 4 search threads each).
+# RTX 6000, 6 cores (the node class allows 6 per GPU), 6 workers = 6 games at once, 2 engine processes per game, 4 search threads each).
 #   sbatch cluster/bench_selfplay.sbatch                     # default stages, ~1 GPU-hour
 #   sbatch -n16 cluster/bench_selfplay.sbatch                # same stages with 16 cores: is the 8-core run CPU-bound?
 # Local dry run of the script path (no GPU; one short game):
