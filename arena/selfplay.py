@@ -63,7 +63,8 @@ from arena.stats import summarize_game
 # What each v3 setting is under --regime v2 (the controller's own defaults).
 _V2_VALUES = {"time_odds": False, "charge": None, "min_think_ms": None, "pace": None, "pace_mixture": False,
               "lag_ms": None, "noise": None, "temperature": None, "pcr_p": None, "dedupe": None,
-              "sit_recheck": None, "scale_max_plies": False, "rules": "v2", "reps": False}
+              "sit_recheck": None, "scale_max_plies": False, "rules": "v2", "reps": False,
+              "pass_exploration": None, "sitoff_ms": None}
 
 
 def _onoff(text: str) -> bool:
@@ -116,10 +117,11 @@ V3_DEFAULTS = {
     "base_mix": BASE_MIX, "think_target_ms": (200.0, 1000.0), "time_odds": True, "charge": "searched",
     "min_think_ms": 100.0, "pace": True, "pace_mixture": True, "lag_ms": 50.0, "noise": True,
     "temperature": 1.0, "pcr_p": 0.25, "dedupe": "bucket", "sit_recheck": True, "scale_max_plies": True,
-    "rules": "v3", "reps": True,
+    "rules": "v3", "reps": True, "pass_exploration": 1, "sitoff_ms": 30000,
 }
 V3_CONTROLLER = ("charge", "min_think_ms", "pace", "lag_ms", "noise", "temperature", "temperature_plies", "pcr_p",
-                 "pcr_nodes", "dedupe", "clock_bucket_ms", "sit_recheck", "recheck_nodes", "reps")
+                 "pcr_nodes", "dedupe", "clock_bucket_ms", "sit_recheck", "recheck_nodes", "reps",
+                 "pass_exploration")
 
 
 def sim_rules(spec: dict) -> dict:
@@ -130,7 +132,10 @@ def sim_rules(spec: dict) -> dict:
     if spec.get("rules") != "v3":
         return {"max_plies": spec["max_plies"]}
     from arena.sim import RULES_V3
-    return {**RULES_V3, "seed": spec["seed"], "max_plies": spec["max_plies"], "lag_max_ms": 0}
+    out = {**RULES_V3, "seed": spec["seed"], "max_plies": spec["max_plies"], "lag_max_ms": 0}
+    if spec.get("sitoff_ms") is not None:  # --sitoff-ms: 0 = never adjudicate a sit-off
+        out["sitoff_ms"] = int(spec["sitoff_ms"]) or None
+    return out
 
 
 def draw_base_ms(rng: random.Random, mix) -> int:
@@ -302,7 +307,7 @@ def make_specs(args) -> list[dict]:
             "free_sit_ms": args.free_sit_ms, "nodes_range": args.nodes_range, "ms_per_node": args.ms_per_node,
             "binary": args.binary, "model": args.model, "out": args.out, "no_events": args.no_events,
             "shard_version": args.shard_version, "think_head": args.think_head, "send_elapsed": not args.no_elapsed,
-            "regime": args.regime, "rules": args.rules,
+            "regime": args.regime, "rules": args.rules, "sitoff_ms": args.sitoff_ms,
         }
         spec.update(v3_spec(args, i))
         specs.append(spec)
@@ -494,6 +499,12 @@ def parse_args(argv=None):
     v3.add_argument("--rules", choices=("v2", "v3"), default=None,
                     help="arena rules profile (v3: arena.sim.RULES_V3 without simulator lag; aborts and ply-cap "
                          "games kept out of training)")
+    v3.add_argument("--pass-exploration", type=int, choices=(0, 1, 2), default=None,
+                    help="engine PassExploration on recorded searches: forced playouts on pass actions at the root "
+                         "(1) or root and depth 1 (2); 0 off (v3: 1)")
+    v3.add_argument("--sitoff-ms", type=int, default=None,
+                    help="rules v3 sit-off adjudication after this long of mutual sitting, 0 = never (v3 self-play: "
+                         "30000; arena.sim.RULES_V3 has 5000; 10%% of games are never adjudicated either way)")
     v3.add_argument("--reps", type=_onoff, default=None,
                     help="send the arena's repetition counts as 'reps <ra> <rb>' (repetition planes; v3: on)")
     args = ap.parse_args(argv)

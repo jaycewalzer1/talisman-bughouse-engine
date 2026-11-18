@@ -618,11 +618,12 @@ SAMPLE_TEAM_OFFSET = 16  # TrainingSample: gameId u64, nodes u32, macroPly u16, 
 SAMPLE_TEAM_BYTE = {"T1": 0, "T2": 1}  # engine Team white = our T1 = selfplay.cc team 0
 
 # Exploration options (spec v3 WP-C, engine side WP-E E3). The OpeningNoise* options exist in the fork's uci.cc
-# (OpeningNoisePlies is capped at 200 board plies there). The all-game noise switch and the move temperature are
-# WP-E's; their names live here so integration can change them in one place. uci.cc ignores unknown option
-# names silently, so sending them to an engine without them is harmless.
-NOISE_ALL_GAME_OPTION = "OpeningNoiseAllGame"
+# (OpeningNoisePlies is capped at 200 board plies there; RootNoiseAllGame lifts that cap). The names match
+# uci.cc exactly: it ignores unknown option names silently, so a wrong name turns the feature off unnoticed
+# (audit 2026-11-17: the all-game switch was sent as 'OpeningNoiseAllGame').
+NOISE_ALL_GAME_OPTION = "RootNoiseAllGame"
 TEMPERATURE_OPTION = "MoveTemperaturePermille"
+PASS_EXPLORATION_OPTION = "PassExploration"  # 0 off, 1 root, 2 root and depth 1 (forced playouts on passes)
 NOISE_ALPHA_PERMILLE = 300  # stock selfplay.h: Dirichlet alpha 0.3, epsilon 0.25
 NOISE_EPSILON_PERMILLE = 250
 NOISE_PLIES = 200
@@ -740,6 +741,8 @@ class HivemindTeamController:
     * ``noise=True``: Dirichlet root noise (``OpeningNoise*`` and the all-game switch) on every search that may
       be recorded, off on the others. ``temperature`` > 0: the move temperature option while the game has
       fewer than ``temperature_plies`` landed moves (0 after).
+    * ``pass_exploration`` (0, 1, 2): the engine's ``PassExploration`` option (forced playouts on pass joint
+      actions at the root, and at depth 1 with 2) on every search that may be recorded, 0 on the others.
     * ``pcr_p``: playout-cap randomisation. With probability ``pcr_p`` a search runs at least ``pcr_nodes`` and
       may be recorded; the rest run at the clock budget and are not recorded (except the sit->move
       transition). The clock is charged as for the clock-budget search either way (times the overshoot with
@@ -771,7 +774,7 @@ class HivemindTeamController:
                  pcr_p: float | None = None, pcr_nodes: int = 400, dedupe: str = "position",
                  clock_bucket_ms: int = 5000, sit_recheck: bool = False, recheck_nodes: int = 32,
                  think_head_norm: bool = False, start_offset_ms: int = 0, stock_no_root: str = "wait",
-                 reps: bool = False) -> None:
+                 reps: bool = False, pass_exploration: int = 0) -> None:
         if clock_k is not None and clock_k <= 0:
             raise ValueError(f"clock_k must be > 0, got {clock_k}")
         if record and not free:
@@ -832,6 +835,11 @@ class HivemindTeamController:
         self.noise = bool(noise)
         self.temperature = max(0.0, float(temperature))
         self.temperature_plies = int(temperature_plies)
+        if pass_exploration not in (0, 1, 2):
+            raise ValueError(f"pass_exploration must be 0, 1 or 2, got {pass_exploration}")
+        if pass_exploration and not free:
+            raise ValueError("pass_exploration needs free=True (FreePass searches)")
+        self.pass_exploration = int(pass_exploration)
         self.pcr_p = None if pcr_p is None else float(pcr_p)
         self.pcr_nodes = int(pcr_nodes)
         self.dedupe = dedupe
@@ -1050,6 +1058,10 @@ class HivemindTeamController:
             if recorded:
                 opts.update({"OpeningNoisePlies": NOISE_PLIES, "OpeningNoiseAlphaPermille": NOISE_ALPHA_PERMILLE,
                              "OpeningNoiseEpsilonPermille": NOISE_EPSILON_PERMILLE, NOISE_ALL_GAME_OPTION: True})
+        if self.pass_exploration:
+            # Forced playouts on pass actions only where the search may be recorded: the policy target then
+            # holds a pass visit share in positions where only the clocks differ (audit search 4, E3).
+            opts[PASS_EXPLORATION_OPTION] = self.pass_exploration if recorded else 0
         if self.temperature > 0:
             on = recorded is not None and ply < self.temperature_plies
             opts[TEMPERATURE_OPTION] = int(round(1000 * self.temperature)) if on else 0

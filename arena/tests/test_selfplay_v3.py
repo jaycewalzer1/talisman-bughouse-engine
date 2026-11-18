@@ -470,3 +470,95 @@ def test_v3_rules_keep_ply_cap_games_out_and_send_reps(tmp_path):
     assert r["reasons"] == {"max_plies": 2} and r["samples"] == 0
     calls = [c for s in made for c in s.calls]
     assert calls and all(set(c["reps"]) == {"A", "B"} and min(c["reps"].values()) >= 1 for c in calls)
+
+
+def test_exploration_setoption_lines_reach_the_engine_under_its_own_names(tmp_path):
+    """Audit 2026-11-17: the all-game noise switch went out as 'OpeningNoiseAllGame' (uci.cc knows
+    'RootNoiseAllGame' and ignores unknown names silently) and PassExploration was never sent. A stub UCI engine
+    reports every setoption line it got; each name must be one uci.cc handles."""
+    import re
+    import sys
+    from pathlib import Path
+
+    from arena.players.hivemind import PASS_EXPLORATION_OPTION, HivemindProcess
+
+    script = tmp_path / "engine.py"
+    script.write_text(
+        "import sys\n"
+        "opts = []\n"
+        "for line in sys.stdin:\n"
+        "    line = line.strip()\n"
+        "    if line == 'uci': print('uciok', flush=True)\n"
+        "    elif line == 'isready': print('readyok', flush=True)\n"
+        "    elif line.startswith('setoption'): opts.append(line)\n"
+        "    elif line.startswith('go'):\n"
+        "        for o in opts: print('info string got ' + o, flush=True)\n"
+        "        opts = []\n"
+        "        print('info depth 1 score cp 5 nodes 16 nps 1 time 1 pv (e2e4,pass)', flush=True)\n"
+        "        print('bestmove (e2e4,pass)', flush=True)\n"
+        "    elif line == 'quit': break\n")
+    exe = tmp_path / "engine"
+    exe.write_text(f"#!/bin/sh\nexec {sys.executable} {script} \"$@\"\n")
+    exe.chmod(0o755)
+    model = tmp_path / "m.onnx"
+    model.write_text("x")
+    proc = HivemindProcess(str(exe), str(model), timeout_s=10)
+    seen: list[str] = []
+    orig = proc.search
+
+    def spy(*a, **kw):
+        res = orig(*a, **kw)
+        seen.extend(l[len("info string got "):] for l in res.lines if l.startswith("info string got "))
+        return res
+
+    proc.search = spy
+    try:
+        ctl = free_ctl(proc, noise=True, temperature=1.0, pass_exploration=2)
+        ctl.player("A_white").decide(obs_at("A_white", {"A": START, "B": FEN_B_BLACK}, ply=3))
+    finally:
+        proc.close()
+    assert f"setoption name {NOISE_ALL_GAME_OPTION} value true" in seen
+    assert f"setoption name {PASS_EXPLORATION_OPTION} value 2" in seen
+    assert NOISE_ALL_GAME_OPTION == "RootNoiseAllGame" and PASS_EXPLORATION_OPTION == "PassExploration"
+    uci = Path(__file__).resolve().parents[2] / "third_party/hivemind/engine/src/interface/uci.cc"
+    if uci.exists():
+        known = set(re.findall(r'name == "([A-Za-z0-9]+)"', uci.read_text()))
+        sent = {line.split()[2] for line in seen}
+        assert sent <= known, sent - known
+
+
+def test_pass_exploration_only_on_searches_that_may_be_recorded():
+    stub = ScriptStub([("e2e4", None)])
+    ctl = free_ctl(stub, record=True, pcr_p=0.5, dedupe="bucket", seed=3, pass_exploration=1)
+    for i in range(40):
+        clocks = {**CLOCKS, "A_white": 59000 - 37 * i}
+        ctl.player("A_white").decide(obs_at("A_white", {"A": START, "B": START}, now_ms=10_000 * (i + 1),
+                                            clocks=clocks))
+        full = stub.calls[-1]["nodes"] == 400
+        assert stub.calls[-1]["options"]["PassExploration"] == (1 if full else 0)
+    plain = free_ctl(ScriptStub([("e2e4", None)]))
+    plain.player("A_white").decide(obs_at("A_white", {"A": START, "B": FEN_B_BLACK}))
+    assert "PassExploration" not in plain.process.calls[0]["options"]
+    with pytest.raises(ValueError, match="free"):
+        HivemindTeamController("T1", StubProcess(None), pass_exploration=1)
+    with pytest.raises(ValueError, match="0, 1 or 2"):
+        free_ctl(ScriptStub([]), pass_exploration=3)
+
+
+def test_v3_self_play_sitoff_and_pass_exploration_defaults():
+    """Audit 2026-11-17: RULES_V3's 5 s sit-off ended every smoke self-play game before the 10-30 s sits the
+    data needs; self-play under v3 now adjudicates after 30 s (--sitoff-ms, 0 = never) and sends
+    PassExploration 1 on recorded searches."""
+    from arena.selfplay import controller_kw, make_specs, sim_rules
+    from arena.sim import RULES_V3
+
+    spec = make_specs(_args("--regime", "v3"))[0]
+    assert sim_rules(spec)["sitoff_ms"] == 30000 and RULES_V3["sitoff_ms"] == 5000
+    assert sim_rules(spec)["sitoff_unadjudicated"] == RULES_V3["sitoff_unadjudicated"]
+    assert controller_kw(spec, "T1")["pass_exploration"] == 1
+    assert sim_rules(make_specs(_args("--regime", "v3", "--sitoff-ms", "0"))[0])["sitoff_ms"] is None
+    assert sim_rules(make_specs(_args("--regime", "v3", "--sitoff-ms", "60000"))[0])["sitoff_ms"] == 60000
+    v2 = make_specs(_args())[0]
+    assert sim_rules(v2) == {"max_plies": 400} and "pass_exploration" not in controller_kw(v2, "T1")
+    assert controller_kw(make_specs(_args("--regime", "v3", "--pass-exploration", "0"))[0], "T1")[
+        "pass_exploration"] == 0
