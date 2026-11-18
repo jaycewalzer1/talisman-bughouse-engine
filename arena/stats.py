@@ -144,6 +144,10 @@ def summarize_game(events: Iterable[dict]) -> dict:
         elif typ == "stall" and e.get("active"):
             teams[TEAM_OF[e["seat"]]]["stalls"] += 1
 
+    capped = {t: 0 for t in TEAMS}  # searches whose budget hit the controller's max_nodes (thinking start "capped")
+    for e in events:
+        if e.get("type") == "thinking" and e.get("phase") == "start" and e.get("capped"):
+            capped[TEAM_OF[e["seat"]]] += 1
     cm = _clock_metrics(events, start, end)
     loser_seat = end.get("loserSeat") if end else None
     reason = end.get("reason") if end else "aborted"
@@ -163,6 +167,7 @@ def summarize_game(events: Iterable[dict]) -> dict:
         "clock_teams": cm["teams"],
         "flag_while": cm["flag_while"],
         "flag_other_check": cm["flag_other_check"],
+        "capped_decisions": capped,
     }
 
 
@@ -192,6 +197,7 @@ def contender_row(summary: dict) -> dict:
         won_on_flag = flag and summary.get("loser_team") == other
         row[f"{prefix}_flag_win_check"] = 1.0 if won_on_flag and summary.get("flag_other_check") else 0.0
         row[f"{prefix}_decisions"] = t["decisions"]
+        row[f"{prefix}_capped"] = (summary.get("capped_decisions") or {}).get(team, 0)
         row[f"{prefix}_think_ms"] = t["think_ms"]
         row[f"{prefix}_nodes"] = t["nodes"]
         row[f"{prefix}_messages"] = t["messages"]
@@ -264,6 +270,9 @@ METRICS: dict[str, Statistic] = {
     "contender_nodes_per_game": mean_of("c_nodes"),
     "baseline_nodes_per_game": mean_of("b_nodes"),
     "contender_nodes_per_decision": ratio_of("c_nodes", "c_decisions"),
+    # share of searches whose budget was cut to max_nodes (an equal-clock row wants ~0 on both sides)
+    "contender_capped_share": ratio_of("c_capped", "c_decisions"),
+    "baseline_capped_share": ratio_of("b_capped", "b_decisions"),
     "baseline_nodes_per_decision": ratio_of("b_nodes", "b_decisions"),
     "contender_messages_per_game": mean_of("c_messages"),
     "baseline_messages_per_game": mean_of("b_messages"),

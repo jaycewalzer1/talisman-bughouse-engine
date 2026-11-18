@@ -40,7 +40,11 @@
 # THINK_NODES (200; below ~200 the labels are mostly search noise), THINK_FRACTION (0.25), THINK_MAX (0 = no cap),
 # THINK_REPEAT (0.05: share of labelled positions searched twice at N, so think_labels.json logs noise_rate).
 #
-# Gate (WP-A): GATE_BASES (120000,180000), GATE_PAIRS (400 = 800 games a row), GATE_SEED (0, the same for every
+# Gate (WP-A): GATE_BASES (120000,180000), GATE_PAIRS (400 = 800 games a row), GATE_PAIRS_HEADLINE (pairs of the
+# last GATE_BASES row, the headline: 800 = 1,600 games, the audit's row size; = GATE_PAIRS when that is set),
+# GATE_MAX_NODES (100000: the node cap of both arms' controllers, high enough that the clock decides the budget;
+# summary.json reports contender/baseline_capped_share), GATE_SITOFF_MS (empty = RULES_V3's 5000; 0 = never
+# adjudicate), GATE_SEED (0, the same for every
 # row of a RUN), GATE_OPENINGS (eval), GATE_K_RANGE (= K_RANGE), GATE_STOCK_K (auto; 0 = fixed STOCK_NODES, 100),
 # GATE_MEASURE (1 = measured per-arm ms_per_node; 0 = the player default), GATE_CHARGE (searched; "" = the
 # player default), GATE_EQN (1 = the equal-nodes row at GATE_EQN_BASE, default the first GATE_BASES entry),
@@ -53,7 +57,8 @@
 # failure: the GPU/TensorRT FP16 outputs against FP32 ONNX Runtime),
 # GATE_POOL / GATE_OPPONENT (arena/pools/phase1.json / stock-centralized; for the target engine
 # GATE_POOL=arena/pools/upstream_v3.json GATE_OPPONENT=upstream-v3: any opponent other than stock-centralized
-# plays with its pool options plus GATE_OPPONENT_KW only, under its own time manager).
+# plays with its pool options plus GATE_OPPONENT_KW only, under its own time manager; with GATE_MEASURE=1 its
+# ms_per_node is measured on this machine too, and an upstream opponent gets GATE_MAX_NODES).
 #
 # Self-play (WP-C) and convert/train (WP-D) options. Each is passed only when the program lists the flag in its
 # --help (or, for convert, takes the keyword); a set option the program does not have is reported and skipped.
@@ -78,6 +83,8 @@
 #   SP_RULES        --rules             arena rules profile (v3 = RULES_V3 without simulator lag; aborts and
 #                                       ply-cap games kept out of training)
 #   SP_REPS         --reps              send the arena's repetition counts ('reps' suffix), on/off
+#   SP_SITOFF_MS    --sitoff-ms         sit-off adjudication after this much mutual sitting (v3: 30000; 0 never)
+#   SP_PASS_EXPLORATION --pass-exploration  engine PassExploration on recorded searches, 0/1/2 (v3: 1)
 #   SP_EXTRA        appended to the self-play command as is
 #   Q_VALUE_RATIO   convert keyword q_value_ratio (value target = (1-r) outcome + r root_q)
 #   WEIGHT_NODES_REF convert keyword weight_nodes_ref (sample weight min(1, nodes / N))
@@ -128,7 +135,11 @@ case "$CKPT0" in /*) ;; *) CKPT0="$REPO/$CKPT0" ;; esac
 
 # ---- gate (WP-A)
 GATE_BASES="${GATE_BASES:-120000,180000}"
+if [ -n "${GATE_PAIRS:-}" ]; then GATE_PAIRS_HEADLINE="${GATE_PAIRS_HEADLINE:-$GATE_PAIRS}"; fi
 GATE_PAIRS="${GATE_PAIRS:-400}"
+GATE_PAIRS_HEADLINE="${GATE_PAIRS_HEADLINE:-800}"
+GATE_MAX_NODES="${GATE_MAX_NODES:-100000}"
+GATE_SITOFF_MS="${GATE_SITOFF_MS:-}"
 GATE_SEED="${GATE_SEED:-0}"
 GATE_OPENINGS="${GATE_OPENINGS:-eval}"
 GATE_K_RANGE="${GATE_K_RANGE:-$K_RANGE}"
@@ -227,18 +238,27 @@ gate_row() {
   [ -n "$GATE_OPP_JITTER" ] && opp_jitter=", \"jitter\": [$GATE_OPP_JITTER]"
   local reps=""
   [ "$GATE_REPS" = 1 ] && reps=", \"reps\": true"
-  local ckw="{\"free\": true, \"binary\": \"hivemind-clock\", \"model\": \"$model\", \"k_range\": [$GATE_K_RANGE], \"jitter\": [1.0, 1.0]${charge}${reps}${THINK_KW}${GATE_CONTENDER_KW:+, $GATE_CONTENDER_KW}}"
-  local okw="{\"serial\": true${charge}${stock_k}${opp_jitter}${GATE_OPPONENT_KW:+, $GATE_OPPONENT_KW}}"
+  local cap=", \"max_nodes\": $GATE_MAX_NODES"
+  local ckw="{\"free\": true, \"binary\": \"hivemind-clock\", \"model\": \"$model\", \"k_range\": [$GATE_K_RANGE], \"jitter\": [1.0, 1.0]${cap}${charge}${reps}${THINK_KW}${GATE_CONTENDER_KW:+, $GATE_CONTENDER_KW}}"
+  local okw="{\"serial\": true${cap}${charge}${stock_k}${opp_jitter}${GATE_OPPONENT_KW:+, $GATE_OPPONENT_KW}}"
   local onodes=(--opponent-nodes "$STOCK_NODES")
   if [ "$GATE_OPPONENT" != stock-centralized ]; then
-    okw="{${GATE_OPPONENT_KW}}"; onodes=()
+    # Its own pool options plus: the same node cap (upstream controllers), and on GATE_MEASURE=1 a measured
+    # ms_per_node on this machine instead of the pool's number (upstream's 0.65 is a Mac CPU figure).
+    local omkw=""
+    case "$GATE_OPPONENT" in upstream*) omkw="\"max_nodes\": $GATE_MAX_NODES" ;; esac
+    [ "$GATE_MEASURE" = 1 ] && omkw="${omkw:+$omkw, }\"ms_per_node\": \"measure\""
+    okw="{${omkw}${GATE_OPPONENT_KW:+${omkw:+, }$GATE_OPPONENT_KW}}"; onodes=()
   fi
+  local pairs="$GATE_PAIRS"
+  [ -z "$mode" ] && [ "$base" = "${_BASES[$((${#_BASES[@]} - 1))]}" ] && pairs="$GATE_PAIRS_HEADLINE"
+  [ -n "$GATE_SITOFF_MS" ] && extra+=(--sitoff-ms "$GATE_SITOFF_MS")
   [ "$GATE_MEASURE" = 1 ] && extra+=(--measure-ms-per-node --ms-per-node-cache "$ROOT/ms_per_node.json")
   [ "$mode" = eqn ] && extra+=(--equal-ms-per-node)
   [ -n "$GATE_SPRT" ] && extra+=(--sprt "$GATE_SPRT")
   echo "gate row $out: clock $base ms ${mode:+($mode) }contender $ckw opponent $okw"
   $PY -m arena.pool run --pool "$GATE_POOL" --setup centralized --opponent "$GATE_OPPONENT" \
-    ${onodes[@]+"${onodes[@]}"} --contender-kw "$ckw" --opponent-kw "$okw" --openings "$GATE_OPENINGS" --pairs "$GATE_PAIRS" \
+    ${onodes[@]+"${onodes[@]}"} --contender-kw "$ckw" --opponent-kw "$okw" --openings "$GATE_OPENINGS" --pairs "$pairs" \
     --workers "$WORKERS" --seed "$GATE_SEED" --base-ms "$base" --rules "$GATE_RULES" --skip-done ${extra[@]+"${extra[@]}"} \
     --out "$out"
 }
@@ -285,6 +305,8 @@ sp_opt --dedupe "$DEDUPE" DEDUPE
 sp_opt --ms-per-node "$SP_MS_PER_NODE" SP_MS_PER_NODE
 sp_opt --rules "$SP_RULES" SP_RULES
 sp_opt --reps "$SP_REPS" SP_REPS
+sp_opt --sitoff-ms "${SP_SITOFF_MS:-}" SP_SITOFF_MS
+sp_opt --pass-exploration "${SP_PASS_EXPLORATION:-}" SP_PASS_EXPLORATION
 TRAIN_OPTS=()
 train_opt() {  # flag value env-name
   [ -z "$2" ] && return 0

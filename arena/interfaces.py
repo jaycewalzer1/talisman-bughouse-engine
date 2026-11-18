@@ -129,6 +129,8 @@ class Decision:
     # With borrow: the part of the partner's machine used, in (0, 1]. Below 1 the partner keeps the rest, so it
     # is not deferred; a search it starts meanwhile runs that much slower until the machine is returned.
     borrow_share: float = 1.0
+    # The search's node budget was cut to the controller's max_nodes (equal-clock gates count how often).
+    capped: bool = False
 
 
 class Player(Protocol):

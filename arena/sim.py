@@ -426,6 +426,7 @@ class Simulator:
                 think_ms=cost,
                 nodes=dec.nodes,
                 eval=None,
+                **({"capped": True} if getattr(dec, "capped", False) else {}),
                 depth=getattr(dec, "depth", None),
                 borrowed=dec.borrow,
             )

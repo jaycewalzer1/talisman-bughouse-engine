@@ -39,6 +39,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 
 from arena.interfaces import BOARD_OF, SEATS, TEAM_OF, Decision, Observation
 from arena.players.heuristic import evaluate_moves, parse_board, team_seats
@@ -312,11 +313,13 @@ class UpstreamTeamController:
         self._busy_until = 0
         self._cache: tuple[tuple[str, str], SearchResult, int, int] | None = None
         self._seats: dict[str, "UpstreamSeat"] = {}
+        self._capped = False  # budget() clamped to max_nodes during the current decision
 
     def budget(self, clock_ms: int) -> int:
         if self.clock_k is None:
             return self.nodes
         n = int(round(max(0, clock_ms) / self.clock_k / self.ms_per_node))
+        self._capped = self._capped or n > self.max_nodes
         return min(self.max_nodes, max(self.min_nodes, n))
 
     def player(self, seat: str) -> "UpstreamSeat":
@@ -389,7 +392,11 @@ class UpstreamSeat:
         self._closed = False
 
     def decide(self, obs: Observation) -> Decision:
-        return self.controller.decide(self.seat, obs)
+        self.controller._capped = False
+        dec = self.controller.decide(self.seat, obs)
+        if self.controller._capped and dec.nodes > 0:
+            dec = _dc_replace(dec, capped=True)
+        return dec
 
     def close(self) -> None:
         if not self._closed:

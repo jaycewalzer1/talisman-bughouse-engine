@@ -53,6 +53,7 @@ import threading
 import time
 import random
 from dataclasses import dataclass, field
+from dataclasses import replace as _dc_replace
 
 import chess
 
@@ -877,6 +878,7 @@ class HivemindTeamController:
         self._cache: tuple[tuple[str, str, bool], SearchResult, int] | None = None
         self._sits: dict[str, int] = {}
         self._seats: dict[str, "CentralizedHivemindSeat"] = {}
+        self._capped = False  # budget() clamped to max_nodes during the current decision
 
     def budget(self, clock_ms: int) -> int:
         """Nodes for one search: the fixed ``nodes``, or with ``clock_k`` the remaining clock / clock_k (at least
@@ -887,6 +889,7 @@ class HivemindTeamController:
         if self.min_think_ms is not None:
             ms = max(ms, self.min_think_ms)
         nodes = int(round(ms / self.ms_per_node))
+        self._capped = self._capped or nodes > self.max_nodes
         return min(self.max_nodes, max(self.min_nodes, nodes))
 
     def player(self, seat: str) -> "CentralizedHivemindSeat":
@@ -1242,7 +1245,11 @@ class CentralizedHivemindSeat:
         self._closed = False
 
     def decide(self, obs: Observation) -> Decision:
-        return self.controller.decide(self.seat, obs)
+        self.controller._capped = False
+        dec = self.controller.decide(self.seat, obs)
+        if self.controller._capped and dec.nodes > 0:
+            dec = _dc_replace(dec, capped=True)
+        return dec
 
     def close(self) -> None:
         if not self._closed:

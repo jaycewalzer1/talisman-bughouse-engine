@@ -294,3 +294,108 @@ def test_compare_evals_pairs_rows_with_the_same_schedule(tmp_path, capsys):
     compare_evals.main([str(out), str(out)])
     text = capsys.readouterr().out
     assert "nodes/g c" in text and "+0.000" in text
+
+
+def _tiny_onnx(path, weight: float, width: int = 3):
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+
+    w = numpy_helper.from_array(np.full((width, width), weight, dtype=np.float32), "w")
+    g = helper.make_graph([helper.make_node("MatMul", ["x", "w"], ["y"])], "g",
+                          [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, width])],
+                          [helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, width])], [w])
+    onnx.save(helper.make_model(g), str(path))
+    return str(path)
+
+
+def test_one_measurement_per_architecture_across_iterations(tmp_path):
+    """Audit 2026-11-17: it00 and it01 (same binary, same architecture) were measured apart and charged 2.46 vs
+    2.58 ms/node. Networks of one architecture now share one cache entry; another shape is measured anew."""
+    pytest.importorskip("onnx")
+    from arena.pool import network_shape_key
+
+    it00, it01 = _tiny_onnx(tmp_path / "it00.onnx", 0.1), _tiny_onnx(tmp_path / "it01.onnx", 0.7)
+    wide = _tiny_onnx(tmp_path / "wide.onnx", 0.1, width=4)
+    assert network_shape_key(it00) == network_shape_key(it01) != network_shape_key(wide)
+    assert network_shape_key(str(tmp_path / "missing.onnx")) is None
+    calls = []
+
+    def fake(binary, model, nodes, repeats):
+        calls.append(model)
+        return {"ms_per_node": 2.0 + len(calls)}
+
+    cache = str(tmp_path / "ms.json")
+    a, _ = apply_ms_per_node(_engine_pool({"binary": "hivemind-clock", "model": it00}), cache, measure=fake)
+    b, _ = apply_ms_per_node(_engine_pool({"binary": "hivemind-clock", "model": it01}), cache, measure=fake)
+    assert a.contender.player_kw["ms_per_node"] == b.contender.player_kw["ms_per_node"]
+    c, _ = apply_ms_per_node(_engine_pool({"binary": "hivemind-clock", "model": wide}), cache, measure=fake)
+    assert c.contender.player_kw["ms_per_node"] != a.contender.player_kw["ms_per_node"]
+    assert sum(1 for m in calls if m in (it00, it01)) == 1
+
+
+def _upstream_pool(upstream_kw=None):
+    return Pool.from_dict({
+        "contender": {"name": "me", "setup": "centralized", "kind": "hivemind", "nodes": 100,
+                      "player_kw": {"binary": "hivemind-clock", "model": "/nonexistent/clock.onnx"}},
+        "opponents": [{"name": "upstream-v3", "setup": "centralized", "kind": "upstream", "nodes": 800,
+                       "player_kw": {"ms_per_node": 0.65, **(upstream_kw or {})}, "group": "target"}],
+    })
+
+
+def test_gate_against_upstream_measures_and_equalizes_both_arms(tmp_path):
+    """Audit 2026-11-17: the eqn row against upstream-v3 raised 'needs an engine opponent', and upstream's 0.65 was
+    a Mac CPU figure. "measure" now measures upstream on this machine with its own engine, and the equal-nodes
+    row charges both arms upstream's rate."""
+    from arena.pool import equalize_ms_per_node
+
+    pool = for_evaluation(_upstream_pool({"ms_per_node": "measure", "max_nodes": 100000}),
+                          opponent="upstream-v3")
+    ups = []
+    measured, used = apply_ms_per_node(
+        pool, str(tmp_path / "ms.json"), measure=lambda b, m, nodes, repeats: {"ms_per_node": 0.3},
+        measure_upstream=lambda b, m, nodes, repeats, coreml=None: ups.append((b, m)) or {"ms_per_node": 0.2})
+    assert len(ups) == 1 and measured.opponents[0].player_kw["ms_per_node"] == 0.2
+    assert measured.contender.player_kw["ms_per_node"] == 0.3 and len(used) == 2
+    assert any(k.startswith("upstream|") for k in used)
+    eq = equalize_ms_per_node(measured)
+    assert eq.contender.player_kw["ms_per_node"] == eq.opponents[0].player_kw["ms_per_node"] == 0.2
+    # the pool's fixed figure still works without measuring
+    eq = equalize_ms_per_node(for_evaluation(_upstream_pool(), opponent="upstream-v3"))
+    assert eq.contender.player_kw["ms_per_node"] == 0.65
+
+
+def test_gate_sitoff_override_reaches_the_simulator(tmp_path):
+    specs = make_schedule(_engine_pool(), 1, rules="v3", sitoff_ms=0)
+    assert all(s["sitoff_ms"] == 0 and s["rules"] == "v3" for s in specs)
+    assert "sitoff_ms" not in make_schedule(_engine_pool(), 1, rules="v2", sitoff_ms=0)[0]
+    assert "sitoff_ms" not in make_schedule(_engine_pool(), 1, rules="v3")[0]
+
+
+def test_node_cap_hits_are_counted_per_team():
+    """Audit 2026-11-17: at max_nodes 1600 the cap, not the clock, set both gate arms' budgets. A decision whose
+    budget was cut is marked, and the game summary and the per-row stats count it."""
+    from arena.interfaces import SEATS
+    from arena.players import HivemindTeamController, SearchResult
+    from arena.stats import compute_stats, summarize_game
+    from arena.tests.test_players import START, StubProcess, make_obs
+
+    stub = StubProcess(SearchResult("e2e4", None, 0.1, 20, None, 50, 3))
+    ctl = HivemindTeamController("T1", stub, ms_per_node=1.0, clock_k=10, max_nodes=50)
+    d = ctl.player("A_white").decide(make_obs("A_white", {"A": START, "B": START}))
+    assert d.capped and d.nodes == 50
+    ctl = HivemindTeamController("T1", StubProcess(SearchResult("e2e4", None, 0.1, 20, None, 50, 3)),
+                                 ms_per_node=1.0, clock_k=10, max_nodes=100000)
+    assert not ctl.player("A_white").decide(make_obs("A_white", {"A": START, "B": START})).capped
+    events = [{"type": "game_start", "seq": 0, "ts": 0, "game_id": "g", "setup": "s", "seats": {s: s for s in SEATS}},
+              {"type": "thinking", "seq": 1, "ts": 0, "seat": "A_white", "phase": "start", "think_ms": 5,
+               "nodes": 50, "capped": True},
+              {"type": "thinking", "seq": 2, "ts": 0, "seat": "A_black", "phase": "start", "think_ms": 5,
+               "nodes": 50},
+              {"type": "game_end", "seq": 3, "ts": 5, "result": "T1", "reason": "flag", "board": "A",
+               "loserSeat": "A_black"}]
+    s = summarize_game(events)
+    assert s["capped_decisions"] == {"T1": 1, "T2": 0}
+    st = compute_stats([{**s, "contender_team": "T1", "opening_id": "o"}], n_boot=10)
+    assert st["metrics"]["contender_capped_share"]["est"] == 1.0
+    assert st["metrics"]["baseline_capped_share"]["est"] == 0.0

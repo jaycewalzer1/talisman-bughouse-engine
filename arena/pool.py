@@ -162,16 +162,15 @@ class Pool:
 
 
 def equalize_ms_per_node(pool: Pool) -> Pool:
-    """Every engine team charged the first engine opponent's ms_per_node (its own, or the player default when it
-    has none): the equal-nodes diagnostic, which takes network speed out of an equal-clock row."""
-    from arena.players.hivemind import MS_PER_NODE
-
-    ref = next((o for o in pool.opponents if o.kind in ENGINE_KINDS), None)
+    """Every node-charged team (hivemind, agent, upstream) charged the first such opponent's ms_per_node (its own,
+    or its player default when it has none): the equal-nodes diagnostic, which takes network speed out of an
+    equal-clock row."""
+    ref = next((o for o in pool.opponents if o.kind in MEASURED_KINDS), None)
     if ref is None:
-        raise ValueError("--equal-ms-per-node needs an engine opponent")
+        raise ValueError("--equal-ms-per-node needs an engine opponent (hivemind, agent or upstream)")
     ms = ref.player_kw.get("ms_per_node")
-    ms = float(MS_PER_NODE if ms in (None, "measure") else ms)
-    fix = lambda t: replace(t, player_kw={**t.player_kw, "ms_per_node": ms}) if t.kind in ENGINE_KINDS else t
+    ms = float(default_ms_per_node(ref.kind) if ms in (None, "measure") else ms)
+    fix = lambda t: replace(t, player_kw={**t.player_kw, "ms_per_node": ms}) if t.kind in MEASURED_KINDS else t
     return replace(pool, contender=fix(pool.contender), opponents=[fix(o) for o in pool.opponents])
 
 
@@ -247,7 +246,7 @@ def _compute_kind(kind: str) -> str:
 
 def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "train", base_ms: int = 60000,
                   increment_ms: int = 0, channel_delay_ms: int = 0, max_plies: int = 400,
-                  skip_pairs: int = 0, rules: str | None = None) -> list[dict]:
+                  skip_pairs: int = 0, rules: str | None = None, sitoff_ms: int | None = None) -> list[dict]:
     """2 * n_pairs game specs (each opening pair twice, teams swapped), opponents rotated by group share.
 
     skip_pairs moves the rotation that many picks along first. Training passes the pairs already played, so a short
@@ -283,6 +282,8 @@ def make_schedule(pool: Pool, n_pairs: int, *, seed: int = 0, openings: str = "t
             })
             if rules and rules != "v2":
                 specs[-1]["rules"] = rules  # arena.run.play_game: "v3" = arena.sim.RULES_V3
+                if sitoff_ms is not None:
+                    specs[-1]["sitoff_ms"] = int(sitoff_ms)  # replaces RULES_V3's; 0 = never adjudicate
     return specs
 
 
@@ -327,7 +328,8 @@ def results_by_opponent(summaries: list[dict], n_boot: int = 2000, seed: int = 0
             row = {"games": st["games"], "wins": st["wins"], "losses": st["losses"],
                    "score": sc["est"], "ci95": [sc["lo"], sc["hi"]], "draws": st["draws"],
                    "clusters": sc["clusters"], "reasons": dict(sorted(reasons.items()))}
-            for m in ("contender_nodes_per_game", "baseline_nodes_per_game", "flag_rate"):
+            for m in ("contender_nodes_per_game", "baseline_nodes_per_game", "flag_rate", "contender_capped_share",
+                      "baseline_capped_share"):
                 c = st["metrics"][m]
                 row[m] = c["est"]
                 row[m + "_ci95"] = [c["lo"], c["hi"]]
@@ -357,7 +359,7 @@ def format_results(res: dict) -> str:
 
 SUMMARY_KEEP = ("opponent", "group", "equal_compute", "contender", "pair_index")
 _SPEC_IDENTITY = ("game_id", "index", "opening_id", "contender_team", "opponent", "teams", "base_ms",
-                  "increment_ms", "max_plies", "seed", "rules")
+                  "increment_ms", "max_plies", "seed", "rules", "sitoff_ms")
 
 
 def game_file(spec: dict) -> str:
@@ -419,6 +421,41 @@ def _check_resume_schedule(out: str, specs: list[dict]) -> None:
 # ---------------------------------------------------------------------- per-arm ms_per_node
 
 ENGINE_KINDS = ("hivemind", "agent")
+MEASURED_KINDS = ENGINE_KINDS + ("upstream",)  # teams charged nodes x ms_per_node
+
+
+def default_ms_per_node(kind: str) -> float:
+    if kind == "upstream":
+        from arena.players.upstream import UPSTREAM_MS_PER_NODE
+        return UPSTREAM_MS_PER_NODE
+    from arena.players.hivemind import MS_PER_NODE
+    return MS_PER_NODE
+
+
+def network_shape_key(model: str) -> str | None:
+    """A fingerprint of an ONNX network's architecture, not its weights: graph inputs and outputs with their
+    dims, every node's op type, and every initializer's shape and data type. Two iterations of one architecture
+    share it, so an equal-clock row charges them the same measured ms_per_node (audit 2026-11-17: re-measuring
+    each iteration's net put 5% of noise into every vs-it00 comparison). None when it cannot be read."""
+    import hashlib
+
+    try:
+        import onnx
+
+        m = onnx.load(model, load_external_data=False)
+    except Exception:  # noqa: BLE001 - no onnx, not a file, not ONNX: fall back to the path
+        return None
+    g = m.graph
+    dims = lambda vi: [d.dim_value if d.HasField("dim_value") else d.dim_param
+                       for d in vi.type.tensor_type.shape.dim]
+    h = hashlib.sha1()
+    for vi in list(g.input) + list(g.output):
+        h.update(f"io {vi.name} {vi.type.tensor_type.elem_type} {dims(vi)}\n".encode())
+    for n in g.node:
+        h.update(f"op {n.op_type}\n".encode())
+    for t in g.initializer:
+        h.update(f"w {list(t.dims)} {t.data_type}\n".encode())
+    return h.hexdigest()[:16]
 
 
 def measure_searched_ms_per_node(binary: str | None = None, model: str | None = None, nodes: int = 400,
@@ -444,20 +481,48 @@ def measure_searched_ms_per_node(binary: str | None = None, model: str | None = 
             "host": os.uname().nodename, "when": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
 
-def arm_key(team: TeamSpec) -> str:
-    """binary|model of an engine team, resolved to absolute paths (one ms_per_node per key)."""
+def legacy_arm_key(team: TeamSpec) -> str:
+    """binary|model of an engine team, resolved to absolute paths (the cache key before 2026-11-17)."""
+    kw = team.player_kw
+    if team.kind == "upstream":
+        from arena.players.upstream import UPSTREAM_BINARY, UPSTREAM_MODEL
+        return (f"upstream|{os.path.abspath(kw.get('binary') or UPSTREAM_BINARY)}|"
+                f"{os.path.abspath(kw.get('model') or UPSTREAM_MODEL)}")
     from arena.players.hivemind import DEFAULT_MODEL, resolve_binary
 
-    kw = team.player_kw
     return f"{resolve_binary(kw.get('binary'))}|{os.path.abspath(kw.get('model') or DEFAULT_MODEL)}"
 
 
+def arm_key(team: TeamSpec) -> str:
+    """One ms_per_node per key: binary|arch:<network_shape_key>, so every iteration's network of one architecture
+    is charged the one measurement (falls back to binary|model when the network cannot be read). Upstream keys
+    start with "upstream|" and add the Core ML switch."""
+    legacy = legacy_arm_key(team)
+    binary, model = legacy.rsplit("|", 1)
+    shape = network_shape_key(model)
+    key = f"{binary}|arch:{shape}" if shape else legacy
+    if team.kind == "upstream" and team.player_kw.get("coreml") is not None:
+        key += f"|coreml={team.player_kw['coreml']}"
+    return key
+
+
 def _wants_measure(team: TeamSpec) -> bool:
-    return team.kind in ENGINE_KINDS and team.player_kw.get("ms_per_node") in (None, "measure")
+    return team.kind in MEASURED_KINDS and team.player_kw.get("ms_per_node") in (None, "measure")
+
+
+def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int = 3, coreml: str | None = None) -> dict:
+    """measure_upstream_ms_per_node as a cache record (the same fields as measure_searched_ms_per_node's)."""
+    from arena.players.upstream import measure_upstream_ms_per_node
+
+    ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml)
+    return {"binary": binary, "model": model, "nodes_requested": nodes, "repeats": repeats, "ms_per_node": ms,
+            "kind": "upstream", "coreml": coreml, "host": os.uname().nodename,
+            "when": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
 
 def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int = 400, repeats: int = 3,
-                      measure=measure_searched_ms_per_node, override: dict | None = None) -> tuple[Pool, dict]:
+                      measure=measure_searched_ms_per_node, override: dict | None = None,
+                      measure_upstream=measure_upstream_arm) -> tuple[Pool, dict]:
     """Every engine team without an ``ms_per_node`` gets the measured one for its binary+network. One measurement
     per key; ``cache_path`` (JSON {key: measurement}) is read first and written after, so a resumed row reuses
     the values it started with. ``override`` {key: ms} skips the measurement for those keys. Returns the new pool
@@ -473,11 +538,20 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
     def fix(t: TeamSpec) -> TeamSpec:
         if not _wants_measure(t):
             return t
-        key = arm_key(t)
+        key, legacy = arm_key(t), legacy_arm_key(t)
+        if key not in cache and legacy in cache:
+            key = legacy  # a row resumed from a cache written before the architecture key
         if key not in cache:
-            binary, model = key.split("|", 1)
+            binary, model = legacy.rsplit("|", 1)
+            if t.kind == "upstream":
+                binary = binary.split("|", 1)[1]
             print(f"measuring ms_per_node for {binary} with {model} ...", flush=True)
-            cache[key] = measure(binary, model, nodes=nodes, repeats=repeats)
+            if t.kind == "upstream":
+                cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
+                                              coreml=t.player_kw.get("coreml"))
+            else:
+                cache[key] = measure(binary, model, nodes=nodes, repeats=repeats)
+            cache[key].setdefault("model", model)
             print(f"  {cache[key]['ms_per_node']:.4f} ms per searched node", flush=True)
         used[key] = cache[key]
         return replace(t, player_kw={**t.player_kw, "ms_per_node": float(cache[key]["ms_per_node"])})
@@ -616,6 +690,9 @@ def main(argv=None) -> int:
             p.add_argument("--rules", choices=("v2", "v3"), default="v2",
                            help="arena rules profile: v2 (default, as before) or v3 (arena.sim.RULES_V3, spec v3 D4: "
                                 "min move time and lag, scaled ply cap with scored aborts, sit-off adjudication)")
+            p.add_argument("--sitoff-ms", type=int, default=None,
+                           help="with --rules v3: sit-off adjudication after this much mutual sitting instead of "
+                                "RULES_V3's 5000 ms; 0 = never")
             p.add_argument("--agent", action="store_true", help="the contender plays as the scheduler agent")
             p.add_argument("--features", default="", help="comma-separated scheduler feature groups (implies --agent)")
             p.add_argument("--policy", default=None, help="scheduler checkpoint (implies --agent); untrained if left out")
@@ -684,8 +761,13 @@ def main(argv=None) -> int:
         team = next((t for t in [pool.contender, *pool.opponents] if t.name == args.name), None)
         if team is None:
             ap.error(f"no team named {args.name!r} in {args.pool}")
-        m = measure_searched_ms_per_node(team.player_kw.get("binary"), team.player_kw.get("model"),
-                                         nodes=args.nodes, repeats=args.repeats)
+        if team.kind == "upstream":
+            binary, model = legacy_arm_key(team).split("|")[1:3]
+            m = measure_upstream_arm(binary, model, nodes=args.nodes, repeats=args.repeats,
+                                     coreml=team.player_kw.get("coreml"))
+        else:
+            m = measure_searched_ms_per_node(team.player_kw.get("binary"), team.player_kw.get("model"),
+                                             nodes=args.nodes, repeats=args.repeats)
         new = replace(team, player_kw={**team.player_kw, "ms_per_node": round(m["ms_per_node"], 5)})
         if team is pool.contender:
             pool.contender = new
@@ -713,7 +795,7 @@ def main(argv=None) -> int:
         ap.error(str(exc))
     specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
                           channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies,
-                          rules=args.rules)
+                          rules=args.rules, sitoff_ms=args.sitoff_ms)
     if args.cmd == "schedule":
         if args.out:
             with open(args.out, "w") as f:
@@ -744,7 +826,7 @@ def main(argv=None) -> int:
     if extra:
         specs = make_schedule(pool, args.pairs, seed=args.seed, openings=args.openings, base_ms=args.base_ms,
                               channel_delay_ms=args.channel_delay_ms, max_plies=args.max_plies,
-                          rules=args.rules)
+                          rules=args.rules, sitoff_ms=args.sitoff_ms)
     report = run_schedule(specs, args.out, workers=args.workers, n_boot=args.boot, seed=args.seed,
                           skip_done=args.skip_done, sprt=sprt, extra=extra)
     print()

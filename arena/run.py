@@ -95,6 +95,8 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
         if spec.get("rules") == "v3":
             from arena.sim import RULES_V3
             rules = {**RULES_V3, "seed": spec["seed"]}
+            if spec.get("sitoff_ms") is not None:  # arena.pool --sitoff-ms; 0 = never adjudicate a sit-off
+                rules["sitoff_ms"] = int(spec["sitoff_ms"]) or None
         elif spec.get("rules") not in (None, "v2"):
             raise ValueError(f"unknown rules profile {spec.get('rules')!r}")
         sim = Simulator(state, players, game_id=spec["game_id"],
