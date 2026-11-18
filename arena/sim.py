@@ -199,9 +199,10 @@ class Simulator:
         if res is None:
             # Fallback in case the state only flags strictly below zero: a running clock at 0 is a flag.
             out = [b for b in BOARDS if self.state.clocks_ms[self.state.to_move(b)] <= 0]
-            if len(out) == 2:
+            teams = {TEAM_OF[self.state.to_move(b)] for b in out}
+            if len(out) == 2 and len(teams) == 2:
                 res = GameResult(result="draw", reason="double_flag")
-            elif out:
+            elif out:  # one seat, or two partners: their team flagged
                 seat = self.state.to_move(out[0])
                 res = GameResult(result=TEAM_OF[OPPONENT[seat]], reason="flag", board=out[0], loser_seat=seat)
         if res is not None:
@@ -218,9 +219,15 @@ class Simulator:
         self._emit("game_end", result=res.result, reason=res.reason, board=res.board, loserSeat=res.loser_seat)
 
     def _on_turn_result(self, reason: str) -> GameResult:
-        """Score by the two on-turn clocks: the lower would flag first if nobody moved; equal is a draw."""
+        """Score by the two on-turn clocks: the lower would flag first if nobody moved; equal is a draw when the
+        two on-turn seats are on different teams. If both are partners (same team), that team flags whichever
+        clock runs out first, so it loses (board A's seat is named)."""
         a, b = (self.state.to_move(x) for x in BOARDS)
         ca, cb = int(self.state.clocks_ms[a]), int(self.state.clocks_ms[b])
+        if TEAM_OF[a] == TEAM_OF[b]:
+            loser = a if ca <= cb else b
+            return GameResult(result=TEAM_OF[OPPONENT[loser]], reason=reason, board=BOARD_OF[loser],
+                              loser_seat=loser)
         if ca == cb:
             return GameResult(result="draw", reason=reason)
         loser = a if ca < cb else b

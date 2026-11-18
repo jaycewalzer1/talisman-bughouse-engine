@@ -27,10 +27,13 @@ class BughouseState:
 
     fens: optional {"A": fen, "B": fen} starting positions (bracket form, `~` promoted markers allowed).
     start_clocks_ms: optional per-seat starting clocks (e.g. time odds); seats not named start at base_ms.
-    repetition: FICS-style repetition draw (RULES.md). On by default; False restores the old no-draw profile."""
+    repetition: FICS-style repetition draw (RULES.md). On by default; False restores the old no-draw profile.
+    double_flag_draw: an exact-tie double flag of two seats of different teams is a draw (rules v3). False
+    restores the old tie-break (the seat name decides); arena.state.state_rules("v2") gives the old profile."""
 
     def __init__(self, base_ms: int, increment_ms: int = 0, fens: dict | None = None,
-                 start_clocks_ms: dict | None = None, repetition: bool = True):
+                 start_clocks_ms: dict | None = None, repetition: bool = True,
+                 double_flag_draw: bool = True):
         fens = fens or {}
         self.boards: dict[str, chess.variant.CrazyhouseBoard] = {
             b: chess.variant.CrazyhouseBoard(fens[b]) if b in fens else chess.variant.CrazyhouseBoard()
@@ -45,6 +48,7 @@ class BughouseState:
             self.clocks_ms[seat] = int(ms)
         self.start_clocks_ms: dict[str, int] = dict(self.clocks_ms)
         self.repetition = repetition
+        self.double_flag_draw = double_flag_draw
         # Per board: how often each board-only position (placement, side to move, castling, ep; pockets
         # ignored) occurred since the last drop on that board.
         self._seen: dict[str, dict[str, int]] = {b: {repetition_key(self.boards[b]): 1} for b in BOARDS}
@@ -82,7 +86,8 @@ class BughouseState:
         """Charge elapsed time to the side to move on each board. Returns the flag result the first time
         a clock reaches 0. If both boards flag in the same interval, the clock that had less time left at the
         start of the interval ran out first and loses; on an exact tie both flagged at the same ms and the game
-        is a draw (reason "double_flag")."""
+        is a draw (reason "double_flag") when the two seats are on different teams. Two partners (A_white and
+        B_black, say) flagging together is a loss for their team, as the engine's flag_losers scores it."""
         if self._result is not None:
             return None
         elapsed = max(0, now_ms - self.last_ms)
@@ -96,7 +101,8 @@ class BughouseState:
                 flagged.append((before, seat))
         if not flagged:
             return None
-        if len(flagged) == 2 and flagged[0][0] == flagged[1][0]:
+        if (self.double_flag_draw and len(flagged) == 2 and flagged[0][0] == flagged[1][0]
+                and TEAM_OF[flagged[0][1]] != TEAM_OF[flagged[1][1]]):
             self._result = GameResult(result="draw", reason="double_flag")
             return self._result
         _, loser = min(flagged)
@@ -149,6 +155,16 @@ class BughouseState:
             if self.repetition and seen[key] >= 3:
                 self._result = GameResult(result="draw", reason="repetition", board=board_name)
         return MoveResult(san=san, capture=capture, fen=board.fen())
+
+
+def state_rules(rules: str | None) -> dict:
+    """BughouseState keywords for an arena rules profile: "v3" keeps the defaults (repetition draw, exact-tie
+    double flag draw); "v2" or None turns both off, so '--rules v2' plays exactly the pre-v3 arena."""
+    if rules == "v3":
+        return {}
+    if rules in (None, "v2"):
+        return {"repetition": False, "double_flag_draw": False}
+    raise ValueError(f"unknown rules profile {rules!r}")
 
 
 def repetition_key(board: chess.Board) -> str:

@@ -81,7 +81,7 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
     With "teams" ({"T1": {setup, kind, nodes, player_kw}, "T2": ...}) each team is built from its own
     entry and kind/nodes/player_kw are ignored."""
     from arena.sim import Simulator
-    from arena.state import BughouseState
+    from arena.state import BughouseState, state_rules
 
     if spec.get("teams"):  # per-team players (arena.pool): {"T1": {setup, kind, nodes, player_kw}, "T2": ...}
         players, created = build_team_players(spec["teams"], seed=spec["seed"])
@@ -89,7 +89,8 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
         players, created = build_players(spec["t1_setup"], spec["t2_setup"], spec["kind"], seed=spec["seed"],
                                          nodes=spec["nodes"], player_kw=spec.get("player_kw"))
     try:
-        state = BughouseState(spec["base_ms"], spec.get("increment_ms", 0), fens=spec.get("fens"))
+        state = BughouseState(spec["base_ms"], spec.get("increment_ms", 0), fens=spec.get("fens"),
+                              **state_rules(spec.get("rules")))  # v2: no repetition draw, old flag tie-break
         rules = {"max_plies": spec.get("max_plies", 400)}
         if spec.get("rules") == "v3":
             from arena.sim import RULES_V3

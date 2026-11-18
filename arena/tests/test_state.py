@@ -283,3 +283,33 @@ def test_repetition_can_be_switched_off():
     s = BughouseState(60000, fens={"A": ROOKS, "B": START}, repetition=False)
     shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
     assert _play(s, shuffle * 3) is None
+
+
+A_WHITE_TO_MOVE = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
+B_BLACK_TO_MOVE = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[] b KQkq - 0 1"
+
+
+def test_double_flag_of_two_partners_is_a_loss_for_their_team():
+    """Audit 2026-11-17: A_white and B_black (both T1) hit 0 at the same ms. Only one team flagged, so T1 loses
+    (the engine's flag_losers agrees); a draw needs one flagged seat from each team."""
+    s = BughouseState(1000, fens={"A": A_WHITE_TO_MOVE, "B": B_BLACK_TO_MOVE})
+    assert s.to_move("A") == "A_white" and s.to_move("B") == "B_black"
+    r = s.advance_clocks(1500)
+    assert r.result == "T2" and r.reason == "flag" and r.loser_seat in ("A_white", "B_black")
+
+
+def test_rules_v2_profile_restores_the_old_arena():
+    from arena.state import state_rules
+    assert state_rules("v3") == {}
+    s = BughouseState(1000, **state_rules("v2"))
+    r = s.advance_clocks(1000)  # exact tie of A_white and B_white: the old seat-name tie-break, not a draw
+    assert r.reason == "flag" and r.loser_seat == "A_white"
+    s = BughouseState(1000, **state_rules(None))
+    with pytest.raises(ValueError):
+        s.apply_move("A_white", "e2e4", 1000)
+    assert s.result().reason == "flag" and s.result().loser_seat == "A_white"
+    s = BughouseState(60000, fens={"A": ROOKS, "B": START}, **state_rules("v2"))
+    shuffle = [("A_white", "h1h2"), ("A_black", "b8b7"), ("A_white", "h2h1"), ("A_black", "b7b8")]
+    assert _play(s, shuffle * 3) is None  # no repetition draw under v2
+    with pytest.raises(ValueError):
+        state_rules("v9")

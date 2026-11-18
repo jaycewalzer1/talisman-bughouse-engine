@@ -220,14 +220,15 @@ def build_players(spec: dict, process_factory=None) -> tuple[dict, list]:
 
 def make_state(spec: dict):
     """The game's BughouseState, with per-seat start clocks under time odds."""
-    from arena.state import BughouseState
+    from arena.state import BughouseState, state_rules
 
     offsets = spec.get("start_offsets") or {}
     starts = {s: spec["base_ms"] + offsets.get(TEAM_OF[s], 0) for s in SEATS}
+    kw = state_rules(spec.get("rules"))  # v2: no repetition draw, old flag tie-break
     if all(v == spec["base_ms"] for v in starts.values()):
-        return BughouseState(spec["base_ms"], 0, fens=spec["fens"])
+        return BughouseState(spec["base_ms"], 0, fens=spec["fens"], **kw)
     if "start_clocks_ms" in inspect.signature(BughouseState).parameters:
-        return BughouseState(spec["base_ms"], 0, fens=spec["fens"], start_clocks_ms=starts)
+        return BughouseState(spec["base_ms"], 0, fens=spec["fens"], start_clocks_ms=starts, **kw)
     st = BughouseState(spec["base_ms"], 0, fens=spec["fens"])  # older state.py: set the clocks directly
     st.clocks_ms.update(starts)
     return st

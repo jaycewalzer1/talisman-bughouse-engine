@@ -775,3 +775,25 @@ def test_stats_reads_older_summaries_without_clock_fields():
     s.update(contender_team="T1", opening_id=0)
     m = compute_stats([s], n_boot=10)["metrics"]
     assert m["draw_rate"]["est"] == 1.0 and m["score"]["est"] == 0.5
+
+
+def test_on_turn_tie_between_partners_is_a_loss_for_their_team():
+    """Audit 2026-11-17: with A_black and B_white (both T2) on turn, T2 flags whichever clock runs out first,
+    so equal clocks are a T2 loss, not a draw; seats of different teams on equal clocks stay a draw."""
+    state = FakeState()
+    state.board_ply["A"] = 1  # A_black and B_white to move
+    sim, _, _ = make(state)
+    assert sim._on_turn_result("max_plies") == GameResult("T1", "max_plies", "A", "A_black")
+    state.clocks_ms["B_white"] -= 1
+    assert sim._on_turn_result("sitoff_adjudicated") == GameResult("T1", "sitoff_adjudicated", "B", "B_white")
+    state.board_ply["A"] = 0  # A_white (T1) and B_white (T2)
+    state.clocks_ms["B_white"] += 1
+    assert sim._on_turn_result("max_plies") == GameResult("draw", "max_plies")
+
+
+def test_partners_sitting_out_a_sitoff_lose_for_their_team():
+    state = FakeState()
+    state.board_ply["A"] = 1  # A_black and B_white, both T2, sit with equal clocks
+    sim, _, _ = make(state, {s: _all_wait for s in SEATS}, sitoff_ms=3000, sitoff_unadjudicated=0.0)
+    res = sim.run()
+    assert res.reason == "sitoff_adjudicated" and res.result == "T1"
