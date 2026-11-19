@@ -77,7 +77,8 @@ net and the engine. Reference numbers measured 2026-11-19 on the Mac:
 |---|---|---|---|
 | stock upstream it13 (`--engine upstream`) | 20/20, 0/20 | 20/20, 0/20 | PASS (the gate forbids sitting when behind) |
 | it04 raw net (`--engine fork`, `hivemind-fp32.onnx`) | 18/20, 0/20 | - | PASS (net) |
-| wave 2 | to run once the engine package lands | | |
+| wave 2, it13 (`--engine wave2`, integration 2026-11-19) | 20/20, 0/20 | 12/20, 0/20 (800 nodes: 20/20, 0/20) | **FAIL at 200 nodes**, PASS at 800 (the same with `SitGate` on: it is the durative tree at 200 nodes, not the gate; `docs/wave2_local_check.md`) |
+| wave 2, widened it13 (`WAVE2_MODEL=.../twin-s-clock-wide-fp32.onnx`) | 20/20, 0/20 | 12/20, 0/20 | FAIL at 200 nodes, as it13 |
 
 For stock it13 the 0/20 when behind is the hard gate's work; for wave 2 (SitGate false) it has to come from the
 tree pricing the pass. Stock it13 also scores drop_mates 80/80 (net, value sign and engine) and sit_move 192/208 net,
@@ -146,9 +147,12 @@ resumes from its game files). The build job is about 1 GPU-hour on top.
 * `talisman/wave2` is local only. PACE builds from GitHub, so someone has to push it (`git -C
   third_party/wave2-hivemind push fork talisman/wave2`); agents never push. `WAVE2_REPO` points the build at another
   copy.
-* The engine flags and seat options are being written now (wave 2 engine package); until they exist the engine
-  ignores unknown options and plays as stock v3, which is what the "pre-change" ms/node above measured. Re-run the
-  Mac checks of section 3 on the finished branch before PACE.
+* The Mac checks of section 3 were re-run on the finished branch (clean build, 2026-11-19): numbers in
+  `docs/wave2_local_check.md`. The ms/node above (0.66 vs 0.52) predates the engine changes; the clean build measured
+  0.20-0.24 ms per searched node for wave 2 and 0.21 for stock (Mac CPU, 800 nodes, under load).
+* No row uses the widened wave 2b network yet: untrained it plays as it13 (zero weights), so a row would only measure
+  the transposition split of wide node keys. Once a wide lineage has promoted, a row runs it with
+  `WAVE2_MODEL=<its fp32 onnx>` exported before `bash cluster/launch_checks.sh wave2` (sbatch passes the environment).
 * Acceptance tests 1-7 of spec v4 belong to the engine's own gtest suite (run by the wave 2 check); test 8 is the
   regression run above.
 * With TensorRT the wrapper `build-ninja/hivemind` sets `LD_LIBRARY_PATH`; the arena runs `hivemind.bin` directly, as
