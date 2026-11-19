@@ -35,6 +35,7 @@ once at engine start, and the seat options before every search. Player options (
 | `SeatClocksMs` `"<Aw> <Ab> <Bw> <Bb>"` | - | empty | the arena's four clocks at `now` (the on-turn seats already charged their thinking so far) |
 | `SeatPaceMs` | - | empty | per-seat EMA (alpha 0.3) of observed action time, read off the clocks between off-turn observations, sits included; a seat without a sample uses its team's EMA, then this search's budget |
 | `SeatElapsedMs` | - | empty | `now - last landing` on that board for the seat on turn, 0 for the others (all 0 when the arena gives no landing times) |
+| `SeatSitting` | - | empty | added in integration: 1 for an opponent seat on turn whose elapsed exceeds 2x its pace (`seat_sitting`, `SIT_INFER_FACTOR`), so the tree's sit-off rule applies; 0 otherwise |
 | `Team`, `TimeModel clock`, `TimeLeadMs`, `TeamMoveTimeMs`, `OpponentMoveTimeMs`, `RootMoveTimeMs` | - | as v3 | as the stock `upstream` arm (`docs/upstream/v3_arm.md`) |
 
 Seat order is always A_white, A_black, B_white, B_black; T1 = A_white + B_black is upstream's white team. Unit tests:
