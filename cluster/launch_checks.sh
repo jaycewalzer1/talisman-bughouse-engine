@@ -9,7 +9,7 @@
 #   bash cluster/launch_checks.sh beat       # can one Hivemind that manages its clock beat stock Hivemind? (20 jobs)
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
 #   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
-#   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (10 jobs)
+#   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (11 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
@@ -169,7 +169,7 @@ if [ "$WHAT" = harness ]; then  # not part of "all": 8 jobs
   harness  m0_upstream_120    "{$CHG, \"clock_k\": 110}"                          "{}"                                120000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
   harness  m0_upstream_180    "{$CHG, \"clock_k\": 110}"                          "{}"                                180000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
 fi
-if [ "$WHAT" = wave2 ]; then  # not part of "all": 10 jobs. Read docs/wave2_tests.md before the numbers.
+if [ "$WHAT" = wave2 ]; then  # not part of "all": 11 jobs. Read docs/wave2_tests.md before the numbers.
   # Every row: the pool's wave2 contender (arena/pools/wave2.json: clock_k 110, serial, charge "searched") against
   # one opponent at equal clock, each arm charged its searched nodes x its own ms_per_node measured on the job's GPU
   # (MEASURE=1, 800 nodes, per binary + flags), bughouse openings, arena rules v3. Needs cluster/build.sh's wave2
@@ -187,13 +187,18 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 10 jobs. Read docs/wave2_test
   # the headline: wave 2 (every flag on but MateRaceByLanding) against stock upstream it13 (D1 measured it04 at 0.165 / 0.139 here)
   w2  vs_it13_120      upstream-it13   '{}'                                             120000  800    SPRT=0,20
   w2  vs_it13_180      upstream-it13   '{}'                                             180000  800    SPRT=0,20
-  # ablations at 120 s, one switch each (racewin switches one on), read as the difference from vs_it13_120. No SPRT: it would stop a row on
+  # the ablations' reference: the headline's settings without SPRT. vs_it13_120 stops once decided and an SPRT-stopped
+  # score is biased by the stopping, so the ablations are read against this fixed-length row instead (review finding)
+  w2  ref_120          upstream-it13   '{}'                                             120000  600
+  # ablations at 120 s, one switch each (racewin switches one on), read as the difference from ref_120. No SPRT: it would stop a row on
   # "beats it13 or not", which is not the question, and leave too few games to compare. 600 pairs fit one 8 h job.
   # nodur keeps the gate: without the durative clock the engine always gates (v3's lockstep tree has no sit-off
   # rule, and with both teams free to pass the search never finished; integration 2026-11-19)
   w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": true}'     120000  600
   w2  sitgate          upstream-it13   '{"sit_gate": true}'                             120000  600
   w2  instant          upstream-it13   '{"instant_transfer": true}'                     120000  600
+  # racewin = landing-time mate races AND no root mate provers (the option switches them off; agent.cc run_search):
+  # it does not isolate the landing rule
   w2  racewin          upstream-it13   '{"mate_race_by_landing": true}'                 120000  600
   w2  noflag           upstream-it13   '{"flag_loss": false}'                           120000  600
   # control: wave 2 against itself must read 0.50 (no SPRT: the full 1600 games are the noise floor)

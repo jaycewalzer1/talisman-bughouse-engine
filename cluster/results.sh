@@ -68,7 +68,7 @@ echo; echo "== wave 2: durative tree on upstream v3 vs stock it13 (docs/wave2_te
 W2=runs/wave2
 if [ -d "$W2" ]; then
   w2=()
-  for r in same_120 vs_it13_120 vs_it13_180 vs_it13_800n_120 nodur sitgate instant racewin noflag vs_it04_120; do
+  for r in same_120 vs_it13_120 vs_it13_180 vs_it13_800n_120 ref_120 nodur sitgate instant racewin noflag vs_it04_120; do
     [ -d "$W2/$r" ] && w2+=("$W2/$r")
   done
   [ "${#w2[@]}" -gt 0 ] && $PY tools/compare_evals.py "${w2[@]}"

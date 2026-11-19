@@ -34,10 +34,11 @@ once at engine start, and the seat options before every search. Player options (
 | `PassCapK` | `pass_cap_k` | 8 | 8 |
 | `SeatClocksMs` `"<Aw> <Ab> <Bw> <Bb>"` | - | empty | the arena's four clocks at `now` (the on-turn seats already charged their thinking so far) |
 | `SeatPaceMs` | - | empty | per-seat EMA (alpha 0.3) of observed action time, read off the clocks between off-turn observations, sits included; a seat without a sample uses its team's EMA, then this search's budget |
-| `SeatElapsedMs` | - | empty | `now - last landing` on that board for the seat on turn, 0 for the others (all 0 when the arena gives no landing times) |
-| `SeatSitting` | - | empty | added in integration: 1 for an opponent seat on turn whose elapsed exceeds 2x its pace (`seat_sitting`, `SIT_INFER_FACTOR`), so the tree's sit-off rule applies; 0 otherwise |
-| `SeatArrivalsMs` `"<pocket>:<piece>:<ms_ago>,..."` | - | empty | wave 2b: pieces more in a pocket than at our last search, dated by the other board's last landing, kept 5 s (`PocketLandingTracker`); read by the engine only with a wide network (`WAVE2_MODEL=.../twin-s-clock-wide-fp32.onnx`), ignored with it13 |
-| `Team`, `TimeModel clock`, `TimeLeadMs`, `TeamMoveTimeMs`, `OpponentMoveTimeMs`, `RootMoveTimeMs` | - | as v3 | as the stock `upstream` arm (`docs/upstream/v3_arm.md`) |
+| `SeatElapsedMs` | - | empty | `now - last landing` on that board for the seat on turn, 0 for the others (all 0 when the arena gives no landing times). Not quite self-play's meaning: self-play sends the time since the seat's current decision began, which restarts when it comes back from a pass; the arena cannot see that, so for a sitting opponent the tree here lands it sooner (`max(1, pace - elapsed)`, often 1 ms) than in training. Planes are not affected (both feed board elapsed to the wide planes) |
+| `SeatSitting` | - | empty | added in integration: 1 for an opponent seat on turn whose elapsed exceeds 1.5 x min(its pace, its own budget = its clock at decision start / clock_k, doubled when its team is on turn on both boards) (`seat_sitting`, `SIT_INFER_FACTOR`), so the tree's sit-off rule applies; 0 otherwise. (Before review fix `36d92bf` the budget was ours, which marked opponents sitting exactly when we were behind on the clock) |
+| `SeatArrivalsMs` `"<pocket>:<piece>:<ms_ago>,..."` | - | empty | wave 2b: pieces more in a pocket than at our last search, dated by the other board's last landing, kept 5 s (`PocketLandingTracker`); the wide planes read them only with a wide network (`WAVE2_MODEL=.../twin-s-clock-wide-fp32.onnx`); with `InstantTransfer` off any network's tree also holds an opponent seat's landings younger than its `SeatElapsedMs` as not yet droppable |
+| `Team`, `TimeModel clock`, `TimeLeadMs`, `TeamMoveTimeMs`, `OpponentMoveTimeMs` | - | as v3 | as the stock `upstream` arm (`docs/upstream/v3_arm.md`) |
+| `RootMoveTimeMs` | - | as v3 | `max(budget, root_min_ms) + root_lag_ms`; the wave 2 pool sets 100 and 75 (rules v3: every landing costs at least 100 ms plus 0-150 ms lag), so the tree prices our own actions as the arena charges them, like the opponents' clock-read paces (review fix `36d92bf`; before it the bare budget, about half the real cost at 10 s left) |
 
 Seat order is always A_white, A_black, B_white, B_black; T1 = A_white + B_black is upstream's white team. Unit tests:
 `arena/tests/test_upstream.py` (`test_seat_values_*`, `test_wave2_*`, `test_parity_seat_options_*`).
@@ -100,16 +101,19 @@ adjudication). `SBATCH_DEPENDENCY=afterok:<build job>` holds them behind a build
 |---|---|---|---|---|---|---|---|
 | `vs_it13_120` | upstream-it13 | none (wave 2 flags; MateRaceByLanding off) | 120 s | 800 | 0,20 | headline: does wave 2 beat the best at equal clock? | unknown. The net was trained under the lockstep tree with the gate, so the new tree may first cost strength; > 0.50 with SPRT H1 is the success, 0.45-0.50 means "train it", < 0.45 means a bug or a value mismatch |
 | `vs_it13_180` | upstream-it13 | none | 180 s | 800 | 0,20 | does it hold with more time? | within 0.03 of the 120 s row |
-| `nodur` | upstream-it13 | `DurativeTree` off, `SitGate` on | 120 s | 600 | - | v3's lockstep tree inside the wave 2 binary: what the durative tree and the gate removal add together. (The planned "lockstep, no gate" cannot run: v3's tree has no sit-off rule, both teams passed forever and the search hung, so the engine now keeps the gate whenever the tree is not durative; docs/wave2_local_check.md) | near 0.50 (it is close to stock it13); `vs_it13_120` minus this row is the durative tree's contribution |
+| `ref_120` | upstream-it13 | none | 120 s | 600 | - | the ablations' reference: the headline's settings at a fixed length (an SPRT-stopped row is short and its score biased by the stopping) | within the noise of `vs_it13_120` |
+| `nodur` | upstream-it13 | `DurativeTree` off, `SitGate` on | 120 s | 600 | - | v3's lockstep tree inside the wave 2 binary: what the durative tree and the gate removal add together. (The planned "lockstep, no gate" cannot run: v3's tree has no sit-off rule, both teams passed forever and the search hung, so the engine now keeps the gate whenever the tree is not durative; docs/wave2_local_check.md) | near 0.50 (it is close to stock it13); `ref_120` minus this row is the durative tree **and** the gate removal together; `sitgate` minus this row is the durative tree alone (both gated) |
 | `sitgate` | upstream-it13 | `SitGate` on | 120 s | 600 | - | durative tree with the old gate: the gate's cost or value inside the new tree | if close to the headline, removing the gate is free (the headline's "no hard-coded rules" costs nothing) |
 | `instant` | upstream-it13 | `InstantTransfer` on | 120 s | 600 | - | does modelling transfer delay matter? | small difference (< 0.03) |
-| `racewin` | upstream-it13 | `MateRaceByLanding` on | 120 s | 600 | - | do mate races decided by landing time help in play, given that the option switches off the root mate provers? | at or below `vs_it13_120`: locally it lost drop mates (68/80 vs 80/80 at 800 nodes) |
+| `racewin` | upstream-it13 | `MateRaceByLanding` on, which **also switches off the root mate provers** (`enableRootMateSearch`, `enableMateProbe`, `certifySelectedMove`; agent.cc `run_search`) | 120 s | 600 | - | landing-time mate races *without root provers*: the row does not isolate the landing rule (two changes at once) | at or below `ref_120`: locally it lost drop mates (68/80 vs 80/80 at 800 nodes), which is the provers, not the races. Isolating the races needs landing-aware provers (not built) |
 | `noflag` | upstream-it13 | `FlagLoss` off | 120 s | 600 | - | does seeing flags in the tree matter? | lower than the headline, more flag losses (`reasons` column) |
 | `same_120` | wave2-self | none | 120 s | 800 | - | control | **0.50**, inside about +-0.025 (1600 games) |
 | `vs_it04_120` | it04 (our fork, 100 nodes base, clock_k 110) | none | 120 s | 200 | 0,20 | sanity: the wave 2 arm is wired right | at least 0.80 (it13 scored 0.835 against it04) |
 | `vs_it13_800n_120` | upstream-it13-800n (it13 at 800 fixed nodes, as D1 and upstream's own self-play) | none | 120 s | 800 | 0,20 | headline against it13 as D1 played it | near or above `vs_it13_120` |
 
-Reading an ablation: the difference from `vs_it13_120`. With 1200 games the 95% range of one row is about +-0.03,
+Reading an ablation: the difference from `ref_120` (same settings as the headline, fixed 1200 games, no SPRT; the
+headline `vs_it13_120` stops when decided, so it can be short and its score is biased by the stopping). With 1200
+games the 95% range of one row is about +-0.03,
 so the difference between two rows needs about 0.04 before it means anything. Read `same_120` first: if it is not
 0.50, nothing else in the round is read.
 
@@ -120,7 +124,7 @@ Reading the rows:
 
 ```sh
 .venv/bin/python tools/sprt.py runs/wave2/vs_it13_120
-.venv/bin/python tools/compare_evals.py runs/wave2/vs_it13_120 runs/wave2/sitgate
+.venv/bin/python tools/compare_evals.py runs/wave2/ref_120 runs/wave2/sitgate
 bash cluster/results.sh
 ```
 
@@ -133,10 +137,10 @@ the same rate is assumed.
 | Rows | Games (max) | GPU-hours (max) |
 |---|---|---|
 | `vs_it13_120`, `vs_it13_180`, `vs_it13_800n_120` | 3 x 1600 | 32 |
-| 5 ablations | 5 x 1200 | 40 |
+| `ref_120` and 5 ablations | 6 x 1200 | 48 |
 | `same_120` | 1600 | 11 |
 | `vs_it04_120` | 400 | 3 |
-| **Total** | 14,000 | **about 86** (10 GPUs in parallel: one 8 h job each, plus a second job for the three 1600-game rows if their SPRT has not stopped them) |
+| **Total** | 15,200 | **about 94** (11 GPUs in parallel: one 8 h job each, plus a second job for the three 1600-game rows if their SPRT has not stopped them) |
 
 SPRT rows stop as soon as they are decided; a clear result (`vs_it04_120`, or a large gap either way) takes a few
 hundred games. A row cut off at 8 h is finished by submitting it again with the same `NAME` and settings (the arena
