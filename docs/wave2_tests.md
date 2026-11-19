@@ -36,6 +36,7 @@ once at engine start, and the seat options before every search. Player options (
 | `SeatPaceMs` | - | empty | per-seat EMA (alpha 0.3) of observed action time, read off the clocks between off-turn observations, sits included; a seat without a sample uses its team's EMA, then this search's budget |
 | `SeatElapsedMs` | - | empty | `now - last landing` on that board for the seat on turn, 0 for the others (all 0 when the arena gives no landing times) |
 | `SeatSitting` | - | empty | added in integration: 1 for an opponent seat on turn whose elapsed exceeds 2x its pace (`seat_sitting`, `SIT_INFER_FACTOR`), so the tree's sit-off rule applies; 0 otherwise |
+| `SeatArrivalsMs` `"<pocket>:<piece>:<ms_ago>,..."` | - | empty | wave 2b: pieces more in a pocket than at our last search, dated by the other board's last landing, kept 5 s (`PocketLandingTracker`); read by the engine only with a wide network (`WAVE2_MODEL=.../twin-s-clock-wide-fp32.onnx`), ignored with it13 |
 | `Team`, `TimeModel clock`, `TimeLeadMs`, `TeamMoveTimeMs`, `OpponentMoveTimeMs`, `RootMoveTimeMs` | - | as v3 | as the stock `upstream` arm (`docs/upstream/v3_arm.md`) |
 
 Seat order is always A_white, A_black, B_white, B_black; T1 = A_white + B_black is upstream's white team. Unit tests:
