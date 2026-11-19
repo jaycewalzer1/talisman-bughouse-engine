@@ -503,11 +503,30 @@ def seat_elapsed_ms(obs: Observation) -> dict:
     return out
 
 
+# An opponent seat on turn that has gone this many times its observed pace without moving is taken to be sitting.
+# The arena, like a human, sees only that seat's clock running, not whether it thinks or waits; without this the
+# tree prices that seat as landing at max(1, pace - elapsed) ms, so waiting it out looks free and the engine sits
+# into sit-offs it loses on the lower clock (spec v4 sit-off rule: the lower clock must move).
+SIT_INFER_FACTOR = 2.0
+
+
+def seat_sitting(obs: Observation, team: str, paces: dict, factor: float = SIT_INFER_FACTOR) -> dict:
+    """{seat: 0/1} for ``SeatSitting``: 1 for a seat of the other team on turn whose thinking so far
+    (``seat_elapsed_ms``) exceeds ``factor x`` its pace; 0 for every other seat (the engine ignores our own)."""
+    elapsed = seat_elapsed_ms(obs)
+    out = {s: 0 for s in SEATS}
+    for seat in obs.to_move.values():
+        if seat in out and TEAM_OF[seat] != team and elapsed[seat] > factor * max(1, paces[seat]):
+            out[seat] = 1
+    return out
+
+
 class Wave2TeamController(UpstreamTeamController):
     """The wave 2 engine (spec v4 durative tree in upstream v3) as a team brain: everything ``UpstreamTeamController``
     sends, plus per search ``SeatClocksMs`` (the arena's four clocks, current at ``now``: the on-turn seats are
     already charged their thinking so far), ``SeatPaceMs`` (per-seat EMA of observed action times; a seat without a
-    sample uses its team's EMA, then this search's budget) and ``SeatElapsedMs`` (``seat_elapsed_ms``). The flags
+    sample uses its team's EMA, then this search's budget), ``SeatElapsedMs`` (``seat_elapsed_ms``) and
+    ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies). The flags
     (``WAVE2_FLAGS``) are set once when the engine starts (``engine_options``).
 
     A pass waits ``PassCapK x`` this search's budget unless an event (a landing on either board) wakes it first, the
@@ -524,10 +543,12 @@ class Wave2TeamController(UpstreamTeamController):
 
     def time_options(self, obs: Observation, budget_ms: int) -> dict:
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
+        paces = {s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}
         opts["options"] = {
             "SeatClocksMs": seat_values(obs.clocks_ms),
-            "SeatPaceMs": seat_values({s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}),
+            "SeatPaceMs": seat_values(paces),
             "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
+            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces)),
         }
         return opts
 
@@ -565,6 +586,6 @@ def measure_wave2_ms_per_node(nodes: int = 800, repeats: int = 3, *, flags: dict
 __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", "MoveTimeTracker", "RawPolicy",
            "lead_ms", "parse_policy", "upstream_team", "upstream_available", "measure_upstream_ms_per_node",
            "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
-           "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms",
+           "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms", "seat_sitting",
            "measure_wave2_ms_per_node", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
            "WAVE2_ENGINE_DIR"]

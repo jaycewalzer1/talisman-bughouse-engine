@@ -168,6 +168,7 @@ from arena.players.upstream import (  # noqa: E402
     WAVE2_ENGINE_DIR,
     Wave2TeamController,
     seat_elapsed_ms,
+    seat_sitting,
     seat_values,
     wave2_flag_options,
     wave2_team,
@@ -233,7 +234,20 @@ def test_wave2_controller_sends_seat_clocks_pace_and_elapsed():
     # (T2, no sample at all) to this search's budget, 200 ms.
     assert opts["SeatPaceMs"] == "400 200 200 400"
     assert opts["SeatElapsedMs"] == "0 300 0 1900"
+    # A_black (T2, on turn) is 300 ms into a 200 ms pace: under 2x, still thinking. B_black is ours: never marked.
+    assert opts["SeatSitting"] == "0 0 0 0"
     assert kw["root_move_ms"] == 200
+
+
+def test_seat_sitting_marks_opponent_seats_on_turn_well_past_their_pace():
+    obs = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START}, clocks_ms=clocks(1, 1, 1, 1),
+                      to_move={"A": "A_white", "B": "B_white"}, legal_moves=[], last_move_ms={"A": 0, "B": 4_000})
+    paces = {"A_white": 100, "A_black": 100, "B_white": 400, "B_black": 100}
+    # B_white (T2) is 1000 ms in at a 400 ms pace: sitting. A_white is ours (T1): 5 s in, still never marked.
+    assert seat_sitting(obs, "T1", paces) == {"A_white": 0, "A_black": 0, "B_white": 1, "B_black": 0}
+    # At exactly 2x it is still thinking; from T2's side its own seat is never marked, A_white is.
+    assert seat_sitting(obs, "T1", {**paces, "B_white": 500})["B_white"] == 0
+    assert seat_sitting(obs, "T2", paces) == {"A_white": 1, "A_black": 0, "B_white": 0, "B_black": 0}
 
 
 def test_wave2_pace_falls_back_to_budget_and_t2_lead():
@@ -243,6 +257,7 @@ def test_wave2_pace_falls_back_to_budget_and_t2_lead():
     kw = proc.calls[0]
     assert kw["lead"] == 1_000 and kw["options"]["SeatPaceMs"] == "100 100 100 100"
     assert kw["options"]["SeatElapsedMs"] == "0 0 0 0"  # the observation carries no landing times
+    assert kw["options"]["SeatSitting"] == "0 0 0 0"
     # A pass waits PassCapK x this search's budget unless an event wakes it.
     assert dec.kind == "wait" and dec.wait_ms == dec.think_ms + 3 * 100 and dec.stall_reason == "upstream_pass"
     assert ctl.player("B_white").kind == "wave2" and ctl.player("B_white").name.startswith("Wave2-B_white")
