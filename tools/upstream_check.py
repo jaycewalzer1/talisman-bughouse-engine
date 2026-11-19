@@ -62,6 +62,7 @@ def _reference_main() -> int:
     jobs = [json.loads(l) for l in sys.stdin if l.strip()]
     sess = ort.InferenceSession(jobs[0]["model"], providers=["CPUExecutionProvider"])
     name = sess.get_inputs()[0].name
+    wide = sess.get_inputs()[0].shape[1] == 130
     for job in jobs:
         team = chess.WHITE if job["team"] == "T1" else chess.BLACK
         bb = BughouseBoard()
@@ -79,7 +80,12 @@ def _reference_main() -> int:
         p74[37 + 31] = sit
         extra = np.zeros((2, 8, 8), np.float32)
         extra[0], extra[1] = lead_v, speed_v
-        planes = np.concatenate([p74[:37], extra, p74[37:], extra])[None].astype(np.float32)
+        if wide:  # wave 2b: 26 more planes per block (wave2-hivemind docs/wave2_engine.md, "Wave 2b")
+            blocks = [np.concatenate([p74[37 * b:37 * b + 37], extra, _wide_extras(p74, b, team, job.get("seat_clocks"))])
+                      for b in (0, 1)]
+            planes = np.concatenate(blocks)[None].astype(np.float32)
+        else:
+            planes = np.concatenate([p74[:37], extra, p74[37:], extra])[None].astype(np.float32)
         out = sess.run(None, {name: planes})
         res = {"value": float(np.asarray(out[0]).reshape(-1)[0])}
         for k, board_idx in (("A", 0), ("B", 1)):
@@ -107,6 +113,27 @@ def _reference_main() -> int:
             res[k] = dict(zip(names, (e / e.sum()).tolist()))
         print(json.dumps(res), flush=True)
     return 0
+
+
+def _wide_extras(p74, block: int, team: bool, seat_clocks: dict | None):
+    """The 26 wave 2b planes of one board block, as the engine builds them for a search given only seat clocks (no
+    thinking time, no recent landings): our and their seat clock (min(t/300, 1), exp(-t/10), t in s), the thinking
+    planes (0 with SeatElapsedMs 0), pocket presence (ours P..Q, theirs P..Q) and 10 landing planes (0). The same
+    arithmetic as wave2-hivemind's hivemind.domain.wide_planes, which cannot be imported next to upstream's package."""
+    import chess
+    import numpy as np
+
+    out = np.zeros((26, 8, 8), np.float32)
+    if seat_clocks is not None:
+        white_team = team == chess.WHITE
+        ours, theirs = (("A_white", "A_black") if white_team else ("A_black", "A_white")) if block == 0 else \
+            (("B_black", "B_white") if white_team else ("B_white", "B_black"))
+        for offset, seat in ((0, ours), (2, theirs)):
+            t = seat_clocks[seat] / 1000.0
+            out[offset], out[offset + 1] = min(t / 300.0, 1.0), math.exp(-t / 10.0)
+    pockets = p74[37 * block + 12:37 * block + 22, 0, 0]  # ours P..Q, theirs P..Q (count / 16)
+    out[6:16] = (pockets > 0).astype(np.float32)[:, None, None]
+    return out
 
 
 def reference_policies(jobs: list[dict], model: str) -> list[dict]:
@@ -178,16 +205,22 @@ def _engine_to_ref(board_fen: str, priors: dict[str, float]) -> dict[str, float]
     return out
 
 
+def seat_clocks_for(team: str, lead: int, base: int = 60_000) -> dict:
+    """Seat clocks (ms) whose upstream lead for ``team`` is ``lead``: Aw = Bb = base + T1's lead, Ab = Bw = base."""
+    t1 = lead if team == "T1" else -lead
+    clocks = {"A_white": base + t1, "A_black": base, "B_white": base, "B_black": base + t1}
+    if min(clocks.values()) < 0:
+        clocks = {s: v - min(clocks.values()) for s, v in clocks.items()}
+    return clocks
+
+
 def seat_time_options(team: str, lead: int, team_ms: int, opp_ms: int, base: int = 60_000) -> dict:
     """Wave 2 seat options that encode ``lead`` (``team``'s, upstream's TimeLeadMs) and the two teams' move times:
     T1's own lead t1 = ((Aw - Bw) + (Bb - Ab)) / 2, so Aw = Bb = base + t1, Ab = Bw = base; paces per team."""
     from arena.interfaces import SEATS, TEAM_OF
     from arena.players.upstream import seat_values
 
-    t1 = lead if team == "T1" else -lead
-    clocks = {"A_white": base + t1, "A_black": base, "B_white": base, "B_black": base + t1}
-    if min(clocks.values()) < 0:
-        clocks = {s: v - min(clocks.values()) for s, v in clocks.items()}
+    clocks = seat_clocks_for(team, lead, base)
     pace = {s: team_ms if TEAM_OF[s] == team else opp_ms for s in SEATS}
     return {"SeatClocksMs": seat_values(clocks), "SeatPaceMs": seat_values(pace), "SeatElapsedMs": "0 0 0 0"}
 
@@ -206,6 +239,9 @@ def cmd_parity(args) -> int:
     wave2 = args.engine == "wave2"
     model = WAVE2_MODEL if wave2 else UPSTREAM_MODEL
     jobs = random_positions(args.positions, args.seed)
+    if wave2:  # the seat clocks the engine is given (a wide network reads them, wave 2b)
+        for job in jobs:
+            job["seat_clocks"] = seat_clocks_for(job["team"], job["lead"])
     ref = reference_policies(jobs, model)
     coreml = None if args.coreml == "default" else args.coreml
     if wave2:

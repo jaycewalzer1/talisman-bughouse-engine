@@ -323,6 +323,26 @@ def test_parity_seat_options_encode_the_reference_lead_and_speeds():
             assert pace == (["300", "1100", "1100", "300"] if team == "T1" else ["1100", "300", "300", "1100"])
 
 
+def test_parity_reference_wide_extras_follow_the_team_view():
+    import math
+
+    import numpy as np
+
+    from tools.upstream_check import _wide_extras, seat_clocks_for
+
+    p74 = np.zeros((74, 8, 8), np.float32)
+    p74[12 + 1] = 1 / 16       # block A: our N
+    p74[37 + 17 + 4] = 2 / 16  # block B: their Q
+    clocks = seat_clocks_for("T1", 30_000)  # Aw = Bb = 90 s, Ab = Bw = 60 s
+    a, b = _wide_extras(p74, 0, True, clocks), _wide_extras(p74, 1, True, clocks)
+    assert a[0, 0, 0] == np.float32(90 / 300) and a[2, 0, 0] == np.float32(60 / 300)
+    assert b[1, 0, 0] == np.float32(math.exp(-9.0)) and b[3, 0, 0] == np.float32(math.exp(-6.0))
+    assert a[6 + 1, 0, 0] == 1 and a[6:16, 0, 0].sum() == 1 and b[11 + 4, 0, 0] == 1 and b[6:16, 0, 0].sum() == 1
+    t2 = _wide_extras(p74, 0, False, clocks)  # the black team: ours is Ab
+    assert t2[0, 0, 0] == np.float32(60 / 300) and t2[2, 0, 0] == np.float32(90 / 300)
+    assert not _wide_extras(p74, 0, True, None)[:6].any() and not a[4:6].any() and not a[16:].any()
+
+
 # ---------------------------------------------------------------------------------------------- wave 2b
 
 def _pocket_fen(pocket):
