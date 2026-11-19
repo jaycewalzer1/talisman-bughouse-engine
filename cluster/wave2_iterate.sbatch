@@ -22,7 +22,7 @@
 #   RUN=w2a ITERS=2 sbatch cluster/wave2_iterate.sbatch
 #   RUN=w2a ITERS=2 sbatch cluster/wave2_iterate.sbatch                     # resubmit: continues with the next two
 #   RUN=w2-nogate ITERS=1 WAVE2_EXTRA="--sit-gate true" sbatch cluster/wave2_iterate.sbatch   # an ablation lineage
-#   RUN=smoke ITERS=1 GAMES_PER_ITER=4 SEGMENT_GAMES=4 VAL_GAMES=2 MATCH_GAMES=2 PARALLEL_GAMES=2 BATCH_SIZE=1024 \
+#   RUN=smoke ITERS=1 GAMES_PER_ITER=4 SEGMENT_GAMES=4 VAL_GAMES=2 MATCH_GAMES=2 PARALLEL_GAMES=2 BATCH_SIZE=256 \
 #     NO_GATE=1 bash cluster/wave2_iterate.sbatch                           # tiny check (ALLOW_STOCK=1 before the
 #                                                                           # wave 2 self-play options exist)
 #
