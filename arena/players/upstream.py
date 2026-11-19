@@ -531,12 +531,73 @@ def seat_sitting(obs: Observation, team: str, paces: dict, budget_ms: int,
     return out
 
 
+# Wave 2b: the UCI names of the seats' pockets (SeatArrivalsMs) and how long a landing counts as recent (the engine's
+# RECENT_LANDING_WINDOW_MS; older ones are dropped by the engine too).
+UCI_SEAT = {"A_white": "Aw", "A_black": "Ab", "B_white": "Bw", "B_black": "Bb"}
+ARRIVAL_WINDOW_MS = 5000
+POCKET_PIECES = "PNBRQ"
+
+
+def fen_pockets(fen: str) -> dict:
+    """{"white": {piece: n}, "black": {piece: n}} of a crazyhouse FEN's ``[...]`` pocket (P N B R Q; kings and
+    anything else ignored). A FEN without brackets has empty pockets."""
+    board = fen.split()[0] if fen else ""
+    inside = board[board.find("[") + 1:board.find("]")] if "[" in board and "]" in board else ""
+    out = {"white": {p: 0 for p in POCKET_PIECES}, "black": {p: 0 for p in POCKET_PIECES}}
+    for ch in inside:
+        if ch.upper() in POCKET_PIECES:
+            out["white" if ch.isupper() else "black"][ch.upper()] += 1
+    return out
+
+
+class PocketLandingTracker:
+    """Recent pocket landings for ``SeatArrivalsMs``, inferred from the pockets the controller sees: a piece more in a
+    seat's pocket than at the previous observation landed when the last move landed on the other board (the capture
+    that sent it), else at ``now``. Only the arena's observations at our own decisions are seen, so two captures on
+    the other board between them both get the later landing time, and a capture undone by a drop of the same piece
+    in between is missed; the landings themselves are exact otherwise. The first observation (and a clock going
+    back: a new game) only records the pockets."""
+
+    def __init__(self, window_ms: int = ARRIVAL_WINDOW_MS) -> None:
+        self.window_ms = int(window_ms)
+        self._pockets: dict | None = None
+        self._now = None
+        self.landings: list[tuple[int, str, str]] = []  # (landed at ms, seat, piece)
+
+    def observe(self, fens: dict, now_ms: int, last_move_ms: dict | None = None) -> None:
+        now = int(now_ms)
+        if self._now is not None and now < self._now:
+            self._pockets, self.landings = None, []
+        pockets = {}
+        for board in ("A", "B"):
+            parsed = fen_pockets(fens[board])
+            for color in ("white", "black"):
+                pockets[f"{board}_{color}"] = parsed[color]
+        if self._pockets is not None:
+            for seat in SEATS:
+                other = "B" if BOARD_OF[seat] == "A" else "A"
+                landed = now if last_move_ms is None else min(now, int(last_move_ms[other]))
+                for piece in POCKET_PIECES:
+                    for _ in range(pockets[seat][piece] - self._pockets[seat][piece]):
+                        self.landings.append((landed, seat, piece))
+        self._pockets, self._now = pockets, now
+        self.landings = [x for x in self.landings if now - x[0] < self.window_ms]
+
+    def value(self, now_ms: int) -> str:
+        """``SeatArrivalsMs``: ``"<pocket>:<piece>:<ms_ago>,..."``, newest first; "" when nothing landed lately."""
+        now = int(now_ms)
+        recent = sorted((x for x in self.landings if 0 <= now - x[0] < self.window_ms), key=lambda x: -x[0])
+        return ",".join(f"{UCI_SEAT[seat]}:{piece}:{now - at}" for at, seat, piece in recent)
+
+
 class Wave2TeamController(UpstreamTeamController):
     """The wave 2 engine (spec v4 durative tree in upstream v3) as a team brain: everything ``UpstreamTeamController``
     sends, plus per search ``SeatClocksMs`` (the arena's four clocks, current at ``now``: the on-turn seats are
     already charged their thinking so far), ``SeatPaceMs`` (per-seat EMA of observed action times; a seat without a
     sample uses its team's EMA, then this search's budget), ``SeatElapsedMs`` (``seat_elapsed_ms``) and
-    ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies). The flags
+    ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies) and
+    ``SeatArrivalsMs`` (``PocketLandingTracker``: pieces that landed in each pocket in the last 5 s; the engine reads
+    them only with a wave 2b wide network, a narrow one ignores them). The flags
     (``WAVE2_FLAGS``) are set once when the engine starts (``engine_options``).
 
     A pass waits ``min(PassCapK, SIT_INFER_FACTOR) x`` this search's budget unless an event (a landing on either
@@ -550,15 +611,18 @@ class Wave2TeamController(UpstreamTeamController):
                  ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, **kw) -> None:
         super().__init__(team, process, nodes, ms_per_node, **kw)
         self.pass_cap_k = int(pass_cap_k)
+        self.landings = PocketLandingTracker()
 
     def time_options(self, obs: Observation, budget_ms: int) -> dict:
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
         paces = {s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}
+        self.landings.observe(obs.fens, obs.now_ms, obs.last_move_ms)
         opts["options"] = {
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
             "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
             "SeatSitting": seat_values(seat_sitting(obs, self.team, paces, budget_ms)),
+            "SeatArrivalsMs": self.landings.value(obs.now_ms),
         }
         return opts
 
@@ -598,5 +662,5 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "lead_ms", "parse_policy", "upstream_team", "upstream_available", "measure_upstream_ms_per_node",
            "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
            "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms", "seat_sitting",
-           "measure_wave2_ms_per_node", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
+           "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
            "WAVE2_ENGINE_DIR"]

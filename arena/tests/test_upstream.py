@@ -166,7 +166,9 @@ def test_upstream_team_players():
 
 from arena.players.upstream import (  # noqa: E402
     WAVE2_ENGINE_DIR,
+    PocketLandingTracker,
     Wave2TeamController,
+    fen_pockets,
     seat_elapsed_ms,
     seat_sitting,
     seat_values,
@@ -319,3 +321,50 @@ def test_parity_seat_options_encode_the_reference_lead_and_speeds():
             assert min(c.values()) >= 0 and lead_ms(c, team) == lead
             pace = o["SeatPaceMs"].split()
             assert pace == (["300", "1100", "1100", "300"] if team == "T1" else ["1100", "300", "300", "1100"])
+
+
+# ---------------------------------------------------------------------------------------------- wave 2b
+
+def _pocket_fen(pocket):
+    return f"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[{pocket}] w KQkq - 0 1"
+
+
+def test_fen_pockets_reads_the_bracket_by_colour():
+    assert fen_pockets(_pocket_fen("NQpp"))["white"] == {"P": 0, "N": 1, "B": 0, "R": 0, "Q": 1}
+    assert fen_pockets(_pocket_fen("NQpp"))["black"]["P"] == 2
+    assert fen_pockets(START)["white"] == {p: 0 for p in "PNBRQ"}
+    assert fen_pockets("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")["black"]["P"] == 0
+
+
+def test_pocket_landing_tracker_dates_new_pieces_by_the_other_boards_last_landing():
+    t = PocketLandingTracker()
+    # The first look only records the pockets: what was there before is not a landing.
+    t.observe({"A": _pocket_fen("N"), "B": START}, 1_000, {"A": 0, "B": 0})
+    assert t.value(1_000) == ""
+    # A knight more for A_white (captured on B, whose last move landed at 1 800) and a pawn for B_white (A's last
+    # landing at 1 500). A_black's pocket shrank (a drop): nothing.
+    t.observe({"A": _pocket_fen("NN"), "B": _pocket_fen("P")}, 2_000, {"A": 1_500, "B": 1_800})
+    assert t.value(2_000) == "Aw:N:200,Bw:P:500"
+    # Without landing times the pieces landed now; landings 5 s old or more drop out.
+    t.observe({"A": _pocket_fen("NNq"), "B": _pocket_fen("P")}, 3_000)
+    assert t.value(3_000) == "Ab:Q:0,Aw:N:1200,Bw:P:1500"
+    t.observe({"A": _pocket_fen("NNq"), "B": _pocket_fen("P")}, 6_900)
+    assert t.value(6_900) == "Ab:Q:3900"
+    # A clock going back is a new game: start over.
+    t.observe({"A": _pocket_fen("R"), "B": START}, 100, {"A": 0, "B": 0})
+    assert t.value(100) == ""
+
+
+def test_wave2_controller_sends_seat_arrivals():
+    proc = FakeProcess(move_a=None, move_b="g8f6", nodes=100)
+    ctl = Wave2TeamController("T1", proc, nodes=100, ms_per_node=2.0)
+    p = ctl.player("B_black")
+    to_move = {"A": "A_white", "B": "B_black"}
+    p.decide(_w2_obs("B_black", clocks(60_000, 60_000, 60_000, 60_000), {"A": START, "B": START}, to_move,
+                     ["g8f6"], now=1_000, last={"A": 0, "B": 0}))
+    assert proc.calls[0]["options"]["SeatArrivalsMs"] == ""
+    # B_black's pocket gained a bishop from a capture on A that landed at 1 700.
+    p.decide(_w2_obs("B_black", clocks(59_000, 60_000, 60_000, 59_000), {"A": START, "B": _pocket_fen("b")},
+                     to_move, ["g8f6", "d7d5"], now=2_000, last={"A": 1_700, "B": 900}))
+    assert proc.calls[-1]["options"]["SeatArrivalsMs"] == "Bb:B:300"
+
