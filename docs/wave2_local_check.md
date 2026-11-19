@@ -7,7 +7,7 @@ head, `SeatArrivalsMs`, landing history, HDST v3) on this Mac, before anything r
 95% range of about +-0.5. Nothing here says whether wave 2 beats it13. That is the job of `bash cluster/launch_checks.sh
 wave2` (`docs/wave2_tests.md`).
 
-Versions: main repo `custom-engine`, wave2-hivemind `talisman/wave2` at `8c22eb7` (engine 2b `2b5d378`, training 2b
+Versions (sections 1-6): main repo `custom-engine`, wave2-hivemind `talisman/wave2` at `8c22eb7` (engine 2b `2b5d378`, training 2b
 `8c22eb7`). Networks: twin-s-clock it13 (HF `aminwoo/bughouse-twin-s-clock@edaa246`, ONNX sha256 `f4ac25e3...`,
 FP32 copy `twin-s-clock-it13-fp32.onnx`; checkpoint sha256 `5bb43c7f...`) and its widened copy
 `twin-s-clock-wide-fp32.onnx` (sha256 `942606d5...`, zero-initialised new weights). Inference: ONNX Runtime on the
@@ -115,3 +115,44 @@ check in section 2 shows the wide data path gives it13's outputs exactly, so the
 Not run anywhere yet: TensorRT (the wide-input copy and `arrivals` binding in `engine/src/nn/engine.cc` are unbuilt),
 `cluster/build.sh`, anything on PACE. `talisman/wave2` is local only; PACE builds it from GitHub, so it has to be
 pushed first (`git -C third_party/wave2-hivemind push fork talisman/wave2`).
+
+## 7. Review fixes and their rerun (2026-11-19, afternoon)
+
+Two reviewers read wave 2 + 2b after the integration above. Every finding was re-checked against the code and
+fixed; none was skipped. Engine commits on `talisman/wave2` (`d538648`..`261081b`), main repo on `custom-engine`.
+
+| Finding | Fix | Commit |
+|---|---|---|
+| HIGH: at the root the other team's seat that lands before our budget was charged the whole budget and flag-checked against it (false flag wins in every scramble, opponent clocks overcharged, e.g. 4500 instead of 4900) | each seat on turn runs `min(dt, its ready time)`; its action is dated back (the seat its move hands the board to is charged the rest; a pass runs from the earlier time) | wave2 `d538648` |
+| MEDIUM: one team on turn on both boards could pass forever in 1 ms steps (the pass woke at the partner's ready time) | a pass wakes only on a landing on the other board, as the self-play game does: a pass on the other board sends a sitting seat on to its own cap, a move wakes it 1 ms later | wave2 `d538648` |
+| LOW: root never seeded delayed-transfer pieces from `SeatArrivalsMs` | an opponent seat on turn starts with its landings younger than its `SeatElapsedMs` pending; self-play sends its landing log for this with narrow nets too | wave2 `d538648`, `79d21fa` |
+| LOW: pass cap in the tree (k x root budget for every seat) differed from the game (k x the seat's own move time) | k x the seat's own action time (root budget for our seats, pace for theirs) | wave2 `d538648` |
+| LOW: `seat_clocks.tsv` `recent` counts had no cap while the search keeps 12 | the tsv keeps the newest 12 too (`pocket_landing_counts(..., MAX_RECENT_LANDINGS)`); arrivals labels still count all | wave2 `79d21fa` |
+| HIGH: PACE build clones an unpushed branch; no record of the engine commit | build pinned to `cluster/wave2_engine.ref` (now `261081b`), a diverged checkout is an error (`ALLOW_STALE=1` to override), `eval.sbatch` and `wave2_iterate.sbatch` print the engine commit and pin. **The push itself is still owed** (below) | main `d2f732a` |
+| MEDIUM: arena `seat_sitting` compared opponents with our own budget (opponents read as sitting exactly when we were behind) | the opponent seat's own budget, (its clock + elapsed) / clock_k, doubled when its team is on turn on both boards (serial second seat) | main `36d92bf` |
+| MEDIUM: our own actions priced at the bare budget under rules v3 (about half the real cost at 10 s left) | `RootMoveTimeMs = max(budget, root_min_ms) + root_lag_ms`; the wave 2 pool sets 100 and 75 | main `36d92bf` |
+| MEDIUM: ablations read against the SPRT-stopped headline | new row `ref_120` (headline settings, 600 pairs, no SPRT) is the ablations' reference; `launch_checks.sh wave2` now 11 jobs, about 94 GPU-hours | main `6d8fdb3` |
+| MEDIUM: `racewin` and `nodur` each change two things | `racewin` documented and commented as "landing races without root provers"; `nodur` read as tree + gate removal, `sitgate - nodur` as the tree alone. Landing-aware root provers (the real fix for racewin) are not built | main `6d8fdb3` |
+| LOW: arena `SeatElapsedMs` = since last landing vs self-play's since decision start | documented in the contract table (`docs/wave2_tests.md`); the arena cannot see a sitting opponent re-decide | main `6d8fdb3` |
+| LOW: the wide stem's 26 new input columns trained at the trunk rate (5e-5) | `NewInputRate`: their AdamW update is scaled by lr / trunk_lr, exactly a heads-rate step; `--new-inputs-lr trunk` restores the old way. Gate columns documented as wave 2 search vs it13, not comparable with the arena rows | wave2 `261081b` |
+
+Rerun after the fixes (same Mac, `build-ninja` and `build-sp1` rebuilt at `261081b` with 2 jobs):
+
+| Check | Result |
+|---|---|
+| C++ suite `build-ninja/tests/hivemind_tests` | 519 tests: 518 passed, 1 skipped (`MeasureFrozenRaceOnTheGame`, as before), 0 failed. 5 new: root early landing is not a flag (the reviewer's 300/100/500 case) and a 5000 ms clock reads 4900; no same-team 1 ms leapfrog (20 more passes cost at least 2 s); opponent pass capped at its own pace; root pending from `SeatArrivalsMs`; recent counts capped at 12. One old test (`RootTeamDecidesAtTheRoot...`) rewritten for the new charging (Bw 59700 not 59000, Bb charged the 700 ms it was on turn) |
+| `engine/tests/stock_parity.sh` (defaults vs stock v3.0.3, one worker) | 8/8 positions identical |
+| wave2-hivemind Python (`uv run pytest`) | 196 passed (195 + 1 new, `NewInputRate`), 8 failed: the same 8 bsdtar `tar --compare` failures as before |
+| Main repo `arena/tests` | 294 passed (292 + 2 new: opponent's own budget for `SeatSitting`, rules v3 root cost) |
+| Main repo `arena/tests_phase1` | 105 passed |
+| Regression, wave2 + it13, 200 nodes | drop_mates 80/80 net, value, engine (79/80 before); sit_move engine 175/208; sit-off ahead 11/20 (+10 s), 12/20 (+3 s), behind 0/20, 0/20: test 8 engine still FAIL at 200 nodes, as before (12/20) |
+| Regression, wave2 + it13, 800 nodes | drop_mates 80/80 all; sit_move engine 192/208; sit-off 20/20, 20/20 ahead, 0/20 behind: test 8 **PASS** |
+| Self-play, 3 games each, 48 nodes, 15 s base, wave 2 flags (it13 and widened it13, `build-sp1`) | 130 and 132 rows; recent pieces per row at most 9 and 11 (cap 12 never reached at 15 s); 2 flag games and 1 resignation each; 215 s per 3 games. Not rerun: `attach_timing` round trip (the tsv format did not change, only the cap) |
+| Trainer, widened it13, 4 steps on the A/B smoke's wide chunk, trunk 5e-5 / heads 1e-4 | runs; new-plane stem weights 0 -> max 2.5e-4, old stem columns moved at most 1.3e-4 (about half), as intended |
+| Arena headline, narrow it13, rules v3, 60 s, 3 pairs (`runs/wave2_local/fix_narrow_headline`) | 6 games, 0 errors, all checkmates, wave 2 scored 0.167 (95% range 0.00-0.50; the earlier 4-game run read 0.75). Plumbing only: 6 games say nothing about strength |
+| `bash cluster/launch_checks.sh wave2` with a fake `sbatch` and `SBATCH_DEPENDENCY=afterok:12345` | 11 submissions, all with the dependency; `ref_120` 600 pairs without SPRT |
+| `bash -n` / `sh -n` on the changed cluster and tools scripts; pin logic on a scratch clone | OK; a pinned commit missing from the repo fails with a message naming the push |
+
+Still owed before PACE: push `talisman/wave2` (`git -C third_party/wave2-hivemind push fork talisman/wave2`) and
+`custom-engine`; `cluster/build.sh` now refuses to build anything but the pinned `261081b`, so the pin has to be on
+GitHub. Update `cluster/wave2_engine.ref` with every engine commit that should run.
