@@ -607,8 +607,9 @@ class Wave2TeamController(UpstreamTeamController):
     already charged their thinking so far), ``SeatPaceMs`` (per-seat EMA of observed action times; a seat without a
     sample uses its team's EMA, then this search's budget), ``SeatElapsedMs`` (``seat_elapsed_ms``) and
     ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies) and
-    ``SeatArrivalsMs`` (``PocketLandingTracker``: pieces that landed in each pocket in the last 5 s; the engine reads
-    them only with a wave 2b wide network, a narrow one ignores them). The flags
+    ``SeatArrivalsMs`` (``PocketLandingTracker``: pieces that landed in each pocket in the last 5 s; the wide planes
+    read them only with a wave 2b wide network; without InstantTransfer any network's tree holds an opponent seat's
+    landings younger than its elapsed time as not yet droppable). The flags
     (``WAVE2_FLAGS``) are set once when the engine starts (``engine_options``).
 
     A pass waits ``min(PassCapK, SIT_INFER_FACTOR) x`` this search's budget unless an event (a landing on either
