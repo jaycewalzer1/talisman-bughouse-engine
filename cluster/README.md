@@ -89,3 +89,37 @@ rules), and promotion only when the candidate scores above `PROMOTE_ABOVE` again
 `runs/wave2/<RUN>/results.tsv` (games, positions, flag games, repeated positions, score vs the generator and vs it13,
 Elo vs it13, promoted) and `runs/wave2/<RUN>/runs/rl-loop.log`. The headline against stock v3 at 120/180 s is a
 separate arena row (`cluster/launch_checks.sh`, the wave2 group), not part of this job.
+
+### Wave 2b: the wide network, and the narrow/wide A/B
+
+`WIDE=1` starts the lineage from it13 widened (`twin-s-clock-wide`: 26 more input planes per board for the seat
+clocks, thinking time, pocket presence and recent landings, plus an arrivals head; all zero-initialised, so it plays
+exactly as it13 at first). `init` runs `hivemind.wave2 init --wide` (it widens it13 and checks parity when the files
+are missing), the loop runs `rl-loop --wide` (seat timing and arrivals labels go into the chunks, the arrivals loss
+at `ARRIVALS_WEIGHT`, 0.05). The fixed baseline stays it13. Details:
+`third_party/wave2-hivemind/docs/wave2_training.md`, section "Wave 2b".
+
+`AB=1` is the medium training run: two lineages, `runs/wave2/<RUN>/narrow` (it13) and `.../wide` (it13 widened),
+same settings and same self-play seeds (segment k of iteration n plays seed 1000 n + k), each gated against it13 at
+equal movetime under the wave 2 rules. Without `WIDE` the job runs both, one iteration each in turn; with `WIDE=0` or
+`WIDE=1` it runs one arm, so two jobs on two GPUs halve the wall clock. Results per arm in `<arm>/results.tsv`
+(now with an `arrival_labels` column) and side by side in `runs/wave2/<RUN>/results_ab.tsv`.
+
+```bash
+RUN=ab1 AB=1 ITERS=4 GAMES_PER_ITER=10000 sbatch cluster/wave2_iterate.sbatch          # both arms, one job
+RUN=ab1 AB=1 WIDE=0 ITERS=4 GAMES_PER_ITER=10000 sbatch cluster/wave2_iterate.sbatch   # or one job per arm
+RUN=ab1 AB=1 WIDE=1 ITERS=4 GAMES_PER_ITER=10000 sbatch cluster/wave2_iterate.sbatch
+```
+
+The wide arm needs a wave 2b engine (it reads a 130-plane network and writes the wave 2b `seat_clocks.tsv`
+columns); `SP_ENGINE` / `MATCH_ENGINE` override the engine paths.
+
+Cost (no PACE self-play rate measured yet; GPU-hours ~= games / R + iterations x ~1.3, R = games per GPU-hour at 800
+nodes, 6 parallel games): at a guessed R = 300, the medium A/B above (2 arms x 4 iterations x 10,500 games) is about
+**290 GPU-hours** (16 h jobs: about 18 job-slots), the big run (the winner, 10 iterations x 50,000 games) about
+**1,700**. At R = 150 both double. Read R off the first segment (`runs/rl-it1/search/logs/seg00.log` start and end)
+and rescale before committing to the rest.
+
+Checked locally 2026-11-19 (Mac CPU, `AB=1 ITERS=1 GAMES_PER_ITER=4 VAL_GAMES=2 BATCH_SIZE=128 NO_GATE=1`, engine
+`build-ninja` for both): both arms ran init, self-play, label check, training and results; the wide arm's chunks went
+to v3 with arrivals labels on all 676 + 386 records; `results_ab.tsv` written. 4 min 16 s. No matches, no GPU.
