@@ -182,7 +182,7 @@ def test_seat_values_order_is_aw_ab_bw_bb():
 
 def test_wave2_flags_default_ablation_and_validation():
     assert wave2_flag_options() == {"DurativeTree": True, "SitGate": False, "FlagLoss": True,
-                                    "InstantTransfer": False, "MateRaceByLanding": True, "PassCapK": 8}
+                                    "InstantTransfer": False, "MateRaceByLanding": False, "PassCapK": 8}
     nodur = wave2_flag_options(durative_tree=False)
     assert nodur["DurativeTree"] is False and nodur["SitGate"] is False  # only the named flag moves
     assert wave2_flag_options(sit_gate=True, pass_cap_k=None)["SitGate"] is True
@@ -269,7 +269,7 @@ def test_wave2_team_sets_flags_at_start_and_runs_in_its_engine_dir():
     assert isinstance(ctl, Wave2TeamController) and ctl.ms_per_node == 0.3 and ctl.pass_cap_k == 8
     assert ctl.process.cwd == WAVE2_ENGINE_DIR
     assert ctl.process.extra_options == {"DurativeTree": True, "SitGate": True, "FlagLoss": True,
-                                         "InstantTransfer": False, "MateRaceByLanding": True, "PassCapK": 5}
+                                         "InstantTransfer": False, "MateRaceByLanding": False, "PassCapK": 5}
     assert ctl.process._proc is None  # lazy: nothing started
     for p in players.values():
         p.close()

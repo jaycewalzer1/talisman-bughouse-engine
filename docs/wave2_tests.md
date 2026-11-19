@@ -30,7 +30,7 @@ once at engine start, and the seat options before every search. Player options (
 | `SitGate` (upstream's `can_sit = lead > 0`) | `sit_gate` | true | false |
 | `FlagLoss` | `flag_loss` | false | true |
 | `InstantTransfer` | `instant_transfer` | true | false |
-| `MateRaceByLanding` | `mate_race_by_landing` | false | true |
+| `MateRaceByLanding` | `mate_race_by_landing` | false | false (integration 2026-11-19: on, it costs drop mates; row `racewin` tests it on) |
 | `PassCapK` | `pass_cap_k` | 8 | 8 |
 | `SeatClocksMs` `"<Aw> <Ab> <Bw> <Bb>"` | - | empty | the arena's four clocks at `now` (the on-turn seats already charged their thinking so far) |
 | `SeatPaceMs` | - | empty | per-seat EMA (alpha 0.3) of observed action time, read off the clocks between off-turn observations, sits included; a seat without a sample uses its team's EMA, then this search's budget |
@@ -96,12 +96,12 @@ adjudication). `SBATCH_DEPENDENCY=afterok:<build job>` holds them behind a build
 
 | Row | Opponent | Contender change | Clock | Pairs | SPRT | Question | Expected reading |
 |---|---|---|---|---|---|---|---|
-| `vs_it13_120` | upstream-it13 | none (all flags on) | 120 s | 800 | 0,20 | headline: does wave 2 beat the best at equal clock? | unknown. The net was trained under the lockstep tree with the gate, so the new tree may first cost strength; > 0.50 with SPRT H1 is the success, 0.45-0.50 means "train it", < 0.45 means a bug or a value mismatch |
+| `vs_it13_120` | upstream-it13 | none (wave 2 flags; MateRaceByLanding off) | 120 s | 800 | 0,20 | headline: does wave 2 beat the best at equal clock? | unknown. The net was trained under the lockstep tree with the gate, so the new tree may first cost strength; > 0.50 with SPRT H1 is the success, 0.45-0.50 means "train it", < 0.45 means a bug or a value mismatch |
 | `vs_it13_180` | upstream-it13 | none | 180 s | 800 | 0,20 | does it hold with more time? | within 0.03 of the 120 s row |
 | `nodur` | upstream-it13 | `DurativeTree` off, `SitGate` on | 120 s | 600 | - | v3's lockstep tree inside the wave 2 binary: what the durative tree and the gate removal add together. (The planned "lockstep, no gate" cannot run: v3's tree has no sit-off rule, both teams passed forever and the search hung, so the engine now keeps the gate whenever the tree is not durative; docs/wave2_local_check.md) | near 0.50 (it is close to stock it13); `vs_it13_120` minus this row is the durative tree's contribution |
 | `sitgate` | upstream-it13 | `SitGate` on | 120 s | 600 | - | durative tree with the old gate: the gate's cost or value inside the new tree | if close to the headline, removing the gate is free (the headline's "no hard-coded rules" costs nothing) |
 | `instant` | upstream-it13 | `InstantTransfer` on | 120 s | 600 | - | does modelling transfer delay matter? | small difference (< 0.03) |
-| `noracewin` | upstream-it13 | `MateRaceByLanding` off | 120 s | 600 | - | do mate races decided by landing time matter? | small difference |
+| `racewin` | upstream-it13 | `MateRaceByLanding` on | 120 s | 600 | - | do mate races decided by landing time help in play, given that the option switches off the root mate provers? | at or below `vs_it13_120`: locally it lost drop mates (68/80 vs 80/80 at 800 nodes) |
 | `noflag` | upstream-it13 | `FlagLoss` off | 120 s | 600 | - | does seeing flags in the tree matter? | lower than the headline, more flag losses (`reasons` column) |
 | `same_120` | wave2-self | none | 120 s | 800 | - | control | **0.50**, inside about +-0.025 (1600 games) |
 | `vs_it04_120` | it04 (our fork, 100 nodes base, clock_k 110) | none | 120 s | 200 | 0,20 | sanity: the wave 2 arm is wired right | at least 0.80 (it13 scored 0.835 against it04) |

@@ -78,10 +78,12 @@ WAVE2_MS_PER_NODE = UPSTREAM_MS_PER_NODE  # placeholder until measured (MEASURE=
 # The UCI contract of wave 2 (docs/wave2_tests.md): player option -> (engine option, wave 2 value). The engine's
 # defaults are stock v3.0.3 (DurativeTree false, SitGate true, FlagLoss false, InstantTransfer true,
 # MateRaceByLanding false, PassCapK 8); the wave 2 arm sends every flag explicitly, so an ablation row switches one
-# off with its player option (e.g. {"sit_gate": true}).
+# off with its player option (e.g. {"sit_gate": true}). MateRaceByLanding stays off in wave 2: it switches off the
+# root mate provers, and with the gate off the tree then passed instead of mating in won positions (drop mates 68/80
+# at 800 nodes against 80/80 with it off or the gate on; docs/wave2_local_check.md). Row racewin switches it on.
 WAVE2_FLAGS = {"durative_tree": ("DurativeTree", True), "sit_gate": ("SitGate", False),
                "flag_loss": ("FlagLoss", True), "instant_transfer": ("InstantTransfer", False),
-               "mate_race_by_landing": ("MateRaceByLanding", True), "pass_cap_k": ("PassCapK", 8)}
+               "mate_race_by_landing": ("MateRaceByLanding", False), "pass_cap_k": ("PassCapK", 8)}
 TEAM_OPTION = {"T1": "white", "T2": "black"}
 MAX_LEAD_MS = 1 << 30
 
