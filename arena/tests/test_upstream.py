@@ -286,3 +286,15 @@ def test_wave2_kind_in_setups_and_pool_measures_it_with_its_flags(tmp_path):
     assert new.contender.player_kw["ms_per_node"] == 0.2 and new.opponents[0].player_kw["ms_per_node"] == 0.1
     assert sorted(c[1] is None for c in calls) == [False, True]
     assert [c[1] for c in calls if c[1] is not None] == [{}]  # the wave 2 arm, no flag overrides
+
+
+def test_parity_seat_options_encode_the_reference_lead_and_speeds():
+    from tools.upstream_check import seat_time_options
+
+    for team in ("T1", "T2"):
+        for lead in (0, 750, -12_000, 70_000):
+            o = seat_time_options(team, lead, team_ms=300, opp_ms=1_100)
+            c = dict(zip(("A_white", "A_black", "B_white", "B_black"), map(int, o["SeatClocksMs"].split())))
+            assert min(c.values()) >= 0 and lead_ms(c, team) == lead
+            pace = o["SeatPaceMs"].split()
+            assert pace == (["300", "1100", "1100", "300"] if team == "T1" else ["1100", "300", "300", "1100"])

@@ -6,6 +6,10 @@
       subprocess so it cannot clash with our fork's ``hivemind`` package) + the two clock planes from the model
       card's formulas + ONNX Runtime CPU on the same FP32 network. Pass: same action set on every on-turn board and
       max |p_engine - p_ref| below --tol (1e-4; measured ~2e-6 on both the CPU and the default Core ML provider).
+      ``--engine wave2`` checks the wave 2 engine (third_party/wave2-hivemind) the same way, with the wave 2 flags
+      set and the time sent as the four seat clocks and per-seat paces (``SeatClocksMs``/``SeatPaceMs``, chosen so
+      that the lead and speeds equal the reference's): this checks the engine's seat -> plane mapping and signs.
+      Prints PASS or FAIL on its last line.
 
   .venv/bin/python tools/upstream_check.py smoke [--games 6] [--base-ms 60000] [--out runs/upstream/smoke]
       it04 (stock binary, centralized, fixed nodes) vs upstream-v3 in single in-process games, paired with swapped
@@ -174,18 +178,48 @@ def _engine_to_ref(board_fen: str, priors: dict[str, float]) -> dict[str, float]
     return out
 
 
-def cmd_parity(args) -> int:
-    from arena.players.upstream import UPSTREAM_MODEL, UPSTREAM_NETWORK, UpstreamHivemindProcess
+def seat_time_options(team: str, lead: int, team_ms: int, opp_ms: int, base: int = 60_000) -> dict:
+    """Wave 2 seat options that encode ``lead`` (``team``'s, upstream's TimeLeadMs) and the two teams' move times:
+    T1's own lead t1 = ((Aw - Bw) + (Bb - Ab)) / 2, so Aw = Bb = base + t1, Ab = Bw = base; paces per team."""
+    from arena.interfaces import SEATS, TEAM_OF
+    from arena.players.upstream import seat_values
 
+    t1 = lead if team == "T1" else -lead
+    clocks = {"A_white": base + t1, "A_black": base, "B_white": base, "B_black": base + t1}
+    if min(clocks.values()) < 0:
+        clocks = {s: v - min(clocks.values()) for s, v in clocks.items()}
+    pace = {s: team_ms if TEAM_OF[s] == team else opp_ms for s in SEATS}
+    return {"SeatClocksMs": seat_values(clocks), "SeatPaceMs": seat_values(pace), "SeatElapsedMs": "0 0 0 0"}
+
+
+def cmd_parity(args) -> int:
+    from arena.players.upstream import (
+        UPSTREAM_MODEL,
+        UPSTREAM_NETWORK,
+        WAVE2_BINARY,
+        WAVE2_ENGINE_DIR,
+        WAVE2_MODEL,
+        UpstreamHivemindProcess,
+        wave2_flag_options,
+    )
+
+    wave2 = args.engine == "wave2"
+    model = WAVE2_MODEL if wave2 else UPSTREAM_MODEL
     jobs = random_positions(args.positions, args.seed)
-    ref = reference_policies(jobs, UPSTREAM_MODEL)
-    proc = UpstreamHivemindProcess(coreml=None if args.coreml == "default" else args.coreml)
+    ref = reference_policies(jobs, model)
+    coreml = None if args.coreml == "default" else args.coreml
+    if wave2:
+        proc = UpstreamHivemindProcess(WAVE2_BINARY, model, options=wave2_flag_options(), coreml=coreml,
+                                       cwd=WAVE2_ENGINE_DIR, timeout_s=1800)
+    else:
+        proc = UpstreamHivemindProcess(coreml=coreml, timeout_s=1800)
     worst, fails, boards = 0.0, 0, 0
     top1_same = 0
     try:
         for i, (job, r) in enumerate(zip(jobs, ref)):
+            extra = seat_time_options(job["team"], job["lead"], job["team_ms"], job["opp_ms"]) if wave2 else None
             pol = proc.raw_policy(job["fen_a"], job["fen_b"], team=job["team"], lead=job["lead"],
-                                  team_move_ms=job["team_ms"], opp_move_ms=job["opp_ms"])
+                                  team_move_ms=job["team_ms"], opp_move_ms=job["opp_ms"], options=extra)
             for k, eng, fen in (("A", pol.board_a, job["fen_a"]), ("B", pol.board_b, job["fen_b"])):
                 rk = r[k]
                 ek = _engine_to_ref(fen, eng)
@@ -208,10 +242,12 @@ def cmd_parity(args) -> int:
                       f" ({max(ek, key=ek.get)})")
     finally:
         proc.close()
-    print(f"network: {UPSTREAM_NETWORK}; provider: {args.coreml}")
+    print(f"engine: {args.engine} ({proc.binary}); network: {UPSTREAM_NETWORK} ({model}); provider: {args.coreml}")
     print(f"{len(jobs)} positions, {boards} on-turn boards, top-1 agree {top1_same}/{boards}, "
           f"max |dp| {worst:.2e}, failures {fails} (tol {args.tol:g})")
-    return 0 if fails == 0 and boards > 0 else 1
+    ok = fails == 0 and boards > 0
+    print(f"{args.engine} parity: {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
 
 
 # ------------------------------------------------------------------------------------------------ smoke
@@ -349,6 +385,8 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--coreml", default="off", help="HIVEMIND_COREML for the engine: off (CPU), default, gpu, all")
     p.add_argument("--tol", type=float, default=1e-4)
+    p.add_argument("--engine", choices=("upstream", "wave2"), default="upstream",
+                   help="stock upstream v3 (default) or the wave 2 engine (flags on, seat clocks and paces)")
     s = sub.add_parser("smoke")
     s.add_argument("--games", type=int, default=6)
     s.add_argument("--seed", type=int, default=0)
