@@ -5,6 +5,15 @@
 #   sh tools/build_upstream.sh            # clone/checkout TAG, build engine, fetch + convert the network
 #   TAG=v3.0.3 JOBS=2 sh tools/build_upstream.sh
 #   BACKEND=tensorrt sh tools/build_upstream.sh   # on PACE (after source cluster/env.sh: TensorRT_DIR, CUDA root)
+#   WAVE2=1 sh tools/build_upstream.sh            # the wave 2 engine (spec v4 durative tree on upstream v3.0.3):
+#                                                 # branch talisman/wave2 of github.com/jaycewalzer1/hivemind, full
+#                                                 # clone, into third_party/wave2-hivemind (arena kind "wave2")
+#   REPO=<git url> REF=<tag or branch> DEST=<dir> sh tools/build_upstream.sh   # any other ref
+#   TESTS=1 ...                                   # also build hivemind_tests and run ctest
+#
+# A tag is cloned --depth 1 (stock upstream). A branch is cloned in full (FULL=1 forces that for a tag too); an
+# existing checkout that is on that branch is fast-forwarded from REPO when it can be and otherwise built as it
+# is (local commits are never discarded; this is how the Mac builds its working copy of talisman/wave2).
 #
 # Result:
 #   third_party/upstream-hivemind/engine/build-ninja/hivemind          (ONNX Runtime CPU backend, -O3 release preset)
@@ -14,8 +23,15 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DEST="$ROOT/third_party/upstream-hivemind"
-TAG=${TAG:-v3.0.3}                 # latest v3.0.x tag on 2026-11-17
+if [ "${WAVE2:-0}" = 1 ]; then
+  REPO=${REPO:-https://github.com/jaycewalzer1/hivemind}
+  REF=${REF:-talisman/wave2}
+  DEST=${DEST:-$ROOT/third_party/wave2-hivemind}
+fi
+REPO=${REPO:-https://github.com/aminwoo/hivemind}
+REF=${REF:-${TAG:-v3.0.3}}         # TAG kept for old callers; v3.0.3 = latest v3.0.x tag on 2026-11-17
+DEST=${DEST:-$ROOT/third_party/upstream-hivemind}
+TESTS=${TESTS:-0}
 JOBS=${JOBS:-2}                    # several agents/builds share this Mac
 ORT_ROOT=${ONNXRuntime_ROOT:-/opt/homebrew/opt/onnxruntime}
 BACKEND=${BACKEND:-onnxruntime}    # onnxruntime (Mac, CPU) or tensorrt (PACE GPU nodes)
@@ -25,13 +41,28 @@ HF_REPO=aminwoo/bughouse-twin-s-clock
 HF_REV=${HF_REV:-edaa246cdb86c43bb3f18f0836501912c080e7f1}
 NET_SHA256=${NET_SHA256:-f4ac25e32a993776f26b42d79cc5c1e48b77a16a13d1e2a2db30528f43c9af73}  # = twin-s-clock-it13.onnx
 
+IS_TAG=0
+if git ls-remote --exit-code --tags "$REPO" "refs/tags/$REF" >/dev/null 2>&1; then IS_TAG=1; fi
+FULL=${FULL:-$((1 - IS_TAG))}
 if [ ! -d "$DEST/.git" ]; then
-  git clone --depth 1 --branch "$TAG" https://github.com/aminwoo/hivemind "$DEST"
+  if [ "$FULL" = 1 ]; then
+    git clone --branch "$REF" "$REPO" "$DEST"
+  else
+    git clone --depth 1 --branch "$REF" "$REPO" "$DEST"
+  fi
+elif [ "$IS_TAG" = 1 ]; then
+  git -C "$DEST" fetch --depth 1 "$REPO" "refs/tags/$REF:refs/tags/$REF"
+  git -C "$DEST" -c advice.detachedHead=false checkout "$REF"
+elif [ "$(git -C "$DEST" symbolic-ref -q --short HEAD || true)" = "$REF" ]; then
+  git -C "$DEST" pull --ff-only "$REPO" "$REF" || echo "warning: $DEST not fast-forwarded from $REPO $REF; building it as it is"
+elif [ -z "$(git -C "$DEST" status --porcelain --untracked-files=no)" ]; then
+  git -C "$DEST" fetch "$REPO" "$REF"
+  git -C "$DEST" checkout -B "$REF" FETCH_HEAD
 else
-  git -C "$DEST" fetch --depth 1 origin "refs/tags/$TAG:refs/tags/$TAG"
-  git -C "$DEST" -c advice.detachedHead=false checkout "$TAG"
+  echo "$DEST has uncommitted changes and is not on $REF: commit or move them first" >&2
+  exit 1
 fi
-echo "upstream: $(git -C "$DEST" describe --tags) $(git -C "$DEST" rev-parse --short HEAD)"
+echo "engine: $REPO $REF -> $(git -C "$DEST" describe --tags --always) $(git -C "$DEST" rev-parse --short HEAD)"
 
 cd "$DEST/engine"
 if [ "$BACKEND" = tensorrt ]; then
@@ -42,6 +73,11 @@ else
     -DHIVEMIND_USE_CCACHE=OFF
 fi
 cmake --build build-ninja --target hivemind -j "$JOBS"
+if [ "$TESTS" = 1 ]; then
+  cmake --build build-ninja --target hivemind_tests -j "$JOBS"
+  # Stopwatch tests (a search must return within a wall deadline) miss on loaded or slow nodes: three tries each.
+  ctest --test-dir build-ninja --output-on-failure --repeat until-pass:3
+fi
 
 mkdir -p models
 NET=models/twin-s-clock.onnx
