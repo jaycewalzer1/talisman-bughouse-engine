@@ -9,13 +9,14 @@
 #   bash cluster/launch_checks.sh beat       # can one Hivemind that manages its clock beat stock Hivemind? (20 jobs)
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
 #   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
+#   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (10 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 # sbatch has no SBATCH_DEPENDENCY input variable, so pass it on the command line: SBATCH_DEPENDENCY=afterok:<job> holds every job below.
 sbatch() { command sbatch ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} "$@"; }
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness, wave2 or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -143,8 +144,11 @@ if [ "$WHAT" = harness ]; then  # not part of "all": 8 jobs
   # charge="searched" in arena/players/hivemind.py. SPRT=0,20 stops a row once it is decided.
   CHG='"serial": true, "charge": "searched"'
   harness() {  # name, contender options, opponent options, clock ms, pairs, extra env
-    env NAME="harness/$1" SETUP=centralized LEND=0 NODES=100 OPPONENT=stock-centralized OPPONENT_NODES=100 \
-      CONTENDER_KW="$2" OPPONENT_KW="$3" BASE_MS="$4" PAIRS="$5" MEASURE=1 ${6:-} sbatch -J "h_$1" cluster/eval.sbatch
+    # Exports in a subshell, not "env ... sbatch", which would skip the sbatch function (SBATCH_DEPENDENCY).
+    (export NAME="harness/$1" SETUP=centralized LEND=0 NODES=100 OPPONENT=stock-centralized OPPONENT_NODES=100 \
+       CONTENDER_KW="$2" OPPONENT_KW="$3" BASE_MS="$4" PAIRS="$5" MEASURE=1
+     [ -z "${6:-}" ] || export ${6}
+     sbatch -J "h_$1" cluster/eval.sbatch)
   }
   #        name               contender options                                 opponent options                    clock   pairs
   # identical arms, ms_per_node measured once for the shared binary+network: must read 0.50
@@ -164,5 +168,36 @@ if [ "$WHAT" = harness ]; then  # not part of "all": 8 jobs
   # here because the measurement speaks our fork's UCI dialect). Needs the upstream build and setups.py hook.
   harness  m0_upstream_120    "{$CHG, \"clock_k\": 110}"                          "{}"                                120000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
   harness  m0_upstream_180    "{$CHG, \"clock_k\": 110}"                          "{}"                                180000  800 "POOL=arena/pools/upstream_v3.json OPPONENT=upstream-v3 OPPONENT_NODES="
+fi
+if [ "$WHAT" = wave2 ]; then  # not part of "all": 10 jobs. Read docs/wave2_tests.md before the numbers.
+  # Every row: the pool's wave2 contender (arena/pools/wave2.json: clock_k 110, serial, charge "searched") against
+  # one opponent at equal clock, each arm charged its searched nodes x its own ms_per_node measured on the job's GPU
+  # (MEASURE=1, 800 nodes, per binary + flags), bughouse openings, arena rules v3. Needs cluster/build.sh's wave2
+  # build ("wave2 check: PASS"); SBATCH_DEPENDENCY=afterok:<build job> holds the rows behind it.
+  W2=(POOL=arena/pools/wave2.json SETUP=pool OPENINGS=bughouse RULES=v3 MEASURE=1 MEASURE_NODES=800
+      "WARM_KINDS=upstream wave2")
+  w2() {  # name, opponent, contender options (wave 2 flag overrides), clock ms, pairs, extra env
+    # A subshell with exports, not "env ... sbatch": env would run the sbatch binary and skip the function above
+    # that adds SBATCH_DEPENDENCY.
+    (export NAME="wave2/$1" OPPONENT="$2" CONTENDER_KW="$3" BASE_MS="$4" PAIRS="$5" "${W2[@]}"
+     [ -z "${6:-}" ] || export ${6}
+     sbatch -J "w2_$1" cluster/eval.sbatch)
+  }
+  #   name             opponent        contender options                                clock   pairs  extra
+  # the headline: wave 2 with every flag on against stock upstream it13 (D1 measured it04 at 0.165 / 0.139 here)
+  w2  vs_it13_120      upstream-it13   '{}'                                             120000  800    SPRT=0,20
+  w2  vs_it13_180      upstream-it13   '{}'                                             180000  800    SPRT=0,20
+  # ablations at 120 s, one switch each against the headline row
+  w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": false}'    120000  800    SPRT=0,20
+  w2  sitgate          upstream-it13   '{"sit_gate": true}'                             120000  800    SPRT=0,20
+  w2  instant          upstream-it13   '{"instant_transfer": true}'                     120000  800    SPRT=0,20
+  w2  noracewin        upstream-it13   '{"mate_race_by_landing": false}'                120000  800    SPRT=0,20
+  w2  noflag           upstream-it13   '{"flag_loss": false}'                           120000  800    SPRT=0,20
+  # control: wave 2 against itself must read 0.50 (no SPRT: the full 1600 games are the noise floor)
+  w2  same_120         wave2-self      '{}'                                             120000  800
+  # sanity: wave 2 against stock it04 (our fork) must win clearly
+  w2  vs_it04_120      it04            '{}'                                             120000  200    SPRT=0,20
+  # stock it13 at its own 800 fixed nodes (D1's opponent setting) instead of clock_k 110
+  w2  vs_it13_800n_120 upstream-it13-800n '{}'                                          120000  800    SPRT=0,20
 fi
 squeue -u "$USER"
