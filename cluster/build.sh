@@ -68,10 +68,13 @@ fi
 # durative tree) into third_party/wave2-hivemind, then the wave 2 check: the engine's own tests and raw-policy parity
 # against Python ONNX Runtime on twin-s-clock with the wave 2 flags and seat clocks. TensorRT runs the network in
 # FP16, so parity is read at WAVE2_TOL (default 2e-2) instead of the Mac's 1e-4. WAVE2=0 skips it. The branch must be
-# on GitHub (git push fork talisman/wave2), or set WAVE2_REPO to a reachable copy.
+# on GitHub (git push fork talisman/wave2), or set WAVE2_REPO to a reachable copy. The build is pinned to the commit in
+# cluster/wave2_engine.ref (WAVE2_PIN overrides it; WAVE2_PIN= with nothing builds the branch tip), so every result
+# names the engine commit it ran on (eval.sbatch and wave2_iterate.sbatch print it).
 WAVE2_CHECK=skipped
 if [ "${WAVE2:-1}" = 1 ]; then
   WAVE2=1 REPO="${WAVE2_REPO:-https://github.com/jaycewalzer1/hivemind}" BACKEND=tensorrt \
+    PIN="${WAVE2_PIN-$(cat cluster/wave2_engine.ref)}" \
     JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-2}" sh tools/build_upstream.sh
   .venv/bin/python cluster/warm_engine.py --kind wave2
   WAVE2_CHECK=PASS

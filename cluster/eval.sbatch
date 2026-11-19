@@ -67,6 +67,9 @@ fi
 [ -n "${RULES:-}" ] && ARGS+=(--rules "$RULES")
 
 echo "commit $(git rev-parse HEAD)  eval $OUT  $WHO  nodes ${NODES:-200}"
+if [ -d third_party/wave2-hivemind/.git ]; then
+  echo "wave2 engine $(git -C third_party/wave2-hivemind rev-parse HEAD)  pin $(cat cluster/wave2_engine.ref 2>/dev/null || echo none)"
+fi
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
 echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
 echo "measure ms/node ${MEASURE:-0}  sprt ${SPRT:-off}  jitter ${JITTER:-off}  workers ${WORKERS:-3}"

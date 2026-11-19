@@ -9,11 +9,15 @@
 #                                                 # branch talisman/wave2 of github.com/jaycewalzer1/hivemind, full
 #                                                 # clone, into third_party/wave2-hivemind (arena kind "wave2")
 #   REPO=<git url> REF=<tag or branch> DEST=<dir> sh tools/build_upstream.sh   # any other ref
+#   PIN=<commit> ...                              # build exactly this commit of REF (detached); fails if REPO
+#                                                 # does not have it (cluster/build.sh pins wave 2 to
+#                                                 # cluster/wave2_engine.ref)
 #   TESTS=1 ...                                   # also build hivemind_tests and run ctest
 #
 # A tag is cloned --depth 1 (stock upstream). A branch is cloned in full (FULL=1 forces that for a tag too); an
-# existing checkout that is on that branch is fast-forwarded from REPO when it can be and otherwise built as it
-# is (local commits are never discarded; this is how the Mac builds its working copy of talisman/wave2).
+# existing checkout that is on that branch is fast-forwarded from REPO (local commits are never discarded; a checkout
+# ahead of REPO stays as it is: this is how the Mac builds its working copy of talisman/wave2). A checkout that has
+# diverged from REPO is an error (ALLOW_STALE=1 builds it as it is, with a warning).
 #
 # Result:
 #   third_party/upstream-hivemind/engine/build-ninja/hivemind          (ONNX Runtime CPU backend, -O3 release preset)
@@ -54,7 +58,14 @@ elif [ "$IS_TAG" = 1 ]; then
   git -C "$DEST" fetch --depth 1 "$REPO" "refs/tags/$REF:refs/tags/$REF"
   git -C "$DEST" -c advice.detachedHead=false checkout "$REF"
 elif [ "$(git -C "$DEST" symbolic-ref -q --short HEAD || true)" = "$REF" ]; then
-  git -C "$DEST" pull --ff-only "$REPO" "$REF" || echo "warning: $DEST not fast-forwarded from $REPO $REF; building it as it is"
+  if ! git -C "$DEST" pull --ff-only "$REPO" "$REF"; then
+    if [ "${ALLOW_STALE:-0}" = 1 ]; then
+      echo "warning: $DEST not fast-forwarded from $REPO $REF; building it as it is (ALLOW_STALE=1)"
+    else
+      echo "$DEST could not be fast-forwarded from $REPO $REF (diverged or unreachable); ALLOW_STALE=1 builds it as it is" >&2
+      exit 1
+    fi
+  fi
 elif [ -z "$(git -C "$DEST" status --porcelain --untracked-files=no)" ]; then
   git -C "$DEST" fetch "$REPO" "$REF"
   git -C "$DEST" checkout -B "$REF" FETCH_HEAD
@@ -62,7 +73,15 @@ else
   echo "$DEST has uncommitted changes and is not on $REF: commit or move them first" >&2
   exit 1
 fi
-echo "engine: $REPO $REF -> $(git -C "$DEST" describe --tags --always) $(git -C "$DEST" rev-parse --short HEAD)"
+if [ -n "${PIN:-}" ]; then
+  git -C "$DEST" cat-file -e "$PIN^{commit}" 2>/dev/null || git -C "$DEST" fetch "$REPO" "$REF" || true
+  if ! git -C "$DEST" cat-file -e "$PIN^{commit}" 2>/dev/null; then
+    echo "pinned commit $PIN is not in $REPO $REF: push it (git -C $DEST push fork $REF) or change the pin" >&2
+    exit 1
+  fi
+  git -C "$DEST" -c advice.detachedHead=false checkout --detach "$PIN"
+fi
+echo "engine: $REPO $REF -> $(git -C "$DEST" describe --tags --always) $(git -C "$DEST" rev-parse HEAD)${PIN:+ (pinned)}"
 
 cd "$DEST/engine"
 if [ "$BACKEND" = tensorrt ]; then
