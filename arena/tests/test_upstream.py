@@ -255,6 +255,39 @@ def test_seat_sitting_marks_opponent_seats_on_turn_well_past_their_pace():
     assert seat_sitting(obs, "T2", paces, 2_000) == {"A_white": 1, "A_black": 0, "B_white": 0, "B_black": 0}
 
 
+def test_seat_sitting_uses_the_opponents_own_budget_not_ours():
+    # Review finding: we have 40 s, the opponents 70 s, clock_k 110: our budget is 364 ms, A_black's own about
+    # (70 000 + 600) / 110 = 642 ms. 600 ms in, it is still thinking, not sitting.
+    obs = Observation(now_ms=10_600, seat="B_black", fens={"A": START, "B": START},
+                      clocks_ms=clocks(40_000, 70_000, 70_000, 40_000), to_move={"A": "A_black", "B": "B_black"},
+                      legal_moves=[], last_move_ms={"A": 10_000, "B": 10_000})
+    paces = {s: 2_000 for s in ("A_white", "A_black", "B_white", "B_black")}
+    assert seat_sitting(obs, "T1", paces, 364)["A_black"] == 1  # without clock_k: our budget, as before
+    assert seat_sitting(obs, "T1", paces, 364, clock_k=110)["A_black"] == 0
+    late = Observation(**{**obs.__dict__, "now_ms": 11_000})
+    assert seat_sitting(late, "T1", paces, 364, clock_k=110)["A_black"] == 1  # 1000 ms > 1.5 x 645
+    # The other team on turn on both boards: a serial brain's second seat waits for the first: twice the time.
+    both = Observation(**{**obs.__dict__, "to_move": {"A": "A_black", "B": "B_white"}, "now_ms": 11_200})
+    assert seat_sitting(both, "T1", paces, 364, clock_k=110)["A_black"] == 0
+
+
+def test_wave2_root_move_time_adds_the_rules_v3_floor_and_lag():
+    proc = FakeProcess(move_a="e2e4", move_b=None)
+    ctl = Wave2TeamController("T1", proc, nodes=40, ms_per_node=1.0, root_min_ms=100, root_lag_ms=75)
+    ctl.player("A_white").decide(_obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"]))
+    assert proc.calls[0]["root_move_ms"] == 100 + 75  # a 40 ms budget still costs the 100 ms floor + mean lag
+    proc2 = FakeProcess(move_a="e2e4", move_b=None)
+    plain = Wave2TeamController("T1", proc2, nodes=40, ms_per_node=1.0)
+    plain.player("A_white").decide(_obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"]))
+    assert proc2.calls[0]["root_move_ms"] == 40
+    with pytest.raises(ValueError):
+        Wave2TeamController("T1", proc2, root_lag_ms=-1)
+    players = wave2_team("T1", nodes=8, root_min_ms=100, root_lag_ms=75)
+    assert players["A_white"].controller.root_min_ms == 100 and players["A_white"].controller.root_lag_ms == 75
+    for p in players.values():
+        p.close()
+
+
 def test_wave2_pace_falls_back_to_budget_and_t2_lead():
     proc = FakeProcess(move_a=None, move_b=None)
     ctl = Wave2TeamController("T2", proc, nodes=50, ms_per_node=2.0, pass_cap_k=3)

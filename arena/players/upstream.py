@@ -509,25 +509,36 @@ def seat_elapsed_ms(obs: Observation) -> dict:
 # sitting. The arena, like a human, sees only that seat's clock running, not whether it thinks or waits; without
 # this the tree prices that seat as landing at max(1, pace - elapsed) ms, so waiting it out looks free and the engine
 # sits into sit-offs it loses on the lower clock (spec v4 sit-off rule: the lower clock must move). The expected time
-# is min(seat pace, this search's budget): a pace EMA counts that seat's earlier sits too and runs high, while both
-# arms think about clock / clock_k. A wave 2 pass also re-checks after SIT_INFER_FACTOR x budget (default_sit_ms):
+# is min(seat pace, that seat's own budget): a pace EMA counts that seat's earlier sits too and runs high, while both
+# arms think about clock / clock_k, so the budget is the seat's own clock at its decision start (now + elapsed) /
+# clock_k (this search's budget only without clock_k). When the other team is on turn on both boards it is doubled:
+# a serial brain searches its second seat after the first (queued + own). Our own budget is not the opponent's: with
+# it, an opponent with more clock than us read as sitting exactly when we were behind (review finding).
+# A wave 2 pass also re-checks after SIT_INFER_FACTOR x budget (default_sit_ms):
 # a sitting opponent lands nothing, so no event would wake us before RULES v3 adjudicates the sit-off (5 s), and
 # the seat's clock runs whether it sits or searches.
 SIT_INFER_FACTOR = 1.5
 
 
 def seat_sitting(obs: Observation, team: str, paces: dict, budget_ms: int,
-                 factor: float = SIT_INFER_FACTOR) -> dict:
+                 factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> dict:
     """{seat: 0/1} for ``SeatSitting``: 1 for a seat of the other team on turn whose thinking so far
-    (``seat_elapsed_ms``) exceeds ``factor x min(its pace, budget_ms)``; 0 for every other seat (the engine ignores
-    our own)."""
+    (``seat_elapsed_ms``) exceeds ``factor x min(its pace, its budget)``, its budget being (its clock + elapsed) /
+    ``clock_k`` (``budget_ms`` without ``clock_k``), doubled while the other team is on turn on both boards; 0 for
+    every other seat (the engine ignores our own)."""
     elapsed = seat_elapsed_ms(obs)
     out = {s: 0 for s in SEATS}
-    for seat in obs.to_move.values():
-        if seat in out and TEAM_OF[seat] != team:
-            expected = max(1, min(int(paces[seat]), int(budget_ms)))
-            if elapsed[seat] > factor * expected:
-                out[seat] = 1
+    on_turn = [s for s in obs.to_move.values() if s in out and TEAM_OF[s] != team]
+    for seat in on_turn:
+        if clock_k:
+            own = (max(0, int(obs.clocks_ms[seat])) + elapsed[seat]) / float(clock_k)
+        else:
+            own = float(budget_ms)
+        if len(on_turn) == 2:
+            own *= 2
+        expected = max(1.0, min(float(paces[seat]), own))
+        if elapsed[seat] > factor * expected:
+            out[seat] = 1
     return out
 
 
@@ -602,15 +613,26 @@ class Wave2TeamController(UpstreamTeamController):
 
     A pass waits ``min(PassCapK, SIT_INFER_FACTOR) x`` this search's budget unless an event (a landing on either
     board) wakes it first: the tree's "a pass lasts until the next event on the other board, capped at k x
-    RootMoveTimeMs", re-checked sooner because a sitting opponent lands nothing; ``sit_ms`` overrides it."""
+    RootMoveTimeMs", re-checked sooner because a sitting opponent lands nothing; ``sit_ms`` overrides it.
+
+    ``RootMoveTimeMs`` (what each of our actions costs in the tree) is ``max(budget, root_min_ms) + root_lag_ms``:
+    under arena rules v3 a landing costs at least ``min_move_ms`` (100) plus a lag of 0..150 ms (mean 75), so the
+    wave 2 pool sets 100 and 75; the opponents' paces, read off the clocks, already include both. Both 0 (the
+    default) send the bare budget. ``SeatElapsedMs`` is ``now - last landing`` on the board: the arena cannot see
+    when a sitting opponent re-decided, while self-play sends the time since the seat's current decision began,
+    so for a sitting opponent the tree here lands it sooner (``max(1, pace - elapsed)``) than self-play would."""
 
     kind = "wave2"
     label = "Wave2"
 
     def __init__(self, team: str, process: UpstreamHivemindProcess, nodes: int = 400,
-                 ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, **kw) -> None:
+                 ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, root_min_ms: int = 0,
+                 root_lag_ms: int = 0, **kw) -> None:
         super().__init__(team, process, nodes, ms_per_node, **kw)
         self.pass_cap_k = int(pass_cap_k)
+        if root_min_ms < 0 or root_lag_ms < 0:
+            raise ValueError(f"root_min_ms and root_lag_ms must be >= 0, got {root_min_ms}, {root_lag_ms}")
+        self.root_min_ms, self.root_lag_ms = int(root_min_ms), int(root_lag_ms)
         self.landings = PocketLandingTracker()
 
     def time_options(self, obs: Observation, budget_ms: int) -> dict:
@@ -621,14 +643,19 @@ class Wave2TeamController(UpstreamTeamController):
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
             "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
-            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces, budget_ms)),
+            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces, budget_ms, clock_k=self.clock_k)),
             "SeatArrivalsMs": self.landings.value(obs.now_ms),
         }
+        opts["root_move_ms"] = max(int(budget_ms), self.root_min_ms) + self.root_lag_ms
         return opts
 
     def default_sit_ms(self, opts: dict) -> int:
         budget = int(opts["root_move_ms"])
         return max(DEFAULT_MOVE_MS, min(self.pass_cap_k * budget, int(SIT_INFER_FACTOR * budget) + 1))
+
+
+# Wave 2 controller options beyond CONTROLLER_KW (Wave2TeamController: our own action cost in the tree).
+WAVE2_CONTROLLER_KW = ("root_min_ms", "root_lag_ms")
 
 
 def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
@@ -642,6 +669,7 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
                                    reset_tree=not kw.get("reuse_tree", False), coreml=kw.get("coreml"),
                                    cwd=WAVE2_ENGINE_DIR)
     ckw = {k: kw[k] for k in CONTROLLER_KW if kw.get(k) is not None}
+    ckw.update({k: int(kw[k]) for k in WAVE2_CONTROLLER_KW if kw.get(k) is not None})
     ctl = Wave2TeamController(team, proc, nodes=nodes, ms_per_node=float(kw.get("ms_per_node") or WAVE2_MS_PER_NODE),
                               seed=seed, pass_cap_k=flags["PassCapK"], **ckw)
     return {s: ctl.player(s) for s in team_seats(team)}
