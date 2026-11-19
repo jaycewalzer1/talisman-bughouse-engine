@@ -24,7 +24,12 @@
 #   SPRT=0,20     GSPRT over normalised Elo [ELO0,ELO1(,ALPHA,BETA)] after every game pair; stops when decided
 #   JITTER=lo,hi  think-time factor per search for every centralized Hivemind team (both sides)
 #   WORKERS       parallel games (default 3)
-#   POOL          pool file (default arena/pools/phase1.json; arena/pools/upstream_v3.json has upstream-v3, fairy-sf)
+#   POOL          pool file (default arena/pools/phase1.json; arena/pools/upstream_v3.json has upstream-v3, fairy-sf;
+#                 arena/pools/wave2.json has the wave 2 contender and upstream-it13, wave2-self, it04)
+#   SETUP=pool    the contender exactly as the pool file has it (e.g. kind wave2), not stock Hivemind or the agent
+#   OPENINGS      opening set (default eval; bughouse, bughouse_canon, chess_controls, bare, train, all)
+#   RULES         arena rules profile: v3 (spec v3 D4, partners flagging together) or v2 (the default)
+#   WARM_KINDS    extra engines to warm before the row, e.g. "upstream wave2" (TensorRT engine files)
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 source cluster/env.sh
@@ -39,7 +44,9 @@ fi
 [ -d "$OUT" ] && echo "resuming $OUT: $(ls "$OUT"/game_*.jsonl 2>/dev/null | wc -l | tr -d ' ') game files already there"
 
 ARGS=()
-if [ -n "${SETUP:-}" ]; then
+if [ "${SETUP:-}" = pool ]; then
+  WHO="the pool's contender ($(.venv/bin/python -c "import json,sys; c=json.load(open(sys.argv[1]))['contender']; print(c['name'], c['kind'])" "${POOL:-arena/pools/phase1.json}"))"
+elif [ -n "${SETUP:-}" ]; then
   ARGS+=(--setup "$SETUP")
   [ "${LEND:-0}" = 1 ] && ARGS+=(--lend)
   [ -n "${LEND_SHARE:-}" ] && ARGS+=(--lend-share "$LEND_SHARE")
@@ -57,15 +64,18 @@ fi
 [ "${MEASURE:-0}" = 1 ] && ARGS+=(--measure-ms-per-node --measure-nodes "${MEASURE_NODES:-400}")
 [ -n "${SPRT:-}" ] && ARGS+=(--sprt "$SPRT")
 [ -n "${JITTER:-}" ] && ARGS+=(--jitter "$JITTER")
+[ -n "${RULES:-}" ] && ARGS+=(--rules "$RULES")
 
 echo "commit $(git rev-parse HEAD)  eval $OUT  $WHO  nodes ${NODES:-200}"
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
 echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
 echo "measure ms/node ${MEASURE:-0}  sprt ${SPRT:-off}  jitter ${JITTER:-off}  workers ${WORKERS:-3}"
+echo "pool ${POOL:-arena/pools/phase1.json}  openings ${OPENINGS:-eval}  rules ${RULES:-v2}"
 $PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', DEFAULT_MODEL)"
 $PY cluster/warm_engine.py || exit 1
 $PY cluster/engine_parity.py check || exit 1
+for kind in ${WARM_KINDS:-}; do $PY cluster/warm_engine.py --kind "$kind" || exit 1; done
 
-$PY -m arena.pool run --pool "${POOL:-arena/pools/phase1.json}" "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings eval \
+$PY -m arena.pool run --pool "${POOL:-arena/pools/phase1.json}" "${ARGS[@]}" --opponent "${OPPONENT:-stock-centralized}" --openings "${OPENINGS:-eval}" \
   --pairs "${PAIRS:-800}" --workers "${WORKERS:-3}" --seed "${SEED:-0}" --base-ms "${BASE_MS:-60000}" \
   --skip-done --out "$OUT"
