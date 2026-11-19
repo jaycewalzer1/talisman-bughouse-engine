@@ -61,7 +61,31 @@ fi
 # Upstream v3 (the target engine, arena kind "upstream"): built with TensorRT next to our fork. UPSTREAM=0 skips it.
 if [ "${UPSTREAM:-1}" = 1 ]; then
   BACKEND=tensorrt JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-2}" sh tools/build_upstream.sh
+  .venv/bin/python cluster/warm_engine.py --kind upstream
+fi
+
+# Wave 2 (arena kind "wave2", docs/wave2_tests.md): branch talisman/wave2 of the fork (upstream v3.0.3 + the spec v4
+# durative tree) into third_party/wave2-hivemind, then the wave 2 check: the engine's own tests and raw-policy parity
+# against Python ONNX Runtime on twin-s-clock with the wave 2 flags and seat clocks. TensorRT runs the network in
+# FP16, so parity is read at WAVE2_TOL (default 2e-2) instead of the Mac's 1e-4. WAVE2=0 skips it. The branch must be
+# on GitHub (git push fork talisman/wave2), or set WAVE2_REPO to a reachable copy.
+WAVE2_CHECK=skipped
+if [ "${WAVE2:-1}" = 1 ]; then
+  WAVE2=1 REPO="${WAVE2_REPO:-https://github.com/jaycewalzer1/hivemind}" BACKEND=tensorrt \
+    JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-2}" sh tools/build_upstream.sh
+  .venv/bin/python cluster/warm_engine.py --kind wave2
+  WAVE2_CHECK=PASS
+  (cd third_party/wave2-hivemind/engine
+   cmake --build build-ninja --target hivemind_tests --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
+   ctest --test-dir build-ninja --output-on-failure --repeat until-pass:3) || WAVE2_CHECK=FAIL
+  .venv/bin/python tools/upstream_check.py parity --engine wave2 --coreml default --positions 40 \
+    --tol "${WAVE2_TOL:-2e-2}" || WAVE2_CHECK=FAIL
+  .venv/bin/python tools/upstream_check.py parity --engine upstream --coreml default --positions 40 \
+    --tol "${WAVE2_TOL:-2e-2}" || WAVE2_CHECK=FAIL
+  echo "wave2 check: $WAVE2_CHECK (engine tests, wave2 parity, stock upstream parity)"
 fi
 
 .venv/bin/python -m pytest arena/tests arena/tests_phase1 -q
+echo "wave2 check: $WAVE2_CHECK"
+[ "$WAVE2_CHECK" != FAIL ] || { echo "build done but the wave2 check FAILED: see above" >&2; exit 1; }
 echo "build ok. Next: .venv/bin/python cluster/engine_parity.py check"
