@@ -243,11 +243,14 @@ def test_seat_sitting_marks_opponent_seats_on_turn_well_past_their_pace():
     obs = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START}, clocks_ms=clocks(1, 1, 1, 1),
                       to_move={"A": "A_white", "B": "B_white"}, legal_moves=[], last_move_ms={"A": 0, "B": 4_000})
     paces = {"A_white": 100, "A_black": 100, "B_white": 400, "B_black": 100}
-    # B_white (T2) is 1000 ms in at a 400 ms pace: sitting. A_white is ours (T1): 5 s in, still never marked.
-    assert seat_sitting(obs, "T1", paces) == {"A_white": 0, "A_black": 0, "B_white": 1, "B_black": 0}
-    # At exactly 2x it is still thinking; from T2's side its own seat is never marked, A_white is.
-    assert seat_sitting(obs, "T1", {**paces, "B_white": 500})["B_white"] == 0
-    assert seat_sitting(obs, "T2", paces) == {"A_white": 1, "A_black": 0, "B_white": 0, "B_black": 0}
+    # B_white (T2) is 1000 ms in at a 400 ms pace (budget 2000): past 1.5 x 400, sitting. A_white is ours (T1).
+    assert seat_sitting(obs, "T1", paces, 2_000) == {"A_white": 0, "A_black": 0, "B_white": 1, "B_black": 0}
+    # At a 700 ms pace it is still within 1.5x, unless this search's budget is shorter: a pace inflated by earlier
+    # sits does not hide a sit (game 2 of the local check: 3.5 s in at a 2 s pace, 444 ms budget).
+    assert seat_sitting(obs, "T1", {**paces, "B_white": 700}, 2_000)["B_white"] == 0
+    assert seat_sitting(obs, "T1", {**paces, "B_white": 2_034}, 444)["B_white"] == 1
+    # From T2's side its own seat is never marked; A_white (5 s at 100 ms) is.
+    assert seat_sitting(obs, "T2", paces, 2_000) == {"A_white": 1, "A_black": 0, "B_white": 0, "B_black": 0}
 
 
 def test_wave2_pace_falls_back_to_budget_and_t2_lead():
@@ -258,8 +261,11 @@ def test_wave2_pace_falls_back_to_budget_and_t2_lead():
     assert kw["lead"] == 1_000 and kw["options"]["SeatPaceMs"] == "100 100 100 100"
     assert kw["options"]["SeatElapsedMs"] == "0 0 0 0"  # the observation carries no landing times
     assert kw["options"]["SeatSitting"] == "0 0 0 0"
-    # A pass waits PassCapK x this search's budget unless an event wakes it.
-    assert dec.kind == "wait" and dec.wait_ms == dec.think_ms + 3 * 100 and dec.stall_reason == "upstream_pass"
+    # A pass waits min(PassCapK, 1.5) x this search's budget (+1 ms) unless an event wakes it: a sitting opponent
+    # lands nothing, so the pass re-checks before the arena's 5 s sit-off adjudication.
+    assert dec.kind == "wait" and dec.wait_ms == dec.think_ms + 151 and dec.stall_reason == "upstream_pass"
+    assert ctl.default_sit_ms({"root_move_ms": 1_000}) == 1_501
+    assert Wave2TeamController("T2", proc, pass_cap_k=1).default_sit_ms({"root_move_ms": 1_000}) == 1_000
     assert ctl.player("B_white").kind == "wave2" and ctl.player("B_white").name.startswith("Wave2-B_white")
 
 

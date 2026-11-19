@@ -505,21 +505,29 @@ def seat_elapsed_ms(obs: Observation) -> dict:
     return out
 
 
-# An opponent seat on turn that has gone this many times its observed pace without moving is taken to be sitting.
-# The arena, like a human, sees only that seat's clock running, not whether it thinks or waits; without this the
-# tree prices that seat as landing at max(1, pace - elapsed) ms, so waiting it out looks free and the engine sits
-# into sit-offs it loses on the lower clock (spec v4 sit-off rule: the lower clock must move).
-SIT_INFER_FACTOR = 2.0
+# An opponent seat on turn that has gone SIT_INFER_FACTOR x its expected thinking time without moving is taken to be
+# sitting. The arena, like a human, sees only that seat's clock running, not whether it thinks or waits; without
+# this the tree prices that seat as landing at max(1, pace - elapsed) ms, so waiting it out looks free and the engine
+# sits into sit-offs it loses on the lower clock (spec v4 sit-off rule: the lower clock must move). The expected time
+# is min(seat pace, this search's budget): a pace EMA counts that seat's earlier sits too and runs high, while both
+# arms think about clock / clock_k. A wave 2 pass also re-checks after SIT_INFER_FACTOR x budget (default_sit_ms):
+# a sitting opponent lands nothing, so no event would wake us before RULES v3 adjudicates the sit-off (5 s), and
+# the seat's clock runs whether it sits or searches.
+SIT_INFER_FACTOR = 1.5
 
 
-def seat_sitting(obs: Observation, team: str, paces: dict, factor: float = SIT_INFER_FACTOR) -> dict:
+def seat_sitting(obs: Observation, team: str, paces: dict, budget_ms: int,
+                 factor: float = SIT_INFER_FACTOR) -> dict:
     """{seat: 0/1} for ``SeatSitting``: 1 for a seat of the other team on turn whose thinking so far
-    (``seat_elapsed_ms``) exceeds ``factor x`` its pace; 0 for every other seat (the engine ignores our own)."""
+    (``seat_elapsed_ms``) exceeds ``factor x min(its pace, budget_ms)``; 0 for every other seat (the engine ignores
+    our own)."""
     elapsed = seat_elapsed_ms(obs)
     out = {s: 0 for s in SEATS}
     for seat in obs.to_move.values():
-        if seat in out and TEAM_OF[seat] != team and elapsed[seat] > factor * max(1, paces[seat]):
-            out[seat] = 1
+        if seat in out and TEAM_OF[seat] != team:
+            expected = max(1, min(int(paces[seat]), int(budget_ms)))
+            if elapsed[seat] > factor * expected:
+                out[seat] = 1
     return out
 
 
@@ -531,9 +539,9 @@ class Wave2TeamController(UpstreamTeamController):
     ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies). The flags
     (``WAVE2_FLAGS``) are set once when the engine starts (``engine_options``).
 
-    A pass waits ``PassCapK x`` this search's budget unless an event (a landing on either board) wakes it first, the
-    arena's version of the tree's "a pass lasts until the next event on the other board, capped at k x
-    RootMoveTimeMs"; ``sit_ms`` overrides it."""
+    A pass waits ``min(PassCapK, SIT_INFER_FACTOR) x`` this search's budget unless an event (a landing on either
+    board) wakes it first: the tree's "a pass lasts until the next event on the other board, capped at k x
+    RootMoveTimeMs", re-checked sooner because a sitting opponent lands nothing; ``sit_ms`` overrides it."""
 
     kind = "wave2"
     label = "Wave2"
@@ -550,12 +558,13 @@ class Wave2TeamController(UpstreamTeamController):
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
             "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
-            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces)),
+            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces, budget_ms)),
         }
         return opts
 
     def default_sit_ms(self, opts: dict) -> int:
-        return max(DEFAULT_MOVE_MS, self.pass_cap_k * int(opts["root_move_ms"]))
+        budget = int(opts["root_move_ms"])
+        return max(DEFAULT_MOVE_MS, min(self.pass_cap_k * budget, int(SIT_INFER_FACTOR * budget) + 1))
 
 
 def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
