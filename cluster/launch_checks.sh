@@ -189,7 +189,9 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 10 jobs. Read docs/wave2_test
   w2  vs_it13_180      upstream-it13   '{}'                                             180000  800    SPRT=0,20
   # ablations at 120 s, one switch each, read as the difference from vs_it13_120. No SPRT: it would stop a row on
   # "beats it13 or not", which is not the question, and leave too few games to compare. 600 pairs fit one 8 h job.
-  w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": false}'    120000  600
+  # nodur keeps the gate: without the durative clock the engine always gates (v3's lockstep tree has no sit-off
+  # rule, and with both teams free to pass the search never finished; integration 2026-11-19)
+  w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": true}'     120000  600
   w2  sitgate          upstream-it13   '{"sit_gate": true}'                             120000  600
   w2  instant          upstream-it13   '{"instant_transfer": true}'                     120000  600
   w2  noracewin        upstream-it13   '{"mate_race_by_landing": false}'                120000  600
