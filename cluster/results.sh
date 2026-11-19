@@ -63,3 +63,16 @@ if [ "${#gates[@]}" -gt 0 ]; then
   echo "-- gates: new network (free mode) against stock Hivemind, both jittered, held-out openings"
   $PY tools/compare_evals.py "${gates[@]}"
 fi
+
+echo; echo "== wave 2: durative tree on upstream v3 vs stock it13 (docs/wave2_tests.md; same_120 must read 0.50 first)"
+W2=runs/wave2
+if [ -d "$W2" ]; then
+  w2=()
+  for r in same_120 vs_it13_120 vs_it13_180 vs_it13_800n_120 nodur sitgate instant noracewin noflag vs_it04_120; do
+    [ -d "$W2/$r" ] && w2+=("$W2/$r")
+  done
+  [ "${#w2[@]}" -gt 0 ] && $PY tools/compare_evals.py "${w2[@]}"
+  for r in "${w2[@]}"; do $PY tools/sprt.py "$r" 2>/dev/null | tail -1; done
+else
+  echo "not started"
+fi

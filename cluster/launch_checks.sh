@@ -187,12 +187,13 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 10 jobs. Read docs/wave2_test
   # the headline: wave 2 with every flag on against stock upstream it13 (D1 measured it04 at 0.165 / 0.139 here)
   w2  vs_it13_120      upstream-it13   '{}'                                             120000  800    SPRT=0,20
   w2  vs_it13_180      upstream-it13   '{}'                                             180000  800    SPRT=0,20
-  # ablations at 120 s, one switch each against the headline row
-  w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": false}'    120000  800    SPRT=0,20
-  w2  sitgate          upstream-it13   '{"sit_gate": true}'                             120000  800    SPRT=0,20
-  w2  instant          upstream-it13   '{"instant_transfer": true}'                     120000  800    SPRT=0,20
-  w2  noracewin        upstream-it13   '{"mate_race_by_landing": false}'                120000  800    SPRT=0,20
-  w2  noflag           upstream-it13   '{"flag_loss": false}'                           120000  800    SPRT=0,20
+  # ablations at 120 s, one switch each, read as the difference from vs_it13_120. No SPRT: it would stop a row on
+  # "beats it13 or not", which is not the question, and leave too few games to compare. 600 pairs fit one 8 h job.
+  w2  nodur            upstream-it13   '{"durative_tree": false, "sit_gate": false}'    120000  600
+  w2  sitgate          upstream-it13   '{"sit_gate": true}'                             120000  600
+  w2  instant          upstream-it13   '{"instant_transfer": true}'                     120000  600
+  w2  noracewin        upstream-it13   '{"mate_race_by_landing": false}'                120000  600
+  w2  noflag           upstream-it13   '{"flag_loss": false}'                           120000  600
   # control: wave 2 against itself must read 0.50 (no SPRT: the full 1600 games are the noise floor)
   w2  same_120         wave2-self      '{}'                                             120000  800
   # sanity: wave 2 against stock it04 (our fork) must win clearly
