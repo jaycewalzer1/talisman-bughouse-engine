@@ -421,13 +421,17 @@ def _check_resume_schedule(out: str, specs: list[dict]) -> None:
 # ---------------------------------------------------------------------- per-arm ms_per_node
 
 ENGINE_KINDS = ("hivemind", "agent")
-MEASURED_KINDS = ENGINE_KINDS + ("upstream",)  # teams charged nodes x ms_per_node
+UPSTREAM_KINDS = ("upstream", "wave2")  # upstream v3's UCI dialect: measured with its own engine
+MEASURED_KINDS = ENGINE_KINDS + UPSTREAM_KINDS  # teams charged nodes x ms_per_node
 
 
 def default_ms_per_node(kind: str) -> float:
     if kind == "upstream":
         from arena.players.upstream import UPSTREAM_MS_PER_NODE
         return UPSTREAM_MS_PER_NODE
+    if kind == "wave2":
+        from arena.players.upstream import WAVE2_MS_PER_NODE
+        return WAVE2_MS_PER_NODE
     from arena.players.hivemind import MS_PER_NODE
     return MS_PER_NODE
 
@@ -488,6 +492,10 @@ def legacy_arm_key(team: TeamSpec) -> str:
         from arena.players.upstream import UPSTREAM_BINARY, UPSTREAM_MODEL
         return (f"upstream|{os.path.abspath(kw.get('binary') or UPSTREAM_BINARY)}|"
                 f"{os.path.abspath(kw.get('model') or UPSTREAM_MODEL)}")
+    if team.kind == "wave2":
+        from arena.players.upstream import WAVE2_BINARY, WAVE2_MODEL
+        return (f"wave2|{os.path.abspath(kw.get('binary') or WAVE2_BINARY)}|"
+                f"{os.path.abspath(kw.get('model') or WAVE2_MODEL)}")
     from arena.players.hivemind import DEFAULT_MODEL, resolve_binary
 
     return f"{resolve_binary(kw.get('binary'))}|{os.path.abspath(kw.get('model') or DEFAULT_MODEL)}"
@@ -496,28 +504,43 @@ def legacy_arm_key(team: TeamSpec) -> str:
 def arm_key(team: TeamSpec) -> str:
     """One ms_per_node per key: binary|arch:<network_shape_key>, so every iteration's network of one architecture
     is charged the one measurement (falls back to binary|model when the network cannot be read). Upstream keys
-    start with "upstream|" and add the Core ML switch."""
+    start with "upstream|" (wave 2: "wave2|", plus its flags, which change the tree) and add the Core ML switch."""
     legacy = legacy_arm_key(team)
     binary, model = legacy.rsplit("|", 1)
     shape = network_shape_key(model)
     key = f"{binary}|arch:{shape}" if shape else legacy
-    if team.kind == "upstream" and team.player_kw.get("coreml") is not None:
+    if team.kind == "wave2":
+        key += "|" + ",".join(f"{k}={v}" for k, v in wave2_arm_flags(team).items())
+    if team.kind in UPSTREAM_KINDS and team.player_kw.get("coreml") is not None:
         key += f"|coreml={team.player_kw['coreml']}"
     return key
+
+
+def wave2_arm_flags(team: TeamSpec) -> dict:
+    """The wave 2 flag overrides of a team (player options named in ``WAVE2_FLAGS``, set ones only)."""
+    from arena.players.upstream import WAVE2_FLAGS
+
+    return {k: team.player_kw[k] for k in WAVE2_FLAGS if team.player_kw.get(k) is not None}
 
 
 def _wants_measure(team: TeamSpec) -> bool:
     return team.kind in MEASURED_KINDS and team.player_kw.get("ms_per_node") in (None, "measure")
 
 
-def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int = 3, coreml: str | None = None) -> dict:
-    """measure_upstream_ms_per_node as a cache record (the same fields as measure_searched_ms_per_node's)."""
-    from arena.players.upstream import measure_upstream_ms_per_node
+def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int = 3, coreml: str | None = None,
+                         wave2: dict | None = None) -> dict:
+    """measure_upstream_ms_per_node as a cache record (the same fields as measure_searched_ms_per_node's). With
+    ``wave2`` (flag overrides, {} for none) the binary is the wave 2 engine, measured with its flags set."""
+    from arena.players.upstream import measure_upstream_ms_per_node, measure_wave2_ms_per_node
 
-    ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml)
+    if wave2 is None:
+        ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml)
+    else:
+        ms = measure_wave2_ms_per_node(nodes=nodes, repeats=repeats, flags=wave2, binary=binary, model=model,
+                                       coreml=coreml)
     return {"binary": binary, "model": model, "nodes_requested": nodes, "repeats": repeats, "ms_per_node": ms,
-            "kind": "upstream", "coreml": coreml, "host": os.uname().nodename,
-            "when": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            "kind": "upstream" if wave2 is None else "wave2", "coreml": coreml, "host": os.uname().nodename,
+            "when": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"flags": wave2} if wave2 else {})}
 
 
 def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int = 400, repeats: int = 3,
@@ -543,12 +566,15 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
             key = legacy  # a row resumed from a cache written before the architecture key
         if key not in cache:
             binary, model = legacy.rsplit("|", 1)
-            if t.kind == "upstream":
+            if t.kind in UPSTREAM_KINDS:
                 binary = binary.split("|", 1)[1]
             print(f"measuring ms_per_node for {binary} with {model} ...", flush=True)
             if t.kind == "upstream":
                 cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
                                               coreml=t.player_kw.get("coreml"))
+            elif t.kind == "wave2":
+                cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
+                                              coreml=t.player_kw.get("coreml"), wave2=wave2_arm_flags(t))
             else:
                 cache[key] = measure(binary, model, nodes=nodes, repeats=repeats)
             cache[key].setdefault("model", model)
@@ -761,10 +787,11 @@ def main(argv=None) -> int:
         team = next((t for t in [pool.contender, *pool.opponents] if t.name == args.name), None)
         if team is None:
             ap.error(f"no team named {args.name!r} in {args.pool}")
-        if team.kind == "upstream":
+        if team.kind in UPSTREAM_KINDS:
             binary, model = legacy_arm_key(team).split("|")[1:3]
             m = measure_upstream_arm(binary, model, nodes=args.nodes, repeats=args.repeats,
-                                     coreml=team.player_kw.get("coreml"))
+                                     coreml=team.player_kw.get("coreml"),
+                                     wave2=wave2_arm_flags(team) if team.kind == "wave2" else None)
         else:
             m = measure_searched_ms_per_node(team.player_kw.get("binary"), team.player_kw.get("model"),
                                              nodes=args.nodes, repeats=args.repeats)

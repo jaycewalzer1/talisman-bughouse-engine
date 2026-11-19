@@ -45,6 +45,9 @@ think_gain) and ``send_elapsed`` (per-board elapsed times in ``position``, on by
 spec v3 the ``V3_CONTROLLER_KEYS`` (``charge="searched"`` also reaches split hivemind players). ``binary`` is ``"hivemind"`` (stock), ``"hivemind-clock"`` or a path; ``model``
 an ONNX path.
 
+``kind="upstream"`` is stock upstream v3 (twin-s-clock) and ``kind="wave2"`` the wave 2 engine built on it
+(arena/players/upstream.py); both are always one team brain whatever the setup says.
+
 ``kind="random"`` ignores the setup (all seats random; useful for tests). ``kind="agent"`` is the Phase 1
 scheduler (setup ``"sharing"`` only); ``path`` names its checkpoint.
 """
@@ -69,7 +72,7 @@ SETUPS = ("centralized", "silent", "sharing")
 V3_CONTROLLER_KEYS = ("charge", "min_think_ms", "pace", "pace_alpha", "pace_mixture", "pace_sigma", "lag_ms",
                       "noise", "temperature", "temperature_plies", "pcr_p", "pcr_nodes", "dedupe", "clock_bucket_ms",
                       "sit_recheck", "recheck_nodes", "think_head_norm", "start_offset_ms", "stock_no_root", "reps")
-KINDS = ("random", "heuristic", "hivemind", "agent", "upstream", "fairy")
+KINDS = ("random", "heuristic", "hivemind", "agent", "upstream", "wave2", "fairy")
 COMPUTE_MODELS = ("throughput", "nodes")
 
 
@@ -125,6 +128,11 @@ def team_players(team: str, setup: str, kind: str, *, seed: int, nodes: int, **k
         from arena.players.upstream import upstream_team
 
         return upstream_team(team, seed=seed, nodes=nodes, **kw)
+
+    if kind == "wave2":  # wave 2: the durative tree in upstream v3 (docs/wave2_tests.md); one team brain
+        from arena.players.upstream import wave2_team
+
+        return wave2_team(team, seed=seed, nodes=nodes, **kw)
 
     if kind == "fairy":  # Fairy-Stockfish over CECP (WP-G), one process per seat
         from arena.players.fairy import fairy_team

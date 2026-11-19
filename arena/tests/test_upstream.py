@@ -160,3 +160,129 @@ def test_upstream_team_players():
     for p in players.values():
         p.close()
     assert players["B_white"].controller.process.closed
+
+
+# ---------------------------------------------------------------------------------------------- wave 2
+
+from arena.players.upstream import (  # noqa: E402
+    WAVE2_ENGINE_DIR,
+    Wave2TeamController,
+    seat_elapsed_ms,
+    seat_values,
+    wave2_flag_options,
+    wave2_team,
+)
+
+
+def test_seat_values_order_is_aw_ab_bw_bb():
+    assert seat_values(clocks(1, 2, 3, 4)) == "1 2 3 4"
+    assert seat_values({"B_black": 4.6, "A_white": -5, "B_white": 3, "A_black": 2}) == "0 2 3 5"
+
+
+def test_wave2_flags_default_ablation_and_validation():
+    assert wave2_flag_options() == {"DurativeTree": True, "SitGate": False, "FlagLoss": True,
+                                    "InstantTransfer": False, "MateRaceByLanding": True, "PassCapK": 8}
+    nodur = wave2_flag_options(durative_tree=False)
+    assert nodur["DurativeTree"] is False and nodur["SitGate"] is False  # only the named flag moves
+    assert wave2_flag_options(sit_gate=True, pass_cap_k=None)["SitGate"] is True
+    assert wave2_flag_options(pass_cap_k=3)["PassCapK"] == 3
+    for bad in ({"pass_cap_k": 0}, {"pass_cap_k": 65}, {"flag_loss": "yes"}, {"durativ_tree": True}):
+        with pytest.raises(ValueError):
+            wave2_flag_options(**bad)
+
+
+def test_seat_elapsed_only_for_the_seats_on_turn():
+    obs = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START}, clocks_ms=clocks(1, 1, 1, 1),
+                      to_move={"A": "A_black", "B": "B_white"}, legal_moves=[], last_move_ms={"A": 4_200, "B": 1_000})
+    assert seat_elapsed_ms(obs) == {"A_white": 0, "A_black": 800, "B_white": 4_000, "B_black": 0}
+    no_landings = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START},
+                              clocks_ms=clocks(1, 1, 1, 1), to_move={"A": "A_white", "B": "B_white"}, legal_moves=[])
+    assert seat_elapsed_ms(no_landings) == {s: 0 for s in ("A_white", "A_black", "B_white", "B_black")}
+
+
+def _w2_obs(seat, c, fens, to_move, legal, now=0, last=None):
+    return Observation(now_ms=now, seat=seat, fens=fens, clocks_ms=c, to_move=to_move, legal_moves=legal,
+                       last_move_ms=last)
+
+
+def test_wave2_controller_sends_seat_clocks_pace_and_elapsed():
+    proc = FakeProcess(move_a=None, move_b="g8f6", nodes=100)
+    ctl = Wave2TeamController("T1", proc, nodes=100, ms_per_node=2.0)  # budget 200 ms
+    p = ctl.player("B_black")
+    ctl.tracker.alpha = 1.0  # the EMA is the last sample
+    # Readings as in test_move_time_tracker_reads_clocks: start, then after 1.e4 (2 s) and 1.d4 (500 ms).
+    ctl.time_options(_w2_obs("B_black", clocks(60_000, 60_000, 60_000, 60_000), {"A": START, "B": START},
+                             {"A": "A_white", "B": "B_white"}, []), 200)
+    ctl.time_options(_w2_obs("B_black", clocks(58_000, 60_000, 59_500, 60_000),
+                             {"A": _fen_after("e2e4"), "B": _fen_after("d2d4")},
+                             {"A": "A_black", "B": "B_black"}, []), 200)
+    # A_black replies in 1 s and A_white moves again in 400 ms (A_black on turn, 300 ms in); B_black is still on
+    # its first move, 1.9 s in.
+    fens = {"A": _fen_after("e2e4 e7e5 g1f3"), "B": _fen_after("d2d4")}
+    c = clocks(57_600, 58_700, 59_500, 58_100)
+    obs = _w2_obs("B_black", c, fens, {"A": "A_black", "B": "B_black"}, ["g8f6", "d7d5"], now=3_900,
+                  last={"A": 3_600, "B": 2_000})
+    dec = p.decide(obs)
+    assert dec.kind == "move" and dec.uci == "g8f6"
+    kw = proc.calls[0]
+    assert kw["team"] == "T1" and kw["lead"] == round(((57_600 - 59_500) + (58_100 - 58_700)) / 2)
+    opts = kw["options"]
+    assert opts["SeatClocksMs"] == "57600 58700 59500 58100"
+    # Only A_white has a clean sample (400 ms for its second move). A_black and B_black are on turn and B_white has
+    # not moved again: no samples. B_black falls back to its team's EMA (T1: A_white's 400); A_black and B_white
+    # (T2, no sample at all) to this search's budget, 200 ms.
+    assert opts["SeatPaceMs"] == "400 200 200 400"
+    assert opts["SeatElapsedMs"] == "0 300 0 1900"
+    assert kw["root_move_ms"] == 200
+
+
+def test_wave2_pace_falls_back_to_budget_and_t2_lead():
+    proc = FakeProcess(move_a=None, move_b=None)
+    ctl = Wave2TeamController("T2", proc, nodes=50, ms_per_node=2.0, pass_cap_k=3)
+    dec = ctl.player("B_white").decide(_obs("B_white", clocks(60_000, 60_000, 62_000, 60_000), ["d2d4"]))
+    kw = proc.calls[0]
+    assert kw["lead"] == 1_000 and kw["options"]["SeatPaceMs"] == "100 100 100 100"
+    assert kw["options"]["SeatElapsedMs"] == "0 0 0 0"  # the observation carries no landing times
+    # A pass waits PassCapK x this search's budget unless an event wakes it.
+    assert dec.kind == "wait" and dec.wait_ms == dec.think_ms + 3 * 100 and dec.stall_reason == "upstream_pass"
+    assert ctl.player("B_white").kind == "wave2" and ctl.player("B_white").name.startswith("Wave2-B_white")
+
+
+def test_wave2_team_sets_flags_at_start_and_runs_in_its_engine_dir():
+    players = wave2_team("T1", nodes=64, sit_gate=True, engine_options={"PassCapK": 5}, ms_per_node=0.3)
+    ctl = players["A_white"].controller
+    assert isinstance(ctl, Wave2TeamController) and ctl.ms_per_node == 0.3 and ctl.pass_cap_k == 8
+    assert ctl.process.cwd == WAVE2_ENGINE_DIR
+    assert ctl.process.extra_options == {"DurativeTree": True, "SitGate": True, "FlagLoss": True,
+                                         "InstantTransfer": False, "MateRaceByLanding": True, "PassCapK": 5}
+    assert ctl.process._proc is None  # lazy: nothing started
+    for p in players.values():
+        p.close()
+
+
+def test_wave2_kind_in_setups_and_pool_measures_it_with_its_flags(tmp_path):
+    from arena.players.setups import KINDS, team_players
+    from arena.pool import Pool, apply_ms_per_node, arm_key, for_evaluation, make_schedule, unbuildable
+
+    assert "wave2" in KINDS
+    assert team_players("T2", "centralized", "wave2", seed=0, nodes=8)["B_white"].kind == "wave2"
+    pool = Pool.load("arena/pools/wave2.json")
+    for opp in ("upstream-it13", "wave2-self", "it04"):
+        specs = make_schedule(for_evaluation(pool, opponent=opp), 2, openings="bughouse", rules="v3")
+        assert unbuildable(specs) == []
+    abl = for_evaluation(pool, opponent="wave2-self", contender_kw={"sit_gate": True})
+    assert arm_key(abl.contender).startswith("wave2|") and arm_key(abl.contender).endswith("|sit_gate=True")
+    assert arm_key(abl.contender) != arm_key(abl.opponents[0])
+    calls = []
+
+    def fake(b, m, nodes, repeats, coreml=None, wave2=None):
+        calls.append((b, wave2))
+        return {"ms_per_node": 0.1 if wave2 is None else 0.2}
+
+    new, used = apply_ms_per_node(for_evaluation(pool, opponent="upstream-it13",
+                                                 contender_kw={"ms_per_node": "measure"},
+                                                 opponent_kw={"ms_per_node": "measure"}),
+                                  str(tmp_path / "ms.json"), measure_upstream=fake)
+    assert new.contender.player_kw["ms_per_node"] == 0.2 and new.opponents[0].player_kw["ms_per_node"] == 0.1
+    assert sorted(c[1] is None for c in calls) == [False, True]
+    assert [c[1] for c in calls if c[1] is not None] == [{}]  # the wave 2 arm, no flag overrides

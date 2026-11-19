@@ -28,6 +28,12 @@ with ``ms_per_node`` this arm's own (measured for this binary+network, see ``doc
 Budget: fixed ``nodes`` per search, or ``clock_k``: remaining clock / k converted to nodes (clamped). Upstream itself
 has no two-board time manager (``wtime``/``btime`` are ignored for bughouse; budget = nodes else movetime), so a
 front end has to choose; these are the same two rules our centralized controller offers.
+
+Wave 2 (``kind="wave2"``, ``Wave2TeamController``/``wave2_team``): the spec v4 durative tree built into upstream v3
+(``third_party/wave2-hivemind``, branch talisman/wave2). Same dialect and network; it also gets the four real
+clocks, per-seat paces and the on-turn seats' elapsed times per search, and the engine flags (``WAVE2_FLAGS``:
+DurativeTree, SitGate, FlagLoss, InstantTransfer, MateRaceByLanding, PassCapK). Contract and test round:
+``docs/wave2_tests.md``.
 """
 
 from __future__ import annotations
@@ -58,6 +64,24 @@ UPSTREAM_NETWORK = "twin-s-clock it13 (HF aminwoo/bughouse-twin-s-clock@edaa246,
 # Spec v3 D2 wants the gate GPU's numbers for both arms; override per run with ms_per_node.
 UPSTREAM_MS_PER_NODE = 0.65
 DEFAULT_MOVE_MS = 100  # upstream TimeState::DEFAULT_MOVE_TIME_MS ("the fastest possible move")
+
+# Wave 2 (spec v4, durative tree): branch talisman/wave2 of the hivemind fork, based on upstream v3.0.3, built by
+# WAVE2=1 sh tools/build_upstream.sh into third_party/wave2-hivemind. Same twin-s-clock network and inputs; its own
+# engine dir (cwd) and its own measured ms_per_node (the durative tree may cost differently per node).
+WAVE2_DIR = os.environ.get("WAVE2_HIVEMIND_DIR", os.path.join(REPO_ROOT, "third_party", "wave2-hivemind"))
+WAVE2_ENGINE_DIR = os.path.join(WAVE2_DIR, "engine")
+WAVE2_BINARY = os.environ.get("WAVE2_BINARY", os.path.join(WAVE2_ENGINE_DIR, "build-ninja", "hivemind.bin"))
+_WAVE2_OWN_MODEL = os.path.join(WAVE2_ENGINE_DIR, "models", "twin-s-clock-fp32.onnx")
+# The wave 2 build fetches its own copy of it13; before that, stock upstream's file (same sha256) stands in.
+WAVE2_MODEL = os.environ.get("WAVE2_MODEL", _WAVE2_OWN_MODEL if os.path.isfile(_WAVE2_OWN_MODEL) else UPSTREAM_MODEL)
+WAVE2_MS_PER_NODE = UPSTREAM_MS_PER_NODE  # placeholder until measured (MEASURE=1 measures it per row)
+# The UCI contract of wave 2 (docs/wave2_tests.md): player option -> (engine option, wave 2 value). The engine's
+# defaults are stock v3.0.3 (DurativeTree false, SitGate true, FlagLoss false, InstantTransfer true,
+# MateRaceByLanding false, PassCapK 8); the wave 2 arm sends every flag explicitly, so an ablation row switches one
+# off with its player option (e.g. {"sit_gate": true}).
+WAVE2_FLAGS = {"durative_tree": ("DurativeTree", True), "sit_gate": ("SitGate", False),
+               "flag_loss": ("FlagLoss", True), "instant_transfer": ("InstantTransfer", False),
+               "mate_race_by_landing": ("MateRaceByLanding", True), "pass_cap_k": ("PassCapK", 8)}
 TEAM_OPTION = {"T1": "white", "T2": "black"}
 MAX_LEAD_MS = 1 << 30
 
@@ -89,12 +113,13 @@ def _moves_made(fen: str, seat: str, start_fullmove: int, start_white_to_move: b
 
 
 class MoveTimeTracker:
-    """Per-team EMA of the time one action costs, read off the clocks.
+    """Per-team and per-seat EMAs of the time one action costs, read off the clocks.
 
     A seat's clock only runs while it is on turn, so between two observations where the seat is NOT on turn its clock
     drop divided by the moves it made in between is its mean time per move, sitting included (which is what upstream's
-    move time means: what an action costs the acting team). Each such sample updates its team's EMA once per move.
-    ``default_ms`` stands in until a team has a sample (None: use the caller's fallback)."""
+    move time means: what an action costs the acting team). Each such sample updates its team's EMA and its seat's
+    EMA once per move (``seat_ms``: wave 2's ``SeatPaceMs``). ``default_ms`` stands in until a team has a sample
+    (None: use the caller's fallback)."""
 
     def __init__(self, alpha: float = 0.3, default_ms: int | None = None) -> None:
         if not 0.0 < alpha <= 1.0:
@@ -103,6 +128,8 @@ class MoveTimeTracker:
         self.default_ms = default_ms
         self.ema: dict[str, float] = {}
         self.samples: dict[str, int] = {"T1": 0, "T2": 0}
+        self.seat_ema: dict[str, float] = {}
+        self.seat_samples: dict[str, int] = {s: 0 for s in SEATS}
         self._start: dict[str, tuple[int, bool]] = {}
         self._last: dict[str, tuple[int, int]] = {}  # seat -> (moves made, clock) at its last off-turn observation
 
@@ -125,17 +152,24 @@ class MoveTimeTracker:
             n = made - prev[0]
             per_move = max(1.0, (prev[1] - clock) / n)
             team = TEAM_OF[seat]
-            ema = self.ema.get(team)
+            ema, sema = self.ema.get(team), self.seat_ema.get(seat)
             for _ in range(n):
                 ema = per_move if ema is None else (1 - self.alpha) * ema + self.alpha * per_move
-            self.ema[team] = ema
+                sema = per_move if sema is None else (1 - self.alpha) * sema + self.alpha * per_move
+            self.ema[team], self.seat_ema[seat] = ema, sema
             self.samples[team] += n
+            self.seat_samples[seat] += n
 
     def move_ms(self, team: str, fallback: int) -> int:
         v = self.ema.get(team)
         if v is None:
             v = self.default_ms if self.default_ms is not None else fallback
         return max(1, int(round(v)))
+
+    def seat_ms(self, seat: str, fallback: int) -> int:
+        """The seat's own EMA; before its first sample its team's (``move_ms``), else ``fallback``."""
+        v = self.seat_ema.get(seat)
+        return max(1, int(round(v))) if v is not None else self.move_ms(TEAM_OF[seat], fallback)
 
 
 @dataclass
@@ -175,13 +209,15 @@ class UpstreamHivemindProcess(HivemindProcess):
     """One upstream engine subprocess (``hivemind.bin --model <onnx>``, cwd = upstream engine dir).
 
     ``coreml``: value of ``HIVEMIND_COREML`` for the engine (None: the engine's default, the Neural Engine on macOS;
-    ``"off"`` forces the CPU provider, which matches Python ONNX Runtime CPU to ~1e-6)."""
+    ``"off"`` forces the CPU provider, which matches Python ONNX Runtime CPU to ~1e-6). ``cwd``: the engine dir the
+    binary runs in (default upstream's; the wave 2 engine runs in ``WAVE2_ENGINE_DIR``)."""
 
     def __init__(self, binary: str = UPSTREAM_BINARY, model: str = UPSTREAM_MODEL, *, options: dict | None = None,
                  reset_tree: bool = True, timeout_s: float = 120.0, refs: int = 1,
-                 coreml: str | None = None) -> None:
+                 coreml: str | None = None, cwd: str | None = None) -> None:
         super().__init__(binary, model, options=options, reset_tree=reset_tree, timeout_s=timeout_s, refs=refs)
         self.coreml = coreml
+        self.cwd = cwd or UPSTREAM_ENGINE_DIR
 
     def start(self) -> None:
         if self._proc is not None:
@@ -196,7 +232,7 @@ class UpstreamHivemindProcess(HivemindProcess):
             env["HIVEMIND_COREML"] = self.coreml
         self._proc = subprocess.Popen([self.binary, "--model", self.model], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
-                                      cwd=UPSTREAM_ENGINE_DIR, env=env)
+                                      cwd=self.cwd, env=env)
         threading.Thread(target=self._reader, daemon=True).start()
         self._send("uci")
         self._wait_for(lambda l: l == "uciok")
@@ -237,11 +273,13 @@ class UpstreamHivemindProcess(HivemindProcess):
         return self._parse(lines, best, wall_ms)
 
     def raw_policy(self, fen_a: str, fen_b: str, *, team: str, lead: int, team_move_ms: int, opp_move_ms: int,
-                   root_move_ms: int = 0) -> RawPolicy:
+                   root_move_ms: int = 0, options: dict | None = None) -> RawPolicy:
         """The engine's own ``policy`` command under exactly the options a search would get."""
         with self._lock:
             self.start()
             self._set_time(team, lead, team_move_ms, opp_move_ms, root_move_ms)
+            for k, v in (options or {}).items():
+                self.set_option(k, v)
             self._send(f"position fen {fen_a} | {fen_b}")
             self._sync()
             lines: list[str] = []
@@ -282,6 +320,7 @@ class UpstreamTeamController:
     """
 
     kind = "upstream"
+    label = "Upstream-v3"
 
     def __init__(self, team: str, process: UpstreamHivemindProcess, nodes: int = 400,
                  ms_per_node: float = UPSTREAM_MS_PER_NODE, *, clock_k: float | None = None, min_nodes: int = 16,
@@ -336,6 +375,10 @@ class UpstreamTeamController:
                 "opp_move_ms": self.tracker.move_ms(self.opp_team, budget_ms),
                 "root_move_ms": budget_ms}
 
+    def default_sit_ms(self, opts: dict) -> int:
+        """How long a pass waits (unless an event wakes it) when ``sit_ms`` is not set: the team's move time."""
+        return max(DEFAULT_MOVE_MS, int(opts["team_move_ms"]))
+
     def decide(self, seat: str, obs: Observation) -> Decision:
         if not obs.legal_moves:
             return Decision(kind="wait", wait_ms=200, stall_reason="no_moves")
@@ -343,7 +386,7 @@ class UpstreamTeamController:
         key = (obs.fens["A"], obs.fens["B"])
         cached = self._cache
         if cached and cached[0] == key and _legalize(cached[1].move_for(board), list(obs.legal_moves)):
-            res, ready, team_ms = cached[1], cached[2], cached[3]
+            res, ready, sit_default = cached[1], cached[2], cached[3]
             think, nodes = max(0, ready - obs.now_ms), 0
             self.tracker.observe(obs.fens, obs.clocks_ms, obs.to_move)
         else:
@@ -361,8 +404,8 @@ class UpstreamTeamController:
             queued = max(0, self._busy_until - obs.now_ms) if self.serial else 0
             think, nodes = queued + own, charged
             self._busy_until = obs.now_ms + think
-            team_ms = opts["team_move_ms"]
-            self._cache = (key, res, obs.now_ms + think, team_ms)
+            sit_default = self.default_sit_ms(opts)
+            self._cache = (key, res, obs.now_ms + think, sit_default)
             if res.no_root:
                 self.no_root_results += 1
                 _LOG.error("upstream returned bestmove (none) for %s (%s) with %d legal moves; fenA=%s fenB=%s "
@@ -371,7 +414,7 @@ class UpstreamTeamController:
         move = _legalize(res.move_for(board), list(obs.legal_moves))
         if move is None and res.move_for(board) is None and not res.no_root:
             self.passes += 1
-            sit = self.sit_ms if self.sit_ms is not None else max(DEFAULT_MOVE_MS, team_ms)
+            sit = self.sit_ms if self.sit_ms is not None else sit_default
             return Decision(kind="wait", think_ms=think, wait_ms=think + int(sit), nodes=nodes, eval=res.q,
                             stall_reason="upstream_pass")
         if move is None:
@@ -387,8 +430,9 @@ class UpstreamSeat:
     def __init__(self, seat: str, controller: UpstreamTeamController) -> None:
         self.seat = seat
         self.controller = controller
+        self.kind = controller.kind
         c = controller
-        self.name = f"Upstream-v3-{seat}-" + (f"k{c.clock_k:g}" if c.clock_k is not None else f"{c.nodes}n")
+        self.name = f"{c.label}-{seat}-" + (f"k{c.clock_k:g}" if c.clock_k is not None else f"{c.nodes}n")
         self._closed = False
 
     def decide(self, obs: Observation) -> Decision:
@@ -420,6 +464,107 @@ def upstream_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
     return {s: ctl.player(s) for s in team_seats(team)}
 
 
+# ---------------------------------------------------------------------------------------------- wave 2
+
+
+def seat_values(values: dict) -> str:
+    """``"<Aw> <Ab> <Bw> <Bb>"`` (whole ms, >= 0), the seat order of ``SeatClocksMs``/``SeatPaceMs``/``SeatElapsedMs``."""
+    return " ".join(str(max(0, int(round(values[s])))) for s in SEATS)
+
+
+def wave2_flag_options(**overrides) -> dict:
+    """The wave 2 engine flags as UCI options; ``overrides`` (player option names of ``WAVE2_FLAGS``, None = keep)
+    switch single flags for ablation rows."""
+    bad = set(overrides) - set(WAVE2_FLAGS)
+    if bad:
+        raise ValueError(f"unknown wave 2 flag(s) {sorted(bad)}; expected some of {sorted(WAVE2_FLAGS)}")
+    out = {}
+    for key, (uci, value) in WAVE2_FLAGS.items():
+        v = overrides.get(key)
+        out[uci] = value if v is None else v
+    k = out["PassCapK"]
+    if isinstance(k, bool) or not 1 <= int(k) <= 64:
+        raise ValueError(f"pass_cap_k must be in 1..64, got {k}")
+    out["PassCapK"] = int(k)
+    for uci in out:
+        if uci != "PassCapK" and not isinstance(out[uci], bool):
+            raise ValueError(f"{uci} must be true or false, got {out[uci]!r}")
+    return out
+
+
+def seat_elapsed_ms(obs: Observation) -> dict:
+    """{seat: ms} the seat on turn on each board has been thinking (``now - last landing`` there), 0 for the seats
+    not on turn and for every seat when the observation has no landing times."""
+    out = {s: 0 for s in SEATS}
+    if obs.last_move_ms is not None:
+        for board, seat in obs.to_move.items():
+            if seat in out:
+                out[seat] = max(0, int(obs.now_ms) - int(obs.last_move_ms[board]))
+    return out
+
+
+class Wave2TeamController(UpstreamTeamController):
+    """The wave 2 engine (spec v4 durative tree in upstream v3) as a team brain: everything ``UpstreamTeamController``
+    sends, plus per search ``SeatClocksMs`` (the arena's four clocks, current at ``now``: the on-turn seats are
+    already charged their thinking so far), ``SeatPaceMs`` (per-seat EMA of observed action times; a seat without a
+    sample uses its team's EMA, then this search's budget) and ``SeatElapsedMs`` (``seat_elapsed_ms``). The flags
+    (``WAVE2_FLAGS``) are set once when the engine starts (``engine_options``).
+
+    A pass waits ``PassCapK x`` this search's budget unless an event (a landing on either board) wakes it first, the
+    arena's version of the tree's "a pass lasts until the next event on the other board, capped at k x
+    RootMoveTimeMs"; ``sit_ms`` overrides it."""
+
+    kind = "wave2"
+    label = "Wave2"
+
+    def __init__(self, team: str, process: UpstreamHivemindProcess, nodes: int = 400,
+                 ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, **kw) -> None:
+        super().__init__(team, process, nodes, ms_per_node, **kw)
+        self.pass_cap_k = int(pass_cap_k)
+
+    def time_options(self, obs: Observation, budget_ms: int) -> dict:
+        opts = super().time_options(obs, budget_ms)  # observes the clocks first
+        opts["options"] = {
+            "SeatClocksMs": seat_values(obs.clocks_ms),
+            "SeatPaceMs": seat_values({s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}),
+            "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
+        }
+        return opts
+
+    def default_sit_ms(self, opts: dict) -> int:
+        return max(DEFAULT_MOVE_MS, self.pass_cap_k * int(opts["root_move_ms"]))
+
+
+def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
+    """{seat: Player} for one team played by the wave 2 engine (``kind="wave2"``, always one team brain). Options as
+    ``upstream_team`` (``binary``/``model`` default to ``WAVE2_BINARY``/``WAVE2_MODEL``) plus the flags of
+    ``WAVE2_FLAGS`` (``durative_tree``, ``sit_gate``, ``flag_loss``, ``instant_transfer``, ``mate_race_by_landing``,
+    ``pass_cap_k``); ``engine_options`` are sent after the flags, so they win."""
+    flags = wave2_flag_options(**{k: kw.get(k) for k in WAVE2_FLAGS})
+    proc = UpstreamHivemindProcess(kw.get("binary") or WAVE2_BINARY, kw.get("model") or WAVE2_MODEL,
+                                   options={**flags, **(kw.get("engine_options") or {})},
+                                   reset_tree=not kw.get("reuse_tree", False), coreml=kw.get("coreml"),
+                                   cwd=WAVE2_ENGINE_DIR)
+    ckw = {k: kw[k] for k in CONTROLLER_KW if kw.get(k) is not None}
+    ctl = Wave2TeamController(team, proc, nodes=nodes, ms_per_node=float(kw.get("ms_per_node") or WAVE2_MS_PER_NODE),
+                              seed=seed, pass_cap_k=flags["PassCapK"], **ckw)
+    return {s: ctl.player(s) for s in team_seats(team)}
+
+
+def measure_wave2_ms_per_node(nodes: int = 800, repeats: int = 3, *, flags: dict | None = None, **kw) -> float:
+    """``measure_upstream_ms_per_node`` for the wave 2 binary with the wave 2 flags set (``flags``: overrides as for
+    ``wave2_flag_options``), at level clocks of 60 s and 100 ms paces."""
+    kw.setdefault("binary", WAVE2_BINARY)
+    kw.setdefault("model", WAVE2_MODEL)
+    kw.setdefault("cwd", WAVE2_ENGINE_DIR)
+    kw["options"] = {**wave2_flag_options(**(flags or {})), "SeatClocksMs": "60000 60000 60000 60000",
+                     "SeatPaceMs": "100 100 100 100", "SeatElapsedMs": "0 0 0 0", **(kw.get("options") or {})}
+    return measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, **kw)
+
+
 __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", "MoveTimeTracker", "RawPolicy",
            "lead_ms", "parse_policy", "upstream_team", "upstream_available", "measure_upstream_ms_per_node",
-           "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK"]
+           "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
+           "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms",
+           "measure_wave2_ms_per_node", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
+           "WAVE2_ENGINE_DIR"]

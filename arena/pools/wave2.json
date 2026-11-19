@@ -1,0 +1,28 @@
+{
+  "contender": {
+    "name": "wave2",
+    "setup": "centralized",
+    "kind": "wave2",
+    "nodes": 800,
+    "player_kw": {"clock_k": 110, "max_nodes": 100000, "serial": true, "charge": "searched"},
+    "group": "target",
+    "weight": 1.0,
+    "path": null
+  },
+  "shares": {"target": 1.0, "snapshot": 0.0, "variant": 0.0},
+  "snapshot_window": 5,
+  "opponents": [
+    {"name": "upstream-it13", "setup": "centralized", "kind": "upstream", "nodes": 800,
+     "player_kw": {"clock_k": 110, "max_nodes": 100000, "serial": true, "charge": "searched"},
+     "group": "target", "weight": 1.0, "path": null},
+    {"name": "wave2-self", "setup": "centralized", "kind": "wave2", "nodes": 800,
+     "player_kw": {"clock_k": 110, "max_nodes": 100000, "serial": true, "charge": "searched"},
+     "group": "target", "weight": 1.0, "path": null},
+    {"name": "it04", "setup": "centralized", "kind": "hivemind", "nodes": 100,
+     "player_kw": {"clock_k": 110, "max_nodes": 100000, "serial": true, "charge": "searched"},
+     "group": "target", "weight": 1.0, "path": null},
+    {"name": "upstream-it13-800n", "setup": "centralized", "kind": "upstream", "nodes": 800,
+     "player_kw": {"serial": true, "charge": "searched"},
+     "group": "variant", "weight": 1.0, "path": null}
+  ]
+}
