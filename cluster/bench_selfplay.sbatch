@@ -20,7 +20,7 @@
 #           charging; v2 = the old regime with fixed BASE_MS, K_RANGE and JITTER)
 #   SP_* overrides as in cluster/selfplay.sbatch (SP_MS_PER_NODE above all: set it to the GPU-measured value or every
 #           budget is the Mac's 5.5 ms/node), passed only when set
-#   MODEL (engine/models/hivemind-clock-v2-fp32.onnx), BINARY (hivemind-clock), K_RANGE (60,300, v2 only),
+#   MODEL (engine/models/hivemind-clock-v3-fp32.onnx), BINARY (hivemind-clock), K_RANGE (60,300, v2 only),
 #   NODES_RANGE (16,1600), JITTER (0.5,2.0, v2 only), FREE_SIT_MS (500), MAX_PLIES (400; v3 scales it by base/60 s),
 #   SEED (0), SAMPLE_S (1, GPU sampling period), EXTRA_ARGS (passed to every arena.selfplay run, for flags added
 #   later; record them in the doc with the numbers)
@@ -31,7 +31,7 @@ set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 
 STAGES="${STAGES:-60000:6:60 180000:6:30 60000:12:72}"
-MODEL="${MODEL:-third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx}"
+MODEL="${MODEL:-third_party/hivemind/engine/models/hivemind-clock-v3-fp32.onnx}"
 BINARY="${BINARY:-hivemind-clock}"
 SAMPLE_S="${SAMPLE_S:-1}"
 SEED="${SEED:-0}"

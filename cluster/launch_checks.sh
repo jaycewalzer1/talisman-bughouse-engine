@@ -12,6 +12,8 @@
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
+# sbatch has no SBATCH_DEPENDENCY input variable, so pass it on the command line: SBATCH_DEPENDENCY=afterok:<job> holds every job below.
+sbatch() { command sbatch ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} "$@"; }
 cd "$(git rev-parse --show-toplevel)"
 WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness or all}"
 
@@ -154,7 +156,7 @@ if [ "$WHAT" = harness ]; then  # not part of "all": 8 jobs
   harness  c50_v100_searched  "{$CHG}"                                          "{$CHG}"                            60000   800 "NODES=50"
   # M0 parity arm: the widened network (clock build, stock rules, zero clock weights) vs stock it04 at equal clock
   # must read 0.50 +- the row's range before any training (audit D1; doubles as the parity gate)
-  W="third_party/hivemind/engine/models/hivemind-clock-v2-fp32.onnx"
+  W="third_party/hivemind/engine/models/hivemind-clock-v3-fp32.onnx"
   harness  m0_widened_120     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 120000 800
   harness  m0_widened_180     "{$CHG, \"clock_k\": 110, \"binary\": \"hivemind-clock\", \"model\": \"$PWD/$W\"}" "{$CHG, \"clock_k\": 110}" 180000 800
   # M0 third arm: stock it04 at equal clock against upstream v3 twin-s-clock under its own time manager (WP-G's
