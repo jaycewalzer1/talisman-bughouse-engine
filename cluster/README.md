@@ -55,3 +55,37 @@ RUN=main THINK_LABELS=1 sbatch cluster/iterate.sh             # + think_gain lab
 `iterate.sh` keeps a marker per finished step, so resubmitting with the same `RUN` continues. Set `STOCK_NODES` to
 stock's best fixed budget from the beat-stock checks. Per-iteration results go to `runs/custom/<RUN>/results.tsv`
 and show up in `bash cluster/results.sh`.
+
+## Wave 2 loop
+
+`cluster/wave2_iterate.sbatch` trains wave 2: twin-s-clock iteration 13 continued by upstream's own RL loop
+(`hivemind rl-loop --wave2` in `third_party/wave2-hivemind`, branch `talisman/wave2`) on four real seat clocks, the
+durative tree, flag loss and no hard sit gate. The design and the engine interface are in
+`third_party/wave2-hivemind/docs/wave2_training.md`.
+
+Before the first job: `bash cluster/build.sh` (WAVE2=1, the default) clones `talisman/wave2` from the fork and
+builds its TensorRT match engine; the job builds the one-worker self-play engine (`build-sp1`) itself, with 2
+compiles at a time. The branch must be on GitHub for the clone (`git push fork talisman/wave2`), or set `WAVE2_REPO`.
+
+```bash
+RUN=w2a ITERS=2 sbatch cluster/wave2_iterate.sbatch            # it1, it2 into runs/wave2/w2a
+RUN=w2a ITERS=2 sbatch cluster/wave2_iterate.sbatch            # resubmit: it3, it4 (or finishes a cut-off it2 first)
+RUN=w2-sitgate WAVE2_EXTRA="--sit-gate true" sbatch cluster/wave2_iterate.sbatch   # an ablation, its own lineage
+```
+
+Each RUN is its own lineage: `init` copies the SHA-256-checked it13 ONNX and training checkpoint into
+`runs/wave2/<RUN>/models` and `artifacts` (generator, fixed it13 baseline `-it0`, generator checkpoint). Steps leave
+`runs/wave2/<RUN>/.done_<step>`; inside the loop, rl-loop keeps a marker per stage (`runs/rl-itN/stages`), so a job
+cut off mid-iteration continues at the stage it stopped in. Settings (environment): `RUN`, `ITERS` (1),
+`GAMES_PER_ITER` (20000), `SEGMENT_GAMES` (2000), `VAL_GAMES` (500), `PARALLEL_GAMES` (6), `BASE_MIX` (empty = the
+preset 60/120/180/300 s at 0.25/0.25/0.35/0.15), `WAVE2_EXTRA` (ablation flags), `LR` (1e-4 heads), `TRUNK_LR` (5e-5),
+`PROMOTE_ABOVE` (0.5), `MATCH_GAMES` (400), `MATCH_MS` (100), `WINDOW` (3), `BATCH_SIZE` (1024), `NO_GATE` (0),
+`ALLOW_STOCK` (0: refuse engines without the wave 2 options).
+
+Per iteration: self-play, validation games, a value-label check per segment (flags labelled as losses, no records
+dropped, unfinished games unlabelled; the stage fails otherwise), training from the generator's checkpoint, a match
+against the generator and one against it13 at equal clock (`MATCH_MS` per move for both, both under the wave 2
+rules), and promotion only when the candidate scores above `PROMOTE_ABOVE` against the generator. Results:
+`runs/wave2/<RUN>/results.tsv` (games, positions, flag games, repeated positions, score vs the generator and vs it13,
+Elo vs it13, promoted) and `runs/wave2/<RUN>/runs/rl-loop.log`. The headline against stock v3 at 120/180 s is a
+separate arena row (`cluster/launch_checks.sh`, the wave2 group), not part of this job.
