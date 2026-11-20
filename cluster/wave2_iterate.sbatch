@@ -104,6 +104,10 @@ echo "wave 2b: AB $AB  WIDE ${WIDE_SET:-unset}  arrivals weight $ARRIVALS_WEIGHT
 # ------------------------------------------------------------------ engines
 if ! is_done engines; then
   [ -x "$MATCH_ENGINE" ] || die "match engine $MATCH_ENGINE missing: run cluster/build.sh (WAVE2=1, the default)"
+  # The A/B arms start together on two GPUs: one builds build-sp1 while the other waits here, instead of testing a
+  # half-linked binary (ab1_w1 15877463-65 died on that). The lock is released when this shell exits.
+  exec 9>"$W2/engine/.build-sp1.lock"
+  flock 9
   if [ ! -x "$SP_ENGINE" ]; then
     echo "== building the one-worker self-play engine ($JOBS jobs)"
     if [ -n "${SLURM_JOB_ID:-}" ]; then
