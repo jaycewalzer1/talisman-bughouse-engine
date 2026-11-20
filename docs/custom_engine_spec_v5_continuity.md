@@ -351,6 +351,8 @@ Stockfish::Move planned = Stockfish::MOVE_NONE;   // the planned seat's move; MO
 
 // node.h: Node. Which board a planning node plans on, -1 = none. One per node: at most one board can be on turn
 // for the acting team without being ready, because the other board is the one it acts on.
+// (As built: an int8_t in the candidate generator's padding, read through Node::planned_board(); the per-action
+// needed/supplied types are packed into bits 1-3 of the generator's capture bytes, so sizeof(Node) stays 1040.)
 int8_t plannedBoard_ = -1;
 
 // time_state.h: DurativeConfig
@@ -359,6 +361,7 @@ int32_t jointPlanFreePermille = 500;
 
 // time_state.h: TimeState::Durative
 bool jointPlans = false;
+int16_t jointPlanFreePermille = 500;   // as built: the planning nodes' prior knob travels here; not in the key
 std::array<Stockfish::Move, 4> committed{MOVE_NONE, MOVE_NONE, MOVE_NONE, MOVE_NONE};
 ```
 
@@ -644,7 +647,7 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     the hash of its own path, and the table holds both. **As built:** the shared node is made by hand (a
     grandchild of one root edge put under another), since the walk only compares the recomputed hashes; a
     time-only divergence was not constructed.
-1.16 (with fix 2, not yet built) `TeamTreeReuse.RefusesCommittedCandidate` (fix 2 on): a board-matching node with a committed move for our
+1.16 (built with fix 2 as `JointPlansSearch.TeamTreeReuseRefusesCommittedCandidate`) `TeamTreeReuse.RefusesCommittedCandidate` (fix 2 on): a board-matching node with a committed move for our
     partner is refused with reason `committed`, and so is one with a committed move for an **opponent** seat.
 1.17 `TeamTreeReuse.NoOtherStateSurvives`: with fix 1 (and, separately, fix 3 alone) on under a durative clock and no
     `ucinewgame`, `mateContinuations_` and `nextRootCandidates_` are empty at the start of each search (7).
@@ -667,15 +670,23 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
       that a pawn recaptures (a queen for a knight, so the capture looks bad on its own), and no mate for black on A
       within two plies.
     * The search root is a below-root state (test-only construction): a black-team root where Ab moves on A, so that
-      after it white acts with Aw ready at 100 ms and Bb on turn but ready at 400 ms (Bb pace 500, elapsed 100);
-      Ab's pace 50 ms, so Ab's reply on A lands at 150, between Aw's capture and Bb's landing. InstantTransfer true,
-      FlagLoss true, SitGate false. Search `run_search` from that state for white with `SearchOptions::clock` set to it.
+      after it white acts with Aw ready at 100 ms and Bb on turn but ready at 400 ms; Ab's reply on A lands at 150,
+      between Aw's capture and Bb's landing. **Correction (fix 2 build):** below a black-team root every black action
+      costs `RootMoveTimeMs`, so "Ab's pace 50 ms" is `RootMoveTimeMs` 50, and Bb needs pace 500 with elapsed 50 (not
+      100) to be ready at 400 after the 50 ms root. Aw's own next landing then also falls due at 400 (100 + 50 + 100 +
+      50 + 100), so white acts on both boards there, the B half forced. InstantTransfer true, FlagLoss true, SitGate
+      false. Search `run_search` from that state for white with `SearchOptions::clock` set to it.
     * Expected: with fix 2 at N nodes, the most visited root edge is `(Qxf6, N@f2 planned)` and its child's value is a
       win (Q > 0.9 or solved WIN); with fix 2 off at the same N, the most visited edge's A half is not `Qxf6`. N is the
       smallest of 64, 128, 256, 512 where fix 2 passes; the test records N and the old tree's choice. If the old tree
       also finds `Qxf6` at that N, make the position harder (more Ab replies, a second plausible quiet move on A)
       until it misses, and say so in `docs/wave2_engine.md`.
     * Mirror for the black team (colours swapped) gives the same result.
+    **As built (fix 2):** the old tree finds `Qxf6` too, at every N from 64 to 2048, with and without the root mate
+    provers, and proves it within 7 root visits (fix 2: 9): after the capture black is on turn on one board while
+    `N@f2#` waits on the other and survives every reply, which `has_unavoidable_waiting_board_mate` proves. A harder
+    position the old tree misses would no longer be a mate that survives every reply, so not a forced win. The test
+    records that both trees choose and prove the capture; fix 2's proven edge is `(Qxf6, decide later)`.
 2.4b `JointPlans.HeadlineFlagsCoordination` (needs it13). Same expectations, with the headline flags
     (InstantTransfer **false**, FlagLoss true, SitGate false), so the test exercises what the PACE rows play. Here the
     transfer runs the other way, because a deciding partner cannot drop a piece that lands mid-decision:
@@ -687,6 +698,9 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     The expected root edge is `(prep on A, capture on B planned)`. The same N rule and old-tree comparison apply as
     in 2.4a. If no such position can be built so that the old tree misses and fix 2 finds it, say so plainly in
     `docs/wave2_engine.md`: it would mean fix 2 has no tested benefit under the headline flags.
+    **As built: not built, no such position found.** Ab's reply comes before Aw's next decision by construction, and
+    Ab can always use it to defuse a drop mate (a pawn or rook move frees a square) or sit on A (SitGate off), so the
+    line is never forced. Fix 2 has no tested benefit under the headline flags; the `c_joint_120` row is the test.
 2.5 `JointPlans.DecideLaterKeepsOldBehaviourAvailable`: at a planning node the "decide later" pair exists for every
     immediate half, with prior share at least `JointPlanFreePermille / 1000`.
 2.6 `JointPlans.RootUnchanged`: with fix 2 on, a search from a UCI root (atRoot) has no planned root edge and the same
@@ -938,3 +952,37 @@ Found while building fix 1 on `talisman/wave2`; the sections above are corrected
    `Continuity` preset come with fixes 2 and 3 (test 0.1 covers the two). Tests 0.2, 0.3, 0.6 and 1.16 belong to
    fix 2 or need recorded `261081b` self-play outputs and are not built yet; 0.4 (`engine/tests/wave2_parity.sh`)
    and 0.5 are, 8/8 each.
+
+## Build corrections (fix 2, 2026-11-20)
+
+Found while building fix 2 on `talisman/wave2` (`docs/wave2_engine.md` there, "Fix 2"); the sections above are
+corrected in place where they were wrong.
+
+1. **Test 2.4a timing.** Below a black-team root every black action costs `RootMoveTimeMs`, so the construction
+   needs `RootMoveTimeMs` 50 and Bb elapsed 50; at 400 ms white then acts on both boards (corrected in 2.4a).
+2. **Test 2.4a cannot separate the trees.** The old tree's waiting-board mate rule already proves the capture that
+   feeds the partner's mating drop (results in 2.4a). **2.4b is not built**: no forced position exists under
+   InstantTransfer false, because Ab's reply (or a sit) always comes before Aw's next decision. So fix 2 has no
+   tested benefit in a constructed position; only the arena rows can show one.
+3. **Representation.** `plannedBoard_` lives in the candidate generator (an `int8_t` in its padding, read through
+   `Node::planned_board()`), and the needed/supplied types are packed into bits 1-3 of the per-action capture bytes.
+   `sizeof(Node)` stays 1040 (a first version with two extra vectors had 1088, with fix 2 off too).
+   `TimeState` grows from 280 to 300 bytes (the spec said 17; the free share travels in `Durative` too, unkeyed).
+   The UCI state is `durativeConfig.jointPlans`/`jointPlanFreePermille`, not separate fields in `uci.h`.
+4. **A committed sitting seat beside a pass.** It keeps v4's pass timing in full: a pass on the other board, by its
+   own team or the opponent, sends its wake-up, and so its landing, on to its cap (v4's leapfrog rule). Only a
+   landing wakes it 1 ms later. A pass beside it waits for that landing.
+5. **Fix 1's refusal order.** `committed` is checked after the clock and before the expansion key (which holds the
+   commitments and so never matches a live root), and it ranks above `shape`. Otherwise the decide-later twin of a
+   committed node, which acted on one board, would always report `shape`. `TeamTreeMatch::committed` carries the
+   commitments of a node refused only for them, for fix 3's second plan source.
+6. **Mate tag.** A planned move counts as mating if the victims are mated even when they may wait for a blocker
+   (`is_checkmate(victims, true)`), so the raise only goes to mates no partner can block.
+7. **Planned pairs need visits.** At the default share (500) a planned pair's joint prior is at most half its
+   immediate move's. A 400-node UCI search had planning nodes below the root but no planned pair expanded (test
+   2.6), so the probe's scaling run should compare shares before a PACE row is read.
+8. **Tests.** 0.3's keys are one folded key per line, recorded from `261081b`'s `time_state.h` with
+   `engine/tests/durative_key_lines.h` (the same file builds against both). The search half of 2.2 runs from a below-root
+   state with the side invariant counted (`SearchThread::checkDurativeSides`), since the suite is a Release build
+   where `assert` is off. 4.1 needs the `Continuity` preset and comes with fix 3; its fix-2 parts are the rules tests
+   (`ContinuityRules.*`, v4 test 4 with plans). 4.3 runs with the arena plumbing (step 4).
