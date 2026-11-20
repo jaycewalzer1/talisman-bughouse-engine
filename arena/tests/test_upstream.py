@@ -421,3 +421,318 @@ def test_wave2_controller_sends_seat_arrivals():
                      to_move, ["g8f6", "d7d5"], now=2_000, last={"A": 1_700, "B": 900}))
     assert proc.calls[-1]["options"]["SeatArrivalsMs"] == "Bb:B:300"
 
+
+
+# ---------------------------------------------------------------------------------------------- wave 2c (spec v5)
+
+import stat  # noqa: E402
+import sys  # noqa: E402
+
+from arena.players.upstream import (  # noqa: E402
+    WAVE2_CONTINUITY_FLAGS,
+    WAVE2_FLAGS,
+    expand_wave2_presets,
+    parse_continuity,
+)
+
+WAVE2_BASE = {"DurativeTree": True, "SitGate": False, "FlagLoss": True, "InstantTransfer": False,
+              "MateRaceByLanding": False, "PassCapK": 8}
+
+
+def test_wave2_continuity_flags():
+    # Defaults: the six wave 2 flags only, exactly as before wave 2c (rows without a fix send nothing new).
+    assert wave2_flag_options() == WAVE2_BASE
+    assert wave2_flag_options(team_tree_reuse=False, plan_carry_permille=300) == WAVE2_BASE  # engine defaults
+    # Each switch alone maps to its UCI option; the knobs are sent only off their defaults.
+    assert wave2_flag_options(team_tree_reuse=True) == {**WAVE2_BASE, "TeamTreeReuse": True}
+    assert wave2_flag_options(joint_plans=True) == {**WAVE2_BASE, "JointPlans": True}
+    assert wave2_flag_options(plan_carry=True) == {**WAVE2_BASE, "PlanCarry": True}
+    knobs = wave2_flag_options(team_tree_reuse_tolerance_ms=1000, joint_plan_free_permille=0, plan_carry_permille=1000)
+    assert knobs == {**WAVE2_BASE, "TeamTreeReuseToleranceMs": 1000, "JointPlanFreePermille": 0,
+                     "PlanCarryPermille": 1000}
+    # continuity expands to the three switches (no Continuity option is ever sent); a switch set by the row wins.
+    all3 = {**WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True}
+    assert wave2_flag_options(continuity=True) == all3
+    assert wave2_flag_options(continuity=True, joint_plans=False) == {**WAVE2_BASE, "TeamTreeReuse": True,
+                                                                      "PlanCarry": True}
+    assert wave2_flag_options(continuity=False) == WAVE2_BASE
+    assert expand_wave2_presets({"continuity": True, "sit_gate": True}) == {
+        "sit_gate": True, "team_tree_reuse": True, "joint_plans": True, "plan_carry": True}
+    assert "Continuity" not in wave2_flag_options(continuity=True)
+    # Ablation flags and continuity combine (c_nodur-style overrides keep working).
+    assert wave2_flag_options(continuity=True, durative_tree=False)["DurativeTree"] is False
+    for bad in ({"team_tree_reuse": "yes"}, {"continuity": 1}, {"continuity": "true"},
+                {"team_tree_reuse_tolerance_ms": -1}, {"team_tree_reuse_tolerance_ms": 5001},
+                {"joint_plan_free_permille": 1001}, {"plan_carry_permille": True}, {"plan_carry_permille": "x"},
+                {"team_tree_resue": True}, {"Continuity": True}):
+        with pytest.raises(ValueError):
+            wave2_flag_options(**bad)
+    assert set(WAVE2_CONTINUITY_FLAGS) <= set(WAVE2_FLAGS)
+
+
+def test_wave2_continuity_in_the_pool_and_its_measurement_key(tmp_path):
+    from arena.pool import Pool, apply_ms_per_node, arm_key, for_evaluation, make_schedule, unbuildable
+
+    pool = Pool.load("arena/pools/wave2.json")
+    self_ = next(o for o in pool.opponents if o.name == "wave2c-self")
+    assert self_.kind == "wave2" and self_.player_kw == {**pool.contender.player_kw, "continuity": True}
+    specs = make_schedule(for_evaluation(pool, opponent="wave2c-self", contender_kw={"continuity": True}), 2,
+                          openings="bughouse", rules="v3")
+    assert unbuildable(specs) == []
+    # The measurement key holds the expanded switches: c_all and c_joint measure their own node cost, c_same's two
+    # arms share one, and rows without a fix keep the keys (and the cache entries) they had before.
+    ref = for_evaluation(pool, opponent="upstream-it13")
+    c_all = for_evaluation(pool, opponent="wave2c-self", contender_kw={"continuity": True})
+    c_joint = for_evaluation(pool, opponent="upstream-it13", contender_kw={"joint_plans": True})
+    assert arm_key(ref.contender).endswith("|")
+    assert arm_key(c_all.contender).endswith("|team_tree_reuse=True,joint_plans=True,plan_carry=True")
+    assert arm_key(c_all.contender) == arm_key(c_all.opponents[0])
+    assert arm_key(c_joint.contender).endswith("|joint_plans=True")
+    calls = []
+
+    def fake(b, m, nodes, repeats, coreml=None, wave2=None):
+        calls.append(wave2)
+        return {"ms_per_node": 0.2}
+
+    apply_ms_per_node(for_evaluation(pool, opponent="upstream-it13",
+                                     contender_kw={"ms_per_node": "measure", "continuity": True}),
+                      str(tmp_path / "ms.json"), measure_upstream=fake)
+    assert {"team_tree_reuse": True, "joint_plans": True, "plan_carry": True} in calls
+    assert wave2_flag_options(**calls[calls.index({"team_tree_reuse": True, "joint_plans": True,
+                                                   "plan_carry": True})]) == {
+        **WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True}
+
+
+def test_wave2_team_continuity_implies_reuse_tree():
+    def ctl_of(**kw):
+        players = wave2_team("T1", nodes=8, **kw)
+        ctl = players["A_white"].controller
+        for p in players.values():
+            p.close()
+        return ctl
+
+    for kw in ({"team_tree_reuse": True}, {"plan_carry": True}, {"continuity": True},
+               {"engine_options": {"TeamTreeReuse": "true"}}):
+        ctl = ctl_of(**kw)
+        assert ctl.process.reset_tree is False and ctl.new_game_at_start, kw
+    for kw in ({}, {"joint_plans": True}, {"continuity": True, "team_tree_reuse": False, "plan_carry": False}):
+        ctl = ctl_of(**kw)
+        assert ctl.process.reset_tree is True and not ctl.new_game_at_start, kw
+    assert ctl_of(continuity=True).process.extra_options == {**WAVE2_BASE, "TeamTreeReuse": True,
+                                                             "JointPlans": True, "PlanCarry": True}
+
+
+def test_wave2_controller_new_game_only_at_its_first_search():
+    proc = FakeProcess(move_a="e2e4", move_b=None)
+    ctl = Wave2TeamController("T1", proc, nodes=40, ms_per_node=1.0, new_game_at_start=True)
+    p = ctl.player("A_white")
+    p.decide(_obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"]))
+    fens = {"A": _fen_after("e2e4 e7e5"), "B": START}
+    p.decide(_w2_obs("A_white", clocks(59_000, 59_000, 60_000, 60_000), fens, {"A": "A_white", "B": "B_white"},
+                     ["g1f3"], now=2_000))
+    assert len(proc.calls) == 2 and proc.calls[0].get("new_game") is True and "new_game" not in proc.calls[1]
+    plain = FakeProcess(move_a="e2e4", move_b=None)
+    Wave2TeamController("T1", plain, nodes=40).player("A_white").decide(
+        _obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"]))
+    assert "new_game" not in plain.calls[0]
+
+
+def test_wave2_parses_reuse_line():
+    def parse(*lines):
+        return parse_continuity(list(lines), SearchResult("e2e4", None, 0.1, 20, None, 100, 3))
+
+    r = parse("info string Team tree reuse: 580 visits recovered, clock diff 12 ms, 3 pruned",
+              "info string Plan carry: B e7e5 weight 0.3", "info depth 3 score cp 20 nodes 100")
+    assert (r.reused_visits, r.reuse_refusal, r.plan_carried) == (580, None, 1)
+    r = parse("info string Team tree reuse: none (clock)", "info string Plan carry: A dropped (board changed)")
+    assert (r.reused_visits, r.reuse_refusal, r.plan_carried) == (0, "clock", 0)
+    r = parse("info string Plan carry: A d2d4 weight 0.3", "info string Plan carry: B e7e5 weight 0.3")
+    assert (r.reused_visits, r.reuse_refusal, r.plan_carried) == (None, None, 2)
+    r = parse("info string Tree reuse: 40 visits recovered")  # the exact (old) path is not the team tree
+    assert (r.reused_visits, r.plan_carried) == (None, 0)
+    # The process parses them into SearchResult.
+    proc = UpstreamHivemindProcess()
+    r = proc._parse(["info string Team tree reuse: 7 visits recovered, clock diff 0 ms, 0 pruned",
+                     "info depth 1 score cp 5 nodes 9 pv (e2e4,pass)"], "bestmove (e2e4,pass)", 3)
+    assert r.reused_visits == 7 and r.nodes == 9 and r.move_a == "e2e4"
+
+
+class ContinuityProcess(FakeProcess):
+    def __init__(self, results):
+        super().__init__()
+        self.results = list(results)
+
+    def search_clock(self, fen_a, fen_b, **kw):
+        self.calls.append(kw)
+        return self.results.pop(0)
+
+
+def test_wave2_controller_counts_continuity_and_marks_decisions():
+    def res(reused=None, refusal=None, carried=0):
+        return SearchResult("e2e4", "e7e5", 0.1, 20, None, 100, 3, reused_visits=reused, reuse_refusal=refusal,
+                            plan_carried=carried)
+
+    proc = ContinuityProcess([res(), res(0, "clock"), res(400, carried=1)])
+    ctl = Wave2TeamController("T1", proc, nodes=40, ms_per_node=1.0)
+    obs = [_w2_obs("A_white", clocks(60_000 - i, 60_000, 60_000, 60_000), {"A": _fen_after(m), "B": START},
+                   {"A": "A_white", "B": "B_white"}, ["e2e4"], now=i) for i, m in enumerate(("", "g1f3 g8f6",
+                                                                                              "b1c3 b8c6"))]
+    obs[0] = _obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"])
+    d = [ctl.player("A_white").decide(o) for o in obs]
+    assert [x.reused_visits for x in d] == [0, 0, 400] and [x.plan_carried for x in d] == [0, 0, 1]
+    assert ctl.reuse_hits == 1 and ctl.reused_visits == 400 and ctl.reuse_refusals == {"clock": 1}
+    assert ctl.plan_carries == 1 and ctl.searches == 3
+    # B_black served from the same search (cache): no second count.
+    third = obs[2]
+    ctl.player("B_black").decide(Observation(**{**third.__dict__, "seat": "B_black", "legal_moves": ["e7e5"]}))
+    assert ctl.reuse_hits == 1 and ctl.searches == 3
+
+
+def test_continuity_telemetry_reaches_the_summary_and_results():
+    from arena.interfaces import SEATS
+    from arena.pool import format_results, results_by_opponent
+    from arena.stats import compute_stats, summarize_game
+
+    def think(seq, seat, nodes, **extra):
+        return {"type": "thinking", "seq": seq, "ts": 0, "seat": seat, "phase": "start", "think_ms": 5,
+                "nodes": nodes, **extra}
+
+    events = [{"type": "game_start", "seq": 0, "ts": 0, "game_id": "g", "setup": "s", "seats": {s: s for s in SEATS}},
+              think(1, "A_white", 50, reused_visits=300, plan_carried=1), think(2, "B_black", 50),
+              think(3, "B_black", 0), think(4, "A_black", 50), think(5, "A_white", 50, reused_visits=100),
+              {"type": "game_end", "seq": 6, "ts": 5, "result": "T1", "reason": "flag", "board": "A",
+               "loserSeat": "A_black"}]
+    s = summarize_game(events)
+    assert s["continuity"]["T1"] == {"searches": 3, "reuse_hits": 2, "reused_visits": 400, "plan_carries": 1}
+    assert s["continuity"]["T2"] == {"searches": 1, "reuse_hits": 0, "reused_visits": 0, "plan_carries": 0}
+    m = compute_stats([{**s, "contender_team": "T1", "opening_id": "o"}], n_boot=10)["metrics"]
+    assert m["contender_reuse_per_search"]["est"] == pytest.approx(2 / 3)
+    assert m["contender_reused_visits_per_hit"]["est"] == 200
+    assert m["contender_plan_carries_per_search"]["est"] == pytest.approx(1 / 3)
+    assert m["baseline_reuse_per_search"]["est"] == 0
+    old = {k: v for k, v in s.items() if k != "continuity"}  # a summary from before wave 2c: n/a (NaN), no error
+    est = compute_stats([{**old, "contender_team": "T1", "opening_id": "o"}],
+                        n_boot=10)["metrics"]["contender_reuse_per_search"]["est"]
+    assert est != est
+    res = results_by_opponent([{**s, "contender_team": "T1", "opening_id": "o", "opponent": "x", "group": "g"}],
+                              n_boot=10)
+    assert res["by_opponent"]["x"]["contender_reuse_per_search"] == pytest.approx(2 / 3)
+    assert "c_reuse/search=0.67" in format_results(res)
+
+
+def test_sim_records_continuity_on_thinking_start():
+    from arena.interfaces import SEATS, Decision
+    from arena.sim import Simulator
+    from arena.state import BughouseState
+
+    class P:
+        kind = "stub"
+
+        def __init__(self, seat):
+            self.seat, self.name, self.n = seat, seat, 0
+
+        def decide(self, obs):
+            self.n += 1
+            if not obs.legal_moves:
+                return Decision(kind="wait", wait_ms=1000)
+            extra = {"reused_visits": 5, "plan_carried": 1} if self.seat == "A_white" and self.n == 1 else {}
+            return Decision(kind="move", uci=sorted(obs.legal_moves)[0], think_ms=100, nodes=10, **extra)
+
+        def close(self):
+            pass
+
+    sim = Simulator(BughouseState(5_000, 0), {s: P(s) for s in SEATS}, game_id="g", setup="test", max_plies=8)
+    sim.run()
+    starts = [e for e in sim.events if e["type"] == "thinking" and e["phase"] == "start"]
+    marked = [e for e in starts if "reused_visits" in e]
+    assert len(marked) == 1 and marked[0]["seat"] == "A_white" and marked[0]["plan_carried"] == 1
+    assert all("plan_carried" not in e for e in starts if e is not marked[0])
+
+
+FAKE_ENGINE = r'''
+import os, sys
+log = open(os.environ["FAKE_ENGINE_LOG"], "a")
+opts = os.environ.get("FAKE_ENGINE_OPTIONS", "").split()
+searches = 0
+for line in sys.stdin:
+    cmd = line.strip()
+    log.write(cmd + "\n"); log.flush()
+    if cmd == "uci":
+        for o in opts:
+            print(f"option name {o} type check default false")
+        print("uciok", flush=True)
+    elif cmd == "isready":
+        print("readyok", flush=True)
+    elif cmd.startswith("go"):
+        searches += 1
+        if searches > 1:
+            print("info string Team tree reuse: 120 visits recovered, clock diff 3 ms, 0 pruned")
+        print("info depth 1 score cp 10 nodes 50 pv (e2e4,pass)")
+        print("bestmove (e2e4,pass)", flush=True)
+    elif cmd == "quit":
+        break
+'''
+
+
+def _fake_engine(tmp_path, monkeypatch, options):
+    eng = tmp_path / "fake_engine"
+    eng.write_text(f"#!{sys.executable}\n" + FAKE_ENGINE)
+    eng.chmod(eng.stat().st_mode | stat.S_IXUSR)
+    model = tmp_path / "net.onnx"
+    model.write_text("")
+    log = tmp_path / "log.txt"
+    monkeypatch.setenv("FAKE_ENGINE_LOG", str(log))
+    monkeypatch.setenv("FAKE_ENGINE_OPTIONS", " ".join(options))
+    return str(eng), str(model), log
+
+
+def _play_two_searches(binary, model, **kw):
+    players = wave2_team("T1", nodes=50, ms_per_node=1.0, binary=binary, model=model, **kw)
+    try:
+        p = players["A_white"]
+        d1 = p.decide(_obs("A_white", clocks(60_000, 60_000, 60_000, 60_000), ["e2e4"]))
+        fens = {"A": _fen_after("e2e4 e7e5"), "B": START}
+        d2 = p.decide(_w2_obs("A_white", clocks(59_000, 59_000, 60_000, 60_000), fens,
+                              {"A": "A_white", "B": "B_white"}, ["e2e4"], now=2_000))
+        return p.controller, d1, d2
+    finally:
+        for q in players.values():
+            q.close()
+
+
+def _commands_before_each_go(log):
+    out, cur = [], []
+    for c in log.read_text().splitlines():
+        if c.startswith("go"):
+            out.append(cur)
+            cur = []
+        else:
+            cur.append(c)
+    return out
+
+
+def test_wave2_continuity_ucinewgame_sequence_with_an_engine(tmp_path, monkeypatch):
+    all_opts = [u for u, _ in WAVE2_CONTINUITY_FLAGS.values()]
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, all_opts)
+    # team_tree_reuse: one ucinewgame, at the controller's first search, and the option set once at start-up.
+    ctl, d1, d2 = _play_two_searches(binary, model, team_tree_reuse=True)
+    before = _commands_before_each_go(log)
+    assert len(before) == 2 and before[0].count("ucinewgame") == 1 and "ucinewgame" not in before[1]
+    assert "setoption name TeamTreeReuse value true" in before[0]
+    assert not any("JointPlans" in c or "PlanCarry" in c for c in before[0])
+    assert d1.reused_visits == 0 and d2.reused_visits == 120 and ctl.reuse_hits == 1
+    # joint_plans alone: ucinewgame before every search, as in ref_120.
+    log.write_text("")
+    _play_two_searches(binary, model, joint_plans=True)
+    before = _commands_before_each_go(log)
+    assert [b.count("ucinewgame") for b in before] == [1, 1]
+    assert "setoption name JointPlans value true" in before[0]
+
+
+def test_wave2_continuity_refuses_a_binary_without_the_options(tmp_path, monkeypatch):
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, [])  # a pre-2c engine
+    with pytest.raises(RuntimeError, match="TeamTreeReuse"):
+        _play_two_searches(binary, model, continuity=True)
+    log.write_text("")
+    ctl, d1, d2 = _play_two_searches(binary, model)  # rows without a fix still run on it
+    assert d1.kind == "move" and not any("TeamTreeReuse" in c for c in log.read_text().splitlines())

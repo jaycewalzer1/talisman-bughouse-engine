@@ -41,6 +41,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import subprocess
 import threading
 import time
@@ -84,6 +85,27 @@ WAVE2_MS_PER_NODE = UPSTREAM_MS_PER_NODE  # placeholder until measured (MEASURE=
 WAVE2_FLAGS = {"durative_tree": ("DurativeTree", True), "sit_gate": ("SitGate", False),
                "flag_loss": ("FlagLoss", True), "instant_transfer": ("InstantTransfer", False),
                "mate_race_by_landing": ("MateRaceByLanding", False), "pass_cap_k": ("PassCapK", 8)}
+# Wave 2c (spec v5, docs/custom_engine_spec_v5_continuity.md): three tree switches, all off, and their knobs at the
+# engine's defaults. Unlike the six above they are sent only when set to something other than the engine default,
+# so a row without them sends exactly the options it sent before (and still runs on a pre-2c binary, which does not
+# know them). A row that sets one checks at start-up that the binary advertises it (UpstreamHivemindProcess.start).
+WAVE2_CONTINUITY_FLAGS = {"team_tree_reuse": ("TeamTreeReuse", False), "joint_plans": ("JointPlans", False),
+                          "plan_carry": ("PlanCarry", False),
+                          "team_tree_reuse_tolerance_ms": ("TeamTreeReuseToleranceMs", 250),
+                          "joint_plan_free_permille": ("JointPlanFreePermille", 500),
+                          "plan_carry_permille": ("PlanCarryPermille", 300)}
+WAVE2_FLAGS.update(WAVE2_CONTINUITY_FLAGS)
+# Integer flags and their ranges (the engine's spin limits); every other flag is a check (true/false).
+WAVE2_INT_RANGES = {"PassCapK": (1, 64), "TeamTreeReuseToleranceMs": (0, 5000), "JointPlanFreePermille": (0, 1000),
+                    "PlanCarryPermille": (0, 1000)}
+# Player-option presets, expanded in Python (no preset option is sent, so option order never matters): "continuity"
+# true/false sets the three wave 2c switches it names that the row does not set itself; the knobs are untouched.
+WAVE2_PRESETS = {"continuity": ("team_tree_reuse", "joint_plans", "plan_carry")}
+# Switches whose engine state carries from one search to the next (the team tree, the carried plans). With one on,
+# the process keeps its tree between searches (no ucinewgame per search) and the controller sends one ucinewgame at
+# its first search instead. JointPlans works inside one search and does not imply it (spec v5, review change 11).
+WAVE2_STATE_FLAGS = ("TeamTreeReuse", "PlanCarry")
+CONTINUITY_UCI_OPTIONS = frozenset(uci for uci, _ in WAVE2_CONTINUITY_FLAGS.values())
 TEAM_OPTION = {"T1": "white", "T2": "black"}
 MAX_LEAD_MS = 1 << 30
 
@@ -237,7 +259,13 @@ class UpstreamHivemindProcess(HivemindProcess):
                                       cwd=self.cwd, env=env)
         threading.Thread(target=self._reader, daemon=True).start()
         self._send("uci")
-        self._wait_for(lambda l: l == "uciok")
+        handshake: list[str] = []
+        self._wait_for(lambda l: l == "uciok", collect=handshake)
+        advertised = {l[len("option name "):].split(" type ", 1)[0] for l in handshake if l.startswith("option name ")}
+        missing = sorted(k for k in self.extra_options if k in CONTINUITY_UCI_OPTIONS and k not in advertised)
+        if missing:  # a pre-2c binary would ignore them and the row would measure nothing (spec v5)
+            self.close()
+            raise RuntimeError(f"{self.binary} does not advertise {missing}: build the wave 2c engine")
         self._opts = {}
         for k, v in {"Ponder": "false", "BackgroundSearch": "false", "TimeModel": "clock",
                      **self.extra_options}.items():
@@ -253,15 +281,17 @@ class UpstreamHivemindProcess(HivemindProcess):
 
     def search_clock(self, fen_a: str, fen_b: str, *, team: str, nodes: int, lead: int, team_move_ms: int,
                      opp_move_ms: int, root_move_ms: int = 0, multipv: int = 1,
-                     options: dict | None = None) -> SearchResult:
-        """Joint search for ``team`` under the clock model. ``lead`` is ``TimeLeadMs`` (see ``lead_ms``)."""
+                     options: dict | None = None, new_game: bool = False) -> SearchResult:
+        """Joint search for ``team`` under the clock model. ``lead`` is ``TimeLeadMs`` (see ``lead_ms``).
+        ``new_game`` sends ``ucinewgame`` before this search even when the process keeps its tree (``reset_tree``
+        False): a controller whose engine carries state between searches starts each game clean with it."""
         with self._lock:
             self.start()
             self._set_time(team, lead, team_move_ms, opp_move_ms, root_move_ms)
             self.set_option("MultiPV", int(multipv))
             for k, v in (options or {}).items():
                 self.set_option(k, v)
-            if self.reset_tree:
+            if self.reset_tree or new_game:
                 self._send("ucinewgame")
             self._send(f"position fen {fen_a} | {fen_b}")
             self._sync()
@@ -290,8 +320,38 @@ class UpstreamHivemindProcess(HivemindProcess):
             self._wait_for(lambda l: l == "readyok", collect=lines)
         return parse_policy(lines)
 
+    def _parse(self, lines: list[str], best: str, wall_ms: int) -> SearchResult:
+        return parse_continuity(lines, HivemindProcess._parse(lines, best, wall_ms))
+
     def search(self, *a, **k):  # our fork's dialect (TimeAdvantage, clocks suffix) does not apply
         raise NotImplementedError("UpstreamHivemindProcess speaks upstream's UCI: use search_clock()")
+
+
+TEAM_TREE_REUSE_PREFIX = "info string Team tree reuse: "
+PLAN_CARRY_PREFIX = "info string Plan carry: "
+_REUSED_RE = re.compile(r"^(\d+) visits recovered")
+_REFUSED_RE = re.compile(r"^none \(([^)]*)\)")
+
+
+def parse_continuity(lines: list[str], res: SearchResult) -> SearchResult:
+    """Fill ``res.reused_visits``/``reuse_refusal``/``plan_carried`` from the wave 2c info strings (spec v5 fix 1
+    step 4 and fix 3 step 4):
+    ``Team tree reuse: <visits> visits recovered, clock diff <ms> ms, <pruned> pruned`` or ``... none (<reason>)``;
+    ``Plan carry: <board> <move> weight <w>`` (one per biased board) or ``... dropped (<reason>)``. The last reuse
+    line wins; engines that print neither leave the defaults (None, None, 0)."""
+    for line in lines:
+        if line.startswith(TEAM_TREE_REUSE_PREFIX):
+            rest = line[len(TEAM_TREE_REUSE_PREFIX):].strip()
+            m, r = _REUSED_RE.match(rest), _REFUSED_RE.match(rest)
+            if m:
+                res.reused_visits, res.reuse_refusal = int(m.group(1)), None
+            elif r:
+                res.reused_visits, res.reuse_refusal = 0, r.group(1)
+        elif line.startswith(PLAN_CARRY_PREFIX):
+            rest = line[len(PLAN_CARRY_PREFIX):]
+            if " weight " in f" {rest} " and "dropped" not in rest:
+                res.plan_carried += 1
+    return res
 
 
 def measure_upstream_ms_per_node(nodes: int = 800, repeats: int = 3, **kw) -> float:
@@ -474,24 +534,58 @@ def seat_values(values: dict) -> str:
     return " ".join(str(max(0, int(round(values[s])))) for s in SEATS)
 
 
+def expand_wave2_presets(overrides: dict) -> dict:
+    """``overrides`` with each preset of ``WAVE2_PRESETS`` replaced by the switches it names. A switch the row sets
+    itself (not None) wins over the preset, so ``{"continuity": true, "joint_plans": false}`` is fixes 1 and 3."""
+    out = {k: v for k, v in overrides.items() if k not in WAVE2_PRESETS}
+    for preset, keys in WAVE2_PRESETS.items():
+        v = overrides.get(preset)
+        if v is None:
+            continue
+        if not isinstance(v, bool):
+            raise ValueError(f"{preset} must be true or false, got {v!r}")
+        for key in keys:
+            if out.get(key) is None:
+                out[key] = v
+    return out
+
+
 def wave2_flag_options(**overrides) -> dict:
-    """The wave 2 engine flags as UCI options; ``overrides`` (player option names of ``WAVE2_FLAGS``, None = keep)
-    switch single flags for ablation rows."""
-    bad = set(overrides) - set(WAVE2_FLAGS)
+    """The wave 2 engine flags as UCI options; ``overrides`` (player option names of ``WAVE2_FLAGS`` or a preset of
+    ``WAVE2_PRESETS``, None = keep) switch single flags for ablation rows. The wave 2c flags
+    (``WAVE2_CONTINUITY_FLAGS``) appear only when set to something other than the engine's default."""
+    bad = set(overrides) - set(WAVE2_FLAGS) - set(WAVE2_PRESETS)
     if bad:
-        raise ValueError(f"unknown wave 2 flag(s) {sorted(bad)}; expected some of {sorted(WAVE2_FLAGS)}")
+        raise ValueError(f"unknown wave 2 flag(s) {sorted(bad)}; expected some of "
+                         f"{sorted(WAVE2_FLAGS) + sorted(WAVE2_PRESETS)}")
+    overrides = expand_wave2_presets(overrides)
     out = {}
     for key, (uci, value) in WAVE2_FLAGS.items():
         v = overrides.get(key)
         out[uci] = value if v is None else v
-    k = out["PassCapK"]
-    if isinstance(k, bool) or not 1 <= int(k) <= 64:
-        raise ValueError(f"pass_cap_k must be in 1..64, got {k}")
-    out["PassCapK"] = int(k)
+    for uci, (lo, hi) in WAVE2_INT_RANGES.items():
+        k = out[uci]
+        name = next(key for key, (u, _) in WAVE2_FLAGS.items() if u == uci)
+        try:
+            n = None if isinstance(k, bool) else int(k)
+        except (TypeError, ValueError):
+            n = None
+        if n is None or not lo <= n <= hi:
+            raise ValueError(f"{name} must be in {lo}..{hi}, got {k!r}")
+        out[uci] = n
     for uci in out:
-        if uci != "PassCapK" and not isinstance(out[uci], bool):
+        if uci not in WAVE2_INT_RANGES and not isinstance(out[uci], bool):
             raise ValueError(f"{uci} must be true or false, got {out[uci]!r}")
+    for uci, default in WAVE2_CONTINUITY_FLAGS.values():
+        if out[uci] == default and type(out[uci]) is type(default):
+            del out[uci]
     return out
+
+
+def wave2_carries_state(options: dict) -> bool:
+    """True when the engine options (``wave2_flag_options`` output, plus any ``engine_options``) switch on a fix whose
+    state carries between searches (``WAVE2_STATE_FLAGS``)."""
+    return any(str(options.get(uci, False)).lower() == "true" for uci in WAVE2_STATE_FLAGS)
 
 
 def seat_elapsed_ms(obs: Observation) -> dict:
@@ -628,13 +722,21 @@ class Wave2TeamController(UpstreamTeamController):
 
     def __init__(self, team: str, process: UpstreamHivemindProcess, nodes: int = 400,
                  ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, root_min_ms: int = 0,
-                 root_lag_ms: int = 0, **kw) -> None:
+                 root_lag_ms: int = 0, new_game_at_start: bool = False, **kw) -> None:
         super().__init__(team, process, nodes, ms_per_node, **kw)
         self.pass_cap_k = int(pass_cap_k)
         if root_min_ms < 0 or root_lag_ms < 0:
             raise ValueError(f"root_min_ms and root_lag_ms must be >= 0, got {root_min_ms}, {root_lag_ms}")
         self.root_min_ms, self.root_lag_ms = int(root_min_ms), int(root_lag_ms)
         self.landings = PocketLandingTracker()
+        # Wave 2c (spec v5): with an engine that keeps its tree between searches, one ucinewgame at this
+        # controller's first search starts the game with no tree and no carried plan. Telemetry per search.
+        self.new_game_at_start = bool(new_game_at_start)
+        self._new_game_pending = self.new_game_at_start
+        self.reuse_hits = 0  # searches that adopted a node of the team tree
+        self.reused_visits = 0  # visits those searches recovered
+        self.reuse_refusals: dict[str, int] = {}  # "none (<reason>)" lines by reason
+        self.plan_carries = 0  # boards whose carried plan biased a root
 
     def time_options(self, obs: Observation, budget_ms: int) -> dict:
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
@@ -648,7 +750,26 @@ class Wave2TeamController(UpstreamTeamController):
             "SeatArrivalsMs": self.landings.value(obs.now_ms),
         }
         opts["root_move_ms"] = max(int(budget_ms), self.root_min_ms) + self.root_lag_ms
+        if self._new_game_pending:
+            opts["new_game"] = True
+            self._new_game_pending = False
         return opts
+
+    def decide(self, seat: str, obs: Observation) -> Decision:
+        before = self.searches
+        dec = super().decide(seat, obs)
+        if self.searches == before or self._cache is None:  # served from the last search: nothing new to count
+            return dec
+        res = self._cache[1]
+        if res.reused_visits:
+            self.reuse_hits += 1
+            self.reused_visits += res.reused_visits
+        elif res.reuse_refusal is not None:
+            self.reuse_refusals[res.reuse_refusal] = self.reuse_refusals.get(res.reuse_refusal, 0) + 1
+        self.plan_carries += res.plan_carried
+        if res.reused_visits or res.plan_carried:
+            dec = _dc_replace(dec, reused_visits=int(res.reused_visits or 0), plan_carried=int(res.plan_carried))
+        return dec
 
     def default_sit_ms(self, opts: dict) -> int:
         budget = int(opts["root_move_ms"])
@@ -663,16 +784,21 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
     """{seat: Player} for one team played by the wave 2 engine (``kind="wave2"``, always one team brain). Options as
     ``upstream_team`` (``binary``/``model`` default to ``WAVE2_BINARY``/``WAVE2_MODEL``) plus the flags of
     ``WAVE2_FLAGS`` (``durative_tree``, ``sit_gate``, ``flag_loss``, ``instant_transfer``, ``mate_race_by_landing``,
-    ``pass_cap_k``); ``engine_options`` are sent after the flags, so they win."""
-    flags = wave2_flag_options(**{k: kw.get(k) for k in WAVE2_FLAGS})
+    ``pass_cap_k``, and wave 2c's ``team_tree_reuse``, ``joint_plans``, ``plan_carry`` with their knobs) and the
+    preset ``continuity`` (``WAVE2_PRESETS``); ``engine_options`` are sent after the flags, so they win.
+    ``team_tree_reuse`` or ``plan_carry`` on implies ``reuse_tree`` plus one ``ucinewgame`` at the first search."""
+    flags = wave2_flag_options(**{k: kw.get(k) for k in (*WAVE2_FLAGS, *WAVE2_PRESETS)})
+    options = {**flags, **(kw.get("engine_options") or {})}
+    # Fix 1 or fix 3 on: the engine's state must survive between searches, so no ucinewgame per search; the
+    # controller sends one at its first search instead (spec v5, arena section).
+    reuse = bool(kw.get("reuse_tree", False)) or wave2_carries_state(options)
     proc = UpstreamHivemindProcess(kw.get("binary") or WAVE2_BINARY, kw.get("model") or WAVE2_MODEL,
-                                   options={**flags, **(kw.get("engine_options") or {})},
-                                   reset_tree=not kw.get("reuse_tree", False), coreml=kw.get("coreml"),
+                                   options=options, reset_tree=not reuse, coreml=kw.get("coreml"),
                                    cwd=WAVE2_ENGINE_DIR)
     ckw = {k: kw[k] for k in CONTROLLER_KW if kw.get(k) is not None}
     ckw.update({k: int(kw[k]) for k in WAVE2_CONTROLLER_KW if kw.get(k) is not None})
     ctl = Wave2TeamController(team, proc, nodes=nodes, ms_per_node=float(kw.get("ms_per_node") or WAVE2_MS_PER_NODE),
-                              seed=seed, pass_cap_k=flags["PassCapK"], **ckw)
+                              seed=seed, pass_cap_k=flags["PassCapK"], new_game_at_start=reuse, **ckw)
     return {s: ctl.player(s) for s in team_seats(team)}
 
 
@@ -692,4 +818,5 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
            "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms", "seat_sitting",
            "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
-           "WAVE2_ENGINE_DIR"]
+           "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "expand_wave2_presets",
+           "wave2_carries_state", "parse_continuity"]

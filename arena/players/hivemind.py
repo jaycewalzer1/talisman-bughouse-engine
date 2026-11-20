@@ -133,6 +133,13 @@ class SearchResult:
     # ``info string think_gain <pa> <pb>`` (spec v2 B, networks with a think-time head): per board, the chance that
     # a 4x longer search plays a different move there. None when the engine printed no such line.
     think_gain: tuple[float, float] | None = None
+    # Wave 2c telemetry (spec v5; the wave 2 engine's ``info string Team tree reuse: ...`` and ``Plan carry: ...``,
+    # parsed by arena.players.upstream.parse_continuity): visits the search adopted from the team's tree (None: no
+    # such line; 0: it looked and adopted nothing, the reason in ``reuse_refusal``) and how many boards' carried
+    # plans the root was biased toward.
+    reused_visits: int | None = None
+    reuse_refusal: str | None = None
+    plan_carried: int = 0
 
     def move_for(self, board: str) -> str | None:
         return self.move_a if board == "A" else self.move_b

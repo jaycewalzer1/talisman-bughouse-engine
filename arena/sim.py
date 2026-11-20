@@ -427,6 +427,8 @@ class Simulator:
                 nodes=dec.nodes,
                 eval=None,
                 **({"capped": True} if getattr(dec, "capped", False) else {}),
+                **({"reused_visits": dec.reused_visits} if getattr(dec, "reused_visits", 0) else {}),
+                **({"plan_carried": dec.plan_carried} if getattr(dec, "plan_carried", 0) else {}),
                 depth=getattr(dec, "depth", None),
                 borrowed=dec.borrow,
             )

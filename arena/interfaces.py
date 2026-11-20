@@ -131,6 +131,11 @@ class Decision:
     borrow_share: float = 1.0
     # The search's node budget was cut to the controller's max_nodes (equal-clock gates count how often).
     capped: bool = False
+    # Wave 2c telemetry (spec v5) on the decision whose search produced it: visits adopted from the team's tree
+    # (0: none) and boards whose carried plan biased the root (0: none). Recorded in the "thinking" start event
+    # only when nonzero, so other players' event files are unchanged.
+    reused_visits: int = 0
+    plan_carried: int = 0
 
 
 class Player(Protocol):

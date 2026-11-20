@@ -148,6 +148,17 @@ def summarize_game(events: Iterable[dict]) -> dict:
     for e in events:
         if e.get("type") == "thinking" and e.get("phase") == "start" and e.get("capped"):
             capped[TEAM_OF[e["seat"]]] += 1
+    # Wave 2c (spec v5): per team, searches (thinking starts with nodes), searches that adopted team-tree visits,
+    # the visits adopted, and boards whose carried plan biased the root. All 0 for players that report none.
+    continuity = {t: {"searches": 0, "reuse_hits": 0, "reused_visits": 0, "plan_carries": 0} for t in TEAMS}
+    for e in events:
+        if e.get("type") == "thinking" and e.get("phase") == "start" and int(e.get("nodes") or 0) > 0:
+            c = continuity[TEAM_OF[e["seat"]]]
+            c["searches"] += 1
+            if e.get("reused_visits"):
+                c["reuse_hits"] += 1
+                c["reused_visits"] += int(e["reused_visits"])
+            c["plan_carries"] += int(e.get("plan_carried") or 0)
     cm = _clock_metrics(events, start, end)
     loser_seat = end.get("loserSeat") if end else None
     reason = end.get("reason") if end else "aborted"
@@ -168,6 +179,7 @@ def summarize_game(events: Iterable[dict]) -> dict:
         "flag_while": cm["flag_while"],
         "flag_other_check": cm["flag_other_check"],
         "capped_decisions": capped,
+        "continuity": continuity,
     }
 
 
@@ -198,6 +210,9 @@ def contender_row(summary: dict) -> dict:
         row[f"{prefix}_flag_win_check"] = 1.0 if won_on_flag and summary.get("flag_other_check") else 0.0
         row[f"{prefix}_decisions"] = t["decisions"]
         row[f"{prefix}_capped"] = (summary.get("capped_decisions") or {}).get(team, 0)
+        co = (summary.get("continuity") or {}).get(team, {})  # absent in older summaries: reads as 0
+        for k in ("searches", "reuse_hits", "reused_visits", "plan_carries"):
+            row[f"{prefix}_{k}"] = co.get(k, 0)
         row[f"{prefix}_think_ms"] = t["think_ms"]
         row[f"{prefix}_nodes"] = t["nodes"]
         row[f"{prefix}_messages"] = t["messages"]
@@ -274,6 +289,13 @@ METRICS: dict[str, Statistic] = {
     "contender_capped_share": ratio_of("c_capped", "c_decisions"),
     "baseline_capped_share": ratio_of("b_capped", "b_decisions"),
     "baseline_nodes_per_decision": ratio_of("b_nodes", "b_decisions"),
+    # wave 2c (spec v5): share of searches that adopted a node of the team's tree, visits adopted per hit, and
+    # carried plans applied per search (n/a for players that report no searches; 0 for ones that never fire)
+    "contender_reuse_per_search": ratio_of("c_reuse_hits", "c_searches"),
+    "baseline_reuse_per_search": ratio_of("b_reuse_hits", "b_searches"),
+    "contender_reused_visits_per_hit": ratio_of("c_reused_visits", "c_reuse_hits"),
+    "contender_plan_carries_per_search": ratio_of("c_plan_carries", "c_searches"),
+    "baseline_plan_carries_per_search": ratio_of("b_plan_carries", "b_searches"),
     "contender_messages_per_game": mean_of("c_messages"),
     "baseline_messages_per_game": mean_of("b_messages"),
     "draw_rate": mean_of("draw"),

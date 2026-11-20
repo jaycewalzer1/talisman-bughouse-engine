@@ -329,7 +329,8 @@ def results_by_opponent(summaries: list[dict], n_boot: int = 2000, seed: int = 0
                    "score": sc["est"], "ci95": [sc["lo"], sc["hi"]], "draws": st["draws"],
                    "clusters": sc["clusters"], "reasons": dict(sorted(reasons.items()))}
             for m in ("contender_nodes_per_game", "baseline_nodes_per_game", "flag_rate", "contender_capped_share",
-                      "baseline_capped_share"):
+                      "baseline_capped_share", "contender_reuse_per_search", "contender_plan_carries_per_search",
+                      "baseline_reuse_per_search", "baseline_plan_carries_per_search"):
                 c = st["metrics"][m]
                 row[m] = c["est"]
                 row[m + "_ci95"] = [c["lo"], c["hi"]]
@@ -351,6 +352,14 @@ def format_results(res: dict) -> str:
             ci = f"[{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}]"
             cn, bn = r.get("contender_nodes_per_game", float("nan")), r.get("baseline_nodes_per_game", float("nan"))
             reasons = " ".join(f"{k}={v}" for k, v in r.get("reasons", {}).items())
+            # wave 2c telemetry, only for rows where a fix fired (spec v5: a fix that never fires must show)
+            cont = [f"{lab}={r[k]:.2f}" for k, lab in (("contender_reuse_per_search", "c_reuse/search"),
+                                                       ("contender_plan_carries_per_search", "c_carry/search"),
+                                                       ("baseline_reuse_per_search", "b_reuse/search"),
+                                                       ("baseline_plan_carries_per_search", "b_carry/search"))
+                    if r.get(k) == r.get(k) and r.get(k)]
+            if cont:
+                reasons += "  " + " ".join(cont)
             lines.append(f"{name:<26} {r['games']:>6} {r['score']:>16.3f} {ci:>18} {cn:>13.0f} {bn:>13.0f}  {reasons}")
     return "\n".join(lines)
 
@@ -517,10 +526,14 @@ def arm_key(team: TeamSpec) -> str:
 
 
 def wave2_arm_flags(team: TeamSpec) -> dict:
-    """The wave 2 flag overrides of a team (player options named in ``WAVE2_FLAGS``, set ones only)."""
-    from arena.players.upstream import WAVE2_FLAGS
+    """The wave 2 flag overrides of a team (player options named in ``WAVE2_FLAGS``, set ones only), with the presets
+    of ``WAVE2_PRESETS`` (wave 2c ``continuity``) expanded, so an arm's key and measurement follow the switches it
+    actually sends."""
+    from arena.players.upstream import WAVE2_FLAGS, WAVE2_PRESETS, expand_wave2_presets
 
-    return {k: team.player_kw[k] for k in WAVE2_FLAGS if team.player_kw.get(k) is not None}
+    kw = expand_wave2_presets({k: team.player_kw.get(k) for k in WAVE2_PRESETS if team.player_kw.get(k) is not None}
+                              | {k: team.player_kw[k] for k in WAVE2_FLAGS if team.player_kw.get(k) is not None})
+    return {k: kw[k] for k in WAVE2_FLAGS if kw.get(k) is not None}
 
 
 def _wants_measure(team: TeamSpec) -> bool:
