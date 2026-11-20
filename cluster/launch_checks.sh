@@ -10,13 +10,14 @@
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
 #   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
 #   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (11 jobs)
+#   bash cluster/launch_checks.sh wave2c     # wave 2c continuity fixes vs it13, one fix at a time (6 jobs, 7 with WAVE2C_REF=1)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
 # sbatch has no SBATCH_DEPENDENCY input variable, so pass it on the command line: SBATCH_DEPENDENCY=afterok:<job> holds every job below.
 sbatch() { command sbatch ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} "$@"; }
 cd "$(git rev-parse --show-toplevel)"
-WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness, wave2 or all}"
+WHAT="${1:?say which check: learner, probe, features, matches, rules, lend, beat, controls, harness, wave2, wave2c or all}"
 
 learner() {  # name, step size, pairs per update, updates, seed
   NAME="learner/$1" LR="$2" PAIRS="$3" ITERATIONS="$4" SEED="$5" FEATURES="" BASELINE=eval EXPLORATION=0.15 \
@@ -207,5 +208,38 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 11 jobs. Read docs/wave2_test
   w2  vs_it04_120      it04            '{}'                                             120000  200    SPRT=0,20
   # stock it13 at its own 800 fixed nodes (D1's opponent setting) instead of clock_k 110
   w2  vs_it13_800n_120 upstream-it13-800n '{}'                                          120000  800    SPRT=0,20
+fi
+if [ "$WHAT" = wave2c ]; then  # not part of "all": 6 jobs (7 with WAVE2C_REF=1). Read docs/wave2_tests.md "Wave 2c rows".
+  # Spec v5 (docs/custom_engine_spec_v5_continuity.md): team tree reuse (fix 1), joint team actions (fix 2) and plan
+  # carry (fix 3), each a player option of the wave 2 arm that is off by default. Same common settings as "wave2"
+  # (pool contender, equal clock, MEASURE=1 per binary + flags, so a fix that changes node cost is charged its own
+  # ms_per_node), against stock it13 at 120 s, no SPRT. Needs the wave 2c build (cluster/build.sh, "wave2 check: PASS"
+  # on the new engine commit); SBATCH_DEPENDENCY=afterok:<build job> holds the rows behind it. Fixes 1 and 3 keep the
+  # engine's tree and plans between searches (no ucinewgame per search, one at each game's first search); fix 2 alone
+  # keeps the per-search ucinewgame of ref_120 (arena/players/upstream.py WAVE2_STATE_FLAGS).
+  W2=(POOL=arena/pools/wave2.json SETUP=pool OPENINGS=bughouse RULES=v3 MEASURE=1 MEASURE_NODES=800
+      "WARM_KINDS=upstream wave2")
+  w2c() {  # name, opponent, contender options (wave 2 flag overrides), clock ms, pairs, extra env
+    # A subshell with exports, as w2 above: "env ... sbatch" would skip the sbatch function (SBATCH_DEPENDENCY).
+    (export NAME="wave2c/$1" OPPONENT="$2" CONTENDER_KW="$3" BASE_MS="$4" PAIRS="$5" "${W2[@]}"
+     [ -z "${6:-}" ] || export ${6}
+     sbatch -J "w2c_$1" cluster/eval.sbatch)
+  }
+  #    name          opponent       contender options                                clock   pairs
+  # all three fixes on top of the headline settings; the round's success mark is this row at or above c_nodur_120
+  w2c  c_all_120     upstream-it13  '{"continuity": true}'                           120000  600
+  # one fix each, read as the difference from ref_120 (0.227 in the 2026-11-19 PACE round) or c_ref_120
+  w2c  c_reuse_120   upstream-it13  '{"team_tree_reuse": true}'                      120000  600
+  w2c  c_joint_120   upstream-it13  '{"joint_plans": true}'                          120000  600
+  w2c  c_carry_120   upstream-it13  '{"plan_carry": true}'                           120000  600
+  # the durative-off, gate-on reference (PACE nodur 0.436), rerun on the new binary in the same round
+  w2c  c_nodur_120   upstream-it13  '{"durative_tree": false, "sit_gate": true}'     120000  600
+  # control: continuity against itself (pool opponent wave2c-self) must read 0.50; 800 pairs, the noise floor
+  w2c  c_same_120    wave2c-self    '{"continuity": true}'                           120000  800
+  # optional same-week durative-on reference: with every fix off the new binary is bit-identical to the one ref_120
+  # ran (spec v5 tests 0.4, 0.6), so ref_120 stands unless the round wants it again
+  if [ "${WAVE2C_REF:-0}" = 1 ]; then
+    w2c  c_ref_120   upstream-it13  '{}'                                             120000  600
+  fi
 fi
 squeue -u "$USER"
