@@ -165,6 +165,7 @@ def test_upstream_team_players():
 # ---------------------------------------------------------------------------------------------- wave 2
 
 from arena.players.upstream import (  # noqa: E402
+    CONTINUITY_UCI_OPTIONS,
     WAVE2_ENGINE_DIR,
     PocketLandingTracker,
     Wave2TeamController,
@@ -172,6 +173,7 @@ from arena.players.upstream import (  # noqa: E402
     seat_elapsed_ms,
     seat_sitting,
     seat_values,
+    wave2_carries_state,
     wave2_flag_options,
     wave2_team,
 )
@@ -512,14 +514,28 @@ def test_wave2_team_continuity_implies_reuse_tree():
         return ctl
 
     for kw in ({"team_tree_reuse": True}, {"plan_carry": True}, {"continuity": True},
-               {"engine_options": {"TeamTreeReuse": "true"}}):
+               {"engine_options": {"TeamTreeReuse": "true"}}, {"engine_options": {"Continuity": "true"}},
+               {"engine_options": {"Continuity": "true", "TeamTreeReuse": "false"}}):
         ctl = ctl_of(**kw)
         assert ctl.process.reset_tree is False and ctl.new_game_at_start, kw
-    for kw in ({}, {"joint_plans": True}, {"continuity": True, "team_tree_reuse": False, "plan_carry": False}):
+    for kw in ({}, {"joint_plans": True}, {"continuity": True, "team_tree_reuse": False, "plan_carry": False},
+               {"continuity": True, "engine_options": {"Continuity": "false"}},
+               {"engine_options": {"Continuity": "true", "TeamTreeReuse": "false", "PlanCarry": "false"}}):
         ctl = ctl_of(**kw)
         assert ctl.process.reset_tree is True and not ctl.new_game_at_start, kw
     assert ctl_of(continuity=True).process.extra_options == {**WAVE2_BASE, "TeamTreeReuse": True,
                                                              "JointPlans": True, "PlanCarry": True}
+
+
+def test_wave2_raw_continuity_preset_carries_state_and_is_checked_at_startup():
+    # The engine's Continuity option sets TeamTreeReuse, JointPlans and PlanCarry; read in the order sent, as the
+    # engine reads them, and a binary that does not advertise it is refused like one without the switches.
+    assert wave2_carries_state({"Continuity": "true"})
+    assert wave2_carries_state({"Continuity": True})
+    assert not wave2_carries_state({"TeamTreeReuse": True, "Continuity": "false"})
+    assert wave2_carries_state({"Continuity": "false", "PlanCarry": "true"})
+    assert not wave2_carries_state({"Continuity": "true", "TeamTreeReuse": "false", "PlanCarry": "false"})
+    assert "Continuity" in CONTINUITY_UCI_OPTIONS
 
 
 def test_wave2_controller_new_game_only_at_its_first_search():

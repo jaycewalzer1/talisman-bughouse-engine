@@ -105,7 +105,10 @@ WAVE2_PRESETS = {"continuity": ("team_tree_reuse", "joint_plans", "plan_carry")}
 # the process keeps its tree between searches (no ucinewgame per search) and the controller sends one ucinewgame at
 # its first search instead. JointPlans works inside one search and does not imply it (spec v5, review change 11).
 WAVE2_STATE_FLAGS = ("TeamTreeReuse", "PlanCarry")
-CONTINUITY_UCI_OPTIONS = frozenset(uci for uci, _ in WAVE2_CONTINUITY_FLAGS.values())
+# The engine's own preset option: it sets TeamTreeReuse, JointPlans and PlanCarry at once. wave2_flag_options never
+# sends it, but a row may pass it raw through engine_options.
+CONTINUITY_PRESET_OPTION = "Continuity"
+CONTINUITY_UCI_OPTIONS = frozenset({*(uci for uci, _ in WAVE2_CONTINUITY_FLAGS.values()), CONTINUITY_PRESET_OPTION})
 TEAM_OPTION = {"T1": "white", "T2": "black"}
 MAX_LEAD_MS = 1 << 30
 
@@ -584,8 +587,17 @@ def wave2_flag_options(**overrides) -> dict:
 
 def wave2_carries_state(options: dict) -> bool:
     """True when the engine options (``wave2_flag_options`` output, plus any ``engine_options``) switch on a fix whose
-    state carries between searches (``WAVE2_STATE_FLAGS``)."""
-    return any(str(options.get(uci, False)).lower() == "true" for uci in WAVE2_STATE_FLAGS)
+    state carries between searches (``WAVE2_STATE_FLAGS``). They are read in the order the engine receives them, so
+    the raw ``Continuity`` preset sets both switches and a later explicit switch overrides it, as in the engine."""
+    state = dict.fromkeys(WAVE2_STATE_FLAGS, False)
+    for uci, value in options.items():
+        on = str(value).lower() == "true"
+        if uci == CONTINUITY_PRESET_OPTION:
+            if str(value).lower() in ("true", "false"):
+                state = dict.fromkeys(WAVE2_STATE_FLAGS, on)
+        elif uci in state:
+            state[uci] = on
+    return any(state.values())
 
 
 def seat_elapsed_ms(obs: Observation) -> dict:
@@ -818,5 +830,5 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
            "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms", "seat_sitting",
            "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
-           "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "expand_wave2_presets",
-           "wave2_carries_state", "parse_continuity"]
+           "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "CONTINUITY_PRESET_OPTION",
+           "expand_wave2_presets", "wave2_carries_state", "parse_continuity"]
