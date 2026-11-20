@@ -26,4 +26,5 @@ for d in sorted(glob.glob("runs/wave2/*/")):
               f"[{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}] {r.get('flag_rate', float('nan')):>6.2f}  {state} vs {opp}")
 EOF
 echo
-for log in $(ls -t wave2_ab1_w*_*.log 2>/dev/null | head -2); do echo "== $log"; tail -n 3 "$log"; done
+for log in $(ls -t wave2_ab*_w*_*.log 2>/dev/null | head -2); do echo "== $log"; tail -n 4 "$log"; done
+for r in runs/wave2/ab*/; do [ -f "$r/results_ab.tsv" ] && { echo "== $r results_ab.tsv"; cat "$r/results_ab.tsv"; }; done
