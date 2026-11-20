@@ -51,7 +51,7 @@ The three fixes answer these. Each is a UCI option and a self-play flag, off by 
 
 | UCI option | Type, default | Self-play / tournament flag | Meaning |
 |---|---|---|---|
-| `TeamTreeReuse` | check, false | `--team-tree-reuse <bool>` | Fix 1: keep the team's tree across decisions and adopt the node the game reached. |
+| `TeamTreeReuse` | check, false | `--team-tree-reuse <bool>` | Fix 1: keep the team's tree across decisions and adopt the node the game reached. The flag needs `--durative-tree true` and `--base-mix` (seat-clock games; the build refuses it without seat clocks too, since only `play_seat_clock_game` and `play_seat_clock_match` keep agents between decisions). |
 | `TeamTreeReuseToleranceMs` | spin 0..5000, 250 | `--team-tree-reuse-tolerance-ms <ms>` | Fix 1: largest per-seat clock (and opponent ready-time) difference a retained node may have from the real clocks. |
 | `JointPlans` | check, false | `--joint-plans <bool>` | Fix 2: below the root, a team that acts plans its other on-turn seat's move in the same joint action. |
 | `JointPlanFreePermille` | spin 0..1000, 500 | `--joint-plan-free-permille <n>` | Fix 2: prior share of "decide later" (no plan) for the planned seat. |
@@ -81,7 +81,9 @@ was rooted at (`TeamTree`, below). At the next search of the same team it looks 
 actually reached and adopts it as the root, re-timed to the real clocks. "Reached" is followed from the board: the
 moves that landed since the last search are exactly the board difference, so the descent follows them.
 
-1. **Descent (`Agent::find_team_tree_node`).** Breadth-first from the old root over expanded edges. An edge is followed
+1. **Descent (`Agent::find_team_tree_node`).** From the old root over expanded edges (as built: depth-first with
+   make/unmake; the board test below leaves only the played line and its wait nodes, so the caps rarely bind and
+   the order does not change which nodes are found). An edge is followed
    only if, after its applied moves (fix 2: planned halves are not applied), each board's ply count is at most the
    live board's (`Board::game_ply`) and a board whose ply count equals the live one has the live board's FEN
    (position, side to move, castling, en passant; pockets compared separately: each pocket a sub-multiset of the
@@ -106,6 +108,8 @@ moves that landed since the last search are exactly the board difference, so the
      `atRoot`, so our team acts on every board it is on turn on. A candidate where one of our on-turn seats was not
      ready (it acted on one board only) has the wrong shape and is not adopted.
    Among candidates: smallest largest-clock-difference, then most visits.
+   (As built, the expansion key the shape check compares also holds the time inputs of the terminal check, see
+   3(b), and a further reason `no tree` reports a search with nothing retained.)
 
    **Expected hit rate (read before tuning).** The Step 0 ceiling (33% of decisions) ignored clocks and shape. Two
    things cut it, and neither is a bug in the design:
@@ -115,6 +119,13 @@ moves that landed since the last search are exactly the board difference, so the
      mid-decision or sitting acts at its own node (a sitting partner wakes 1 ms after the landing,
      `advance_action` step "a pass on the other board ends 1 ms after this landing"). When both our seats are on turn
      the candidate almost never has the root's shape.
+   * (found while building fix 1) a durative node has one timing, not a choice: the tree holds the other team's
+     landings only in the order their paces predict. When the real order differs, no node has the live boards
+     (`no node`). In self-play a seat of ours whose move is in flight also acted at the old root (the root acts on
+     every board our team is on turn), so the tree's line on that board is not the game's.
+     First self-play numbers (`docs/wave2_engine.md` in the wave 2 repo, "Wave 2c"): it13, 400 nodes, 60 s,
+     2 games: 28-33% of searches adopt at 250-3000 ms, the refusals split about evenly between `no node` and
+     `shape`; on the uniform test net 2-4%, almost all `no node`.
    So step 1 of the implementation order ends with a **gate**: `tools/continuity_probe.py reuse` with fix 1 reports
    the hit rate and the refusal reasons (`no node`, `clock`, `shape`, `committed`, `solved`) at tolerances 250, 1000
    and 3000 ms, and the distribution of the largest clock difference at board-matching nodes. If the hit rate at the
@@ -145,7 +156,11 @@ moves that landed since the last search are exactly the board difference, so the
      `try_init_and_expand`): a hash of the inputs that fixed its action lists besides the board: acting boards after
      the durative filter (`searchthread.cc:914-920`), `forcedWait`, the leaf `can_sit` (`leafTeamHasTimeAdvantage`,
      `:1055`), the held-back drop counts of the acting seats (`pending_in_hand`), and under fix 2 the planned board
-     and any committed move. The walk recomputes the key under the new time; a mismatch replaces that child with a
+     and any committed move. **Correction (fix 1 build):** also the time inputs of the terminal check that a node
+     passed once, before it was expanded: the other team's `can_sit`, a clock `outcome`, and with
+     MateRaceByLanding the landing order of the seats on turn, the early landings and the last capturer. An
+     expanded node is never classified again, so without them a node that is terminal under `T'` (a flag, a
+     landing race) would stay expanded. The walk recomputes the key under the new time; a mismatch replaces that child with a
      fresh unexpanded node (`Node::replace_child`, `node.h:828`; the old subtree goes to `discard()`);
    * (c) a node holding a solver verdict (`WIN`, `LOSS`, `DRAW`) is kept only when its recomputed hash equals its
      old hash. The hash holds the whole durative key, so equal hashes mean the node's time state is unchanged. A
@@ -158,8 +173,13 @@ moves that landed since the last search are exactly the board difference, so the
    * nodes beyond `TEAM_TREE_MAX_RETAINED = 100000` walked nodes (`SearchParams::TREE_REUSE_REINDEX_MAX_NODES`) are not
      validated, so their parents' edges to them are replaced by fresh nodes too. Nothing unvalidated stays reachable.
    * **Edge statistics where a child was replaced (by shape, verdict, split or cap) are cleared.** The parent's edge
-     visits, Q and value sum are set to 0, and the removed visits and value are taken off the parent node's own
-     `m_visits` and `valueSum`, with the sign convention backup uses (`accumulate_edge_value`). If they were kept, a
+     goes back to a new edge's state: 0 visits, Q and value sum at the `Q_INIT` seed (**correction:** the draft said
+     0; the first backup of an exact-backup edge adds to the seed, so the seed has to be `Q_INIT`), and the removed
+     visits and value are taken off the parent node's own `m_visits` and `valueSum`, with the sign convention backup
+     uses (`accumulate_edge_value`). An edge seeded with a transposition's pseudo-visit takes one visit more off
+     than the parent counted for it; totals stay at least 0. The fresh node takes its path's recomputed hash and
+     goes into the new transposition table, as `canonicalize_child` would at its first visit (so after a split the
+     table holds both, test 1.15). If they were kept, a
      stale verdict would carry on as a soft one: an edge that proved a flag win holds Q near +1 over hundreds of
      visits, and PUCT and the final visit-count choice would follow it after the proof itself is gone. Ancestors
      above the parent keep their totals, which is a stated approximation bounded by the removed visits. Test 1.14
@@ -193,6 +213,7 @@ moves that landed since the last search are exactly the board difference, so the
 // agent.h, beside nextRootCandidates_
 struct TeamTree {
     std::shared_ptr<Node> root;    // the last search's root; owns the tree
+    std::shared_ptr<Board> board;  // its position, to replay edges from (added in the build)
     std::string boardA, boardB;    // its FENs (pockets included)
     std::array<int, 2> plies{};    // game_ply per board
     TimeState rootTime;            // the durative clock it was rooted at
@@ -588,9 +609,14 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
 1.8 `SelfPlayWave2Test.TeamTreeReuseInSeatClockGames` (`test_selfplay_wave2.cc`): 3 games, uniform net, 4 s base,
     wave 2 preset plus `--team-tree-reuse true`: the summary reports reuse in more than 0 searches, both seats of each
     team among the reusing decisions, one `seat_clocks.tsv` row per record as before, no error.
+    **As built:** 4 games at 20 s and 256 nodes with the 5000 ms tolerance (at 4 s and 16 nodes the uniform net's
+    trees are too shallow to adopt anything), and "both seats of each team" is not asserted: which seats adopt
+    varies run to run with four search workers (1 run in about 10 had one seat per team). Test 1.7 checks the
+    cross-seat adoption deterministically.
 1.9 `TeamTreeReuse.MemoryBounded`: an old tree of more than 100k nodes: after adoption at most
     `TEAM_TREE_MAX_RETAINED` nodes are reachable from the root, and `Node::s_liveNodes` returns to that after the GC
-    thread drains.
+    thread drains. **As built:** the cap is a parameter of the walk; the test runs it at 60 on a 2000-node tree
+    (the replacements are fresh unexpanded nodes on top of the cap).
 1.10 `TeamTreeReuse.NoPermanentBrainOverTeamTree`: UCI `go` with fix 1 and a durative clock leaves the team tree in
     place after `bestmove` and `stop` (the next search adopts).
 1.11 `TeamTreeReuse.OpeningNoiseDiscards` (UCI) and `TeamTreeReuse.SelfPlayNoiseRefreshes` (self-play): as Interactions.
@@ -601,16 +627,24 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     forced wait, `can_sit`, held-back drops) under its new path time, and compare them with the node's generator
     lists as move sets. Run it over 20 adoptions in self-play-like sequences with clock offsets of 0-200 ms.
     Otherwise an expansion key that leaves out an input would pass 1.5 and still keep wrong expansions. The same
-    check runs as a debug-only `--team-tree-reuse-validate` inside 1.8.
+    check runs as a debug-only `--team-tree-reuse-validate` inside 1.8. **As built:** 20 re-timings of searched
+    trees (pockets, captures, near-tie paces) with random offsets of 0-200 ms; the debug flag is not built.
 1.14 `TeamTreeReuse.StaleFlagEdgeCarriesNoValue`: the old tree proved a FlagLoss win along one of the adopted root's
     edges (hundreds of visits, Q near +1). The new clocks no longer flag. After adoption that edge has 0 visits and Q
     0, the root's visits fell by the same amount, and at `go nodes 64` the chosen action is not the stale line unless
     the fresh search proves it again. This fails if only the child node is replaced and the edge statistics are
-    kept.
+    kept. **Correction:** an unsolved root cannot have a root edge proven won (one child proven lost makes the root
+    a proven win, and a solved node is never adopted). So the test re-times a solved root directly
+    (`retime_team_tree`): the edges into children proven lost for the flagging team have 0 visits and Q at
+    `Q_INIT` afterwards, the children are fresh, and the root's visits fell by the removed visits. On an adopted
+    root the same clearing applies to an edge into a child proven *won* for the opponent (Q near -1), and below.
+    On the uniform net the stale edges hold a few visits, not hundreds; the `go nodes 64` half is not built.
 1.15 `TeamTreeReuse.TranspositionSplitWhenPathsDiverge`: a retained node with two parents whose paths reach different
     times under `T'` (one path's pass is clamped by the flag, the other's is not) is split. Each parent's child has
-    the hash of its own path, and the table holds both.
-1.16 `TeamTreeReuse.RefusesCommittedCandidate` (fix 2 on): a board-matching node with a committed move for our
+    the hash of its own path, and the table holds both. **As built:** the shared node is made by hand (a
+    grandchild of one root edge put under another), since the walk only compares the recomputed hashes; a
+    time-only divergence was not constructed.
+1.16 (with fix 2, not yet built) `TeamTreeReuse.RefusesCommittedCandidate` (fix 2 on): a board-matching node with a committed move for our
     partner is refused with reason `committed`, and so is one with a committed move for an **opponent** seat.
 1.17 `TeamTreeReuse.NoOtherStateSurvives`: with fix 1 (and, separately, fix 3 alone) on under a durative clock and no
     `ucinewgame`, `mateContinuations_` and `nextRootCandidates_` are empty at the start of each search (7).
@@ -883,3 +917,24 @@ written, or a test that would have passed on broken code.
     * 1.13 checks retained expansions against fresh ones, independently of `expansionKey_`.
     * 1.2's visit count accounts for cleared edges.
     * 1.17 checks that no other state survives between searches.
+
+## Build corrections (fix 1, 2026-11-20)
+
+Found while building fix 1 on `talisman/wave2`; the sections above are corrected in place.
+
+1. **Expansion key.** It must also hold the time inputs of the terminal check (the other team's sit right, a clock
+   outcome, MateRaceByLanding's landing order, early landings and last capturer): an expanded node is never
+   classified as terminal again, so a node that a re-timing makes terminal has to be replaced.
+2. **Cleared edges go back to the `Q_INIT` seed**, not 0: the first backup of an exact-backup edge adds to the seed.
+3. **Fresh replacement nodes carry their path hash** and go into the new table; without that, test 1.15's "the
+   table holds both" could not hold (a fresh node has hash 0 until visited).
+4. **Test 1.14 as written cannot happen** on an adoptable root (a root edge proven won makes the root a proven win).
+   The test checks the clearing on a re-timed solved root instead.
+5. **Self-play flag needs seat clocks** (`--base-mix`), not only the durative tree: only the seat-clock game loops
+   keep the agent between decisions.
+6. **Hit rate.** A third structural cut besides the two in "Expected hit rate": the tree holds the other team's
+   landings only in their predicted order. First self-play numbers there. The arena gate run is still owed.
+7. **Options.** This step adds `TeamTreeReuse` and `TeamTreeReuseToleranceMs` only; the other four options and the
+   `Continuity` preset come with fixes 2 and 3 (test 0.1 covers the two). Tests 0.2, 0.3, 0.6 and 1.16 belong to
+   fix 2 or need recorded `261081b` self-play outputs and are not built yet; 0.4 (`engine/tests/wave2_parity.sh`)
+   and 0.5 are, 8/8 each.
