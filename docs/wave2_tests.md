@@ -14,9 +14,9 @@ the sit gate removed beat stock it13 at equal clock, and which part of it does t
 | Stock comparison | `third_party/upstream-hivemind` (tag v3.0.3, untouched) |
 | Network (both) | twin-s-clock it13, sha256 `f4ac25e3...`, inputs unchanged (planes 37/38 = lead, speed) |
 | Arena kind | `wave2` (`arena/players/upstream.py`: `Wave2TeamController`, `wave2_team`) |
-| Pool | `arena/pools/wave2.json`: contender `wave2`; opponents `upstream-it13`, `wave2-self`, `it04`, `upstream-it13-800n` |
+| Pool | `arena/pools/wave2.json`: contender `wave2`; opponents `upstream-it13`, `wave2-self`, `it04`, `upstream-it13-800n`, `wave2c-self` (section 7) |
 | Build | `WAVE2=1 sh tools/build_upstream.sh` (Mac) / `cluster/build.sh` (PACE, TensorRT) |
-| Rows | `bash cluster/launch_checks.sh wave2` |
+| Rows | `bash cluster/launch_checks.sh wave2`; wave 2c: `bash cluster/launch_checks.sh wave2c` (section 7) |
 
 ## 2. UCI contract (what the arena sends)
 
@@ -161,3 +161,81 @@ resumes from its game files). The build job is about 1 GPU-hour on top.
   regression run above.
 * With TensorRT the wrapper `build-ninja/hivemind` sets `LD_LIBRARY_PATH`; the arena runs `hivemind.bin` directly, as
   it already does for stock upstream (the cluster modules provide the libraries).
+
+## 7. Wave 2c rows (continuity, spec v5)
+
+Added 2026-11-20. Spec: `docs/custom_engine_spec_v5_continuity.md`. The PACE round of 2026-11-19 put the durative
+tree at 0.227 (`ref_120`) against 0.436 with it off (`nodur`), at nearly the same nodes/ms and the same eval
+calibration, so the loss is move choice. Wave 2c adds three engine fixes, each off by default: **team tree reuse**
+(fix 1: keep the team's tree between decisions and adopt the node the game reached, re-timed to the real clocks),
+**joint team actions below the root** (fix 2: our two seats choose a pair, the half whose seat is not ready lands at
+its ready time) and **plan carry** (fix 3: the next search of the partner is biased toward the half the last search
+chose for it). These rows need the wave 2c engine build (`cluster/wave2_engine.ref` at the new commit, then
+`bash cluster/build.sh`, "wave2 check: PASS").
+
+### UCI contract additions
+
+| Engine option | Player option | Engine default | Sent |
+|---|---|---|---|
+| `TeamTreeReuse` | `team_tree_reuse` | false | only when true |
+| `TeamTreeReuseToleranceMs` | `team_tree_reuse_tolerance_ms` (0..5000) | 250 | only when not 250 |
+| `JointPlans` | `joint_plans` | false | only when true |
+| `JointPlanFreePermille` | `joint_plan_free_permille` (0..1000) | 500 | only when not 500 |
+| `PlanCarry` | `plan_carry` | false | only when true |
+| `PlanCarryPermille` | `plan_carry_permille` (0..1000) | 300 | only when not 300 |
+| (none) | `continuity` | - | expands in Python to the three switches; a switch the row sets itself wins; no `Continuity` option is sent |
+
+Unlike the six wave 2 flags, these are sent only off the engine default. A row without them therefore sends exactly
+the options it sent before and still runs on a pre-2c binary. A row that sets one refuses to start on a binary that
+does not advertise it (`RuntimeError ... build the wave 2c engine`), so a fix cannot silently do nothing.
+
+`team_tree_reuse` or `plan_carry` on: the engine keeps its tree and plans between searches, so the arena sends no
+`ucinewgame` before each search (as `reuse_tree`), and the controller sends one at its first search of each game.
+`joint_plans` alone keeps the per-search `ucinewgame` of `ref_120`, so `c_joint_120` differs from it only by fix 2.
+The engine side clears the rest of its cross-search state under fixes 1 and 3 (spec v5 fix 1 step 7).
+
+Telemetry: the engine prints `info string Team tree reuse: <visits> visits recovered, ...` or `... none (<reason>)`
+and `info string Plan carry: <board> <move> weight <w>` or `... dropped (<reason>)`. The arena records them per
+search (`SearchResult.reused_visits`, `reuse_refusal`, `plan_carried`; the `thinking` start event's
+`reused_visits` and `plan_carried`), per game (`continuity` in the summary: searches, reuse hits, reused visits,
+plan carries per team) and per row (`contender_reuse_per_search`, `contender_plan_carries_per_search` and the
+baseline's in `summary.json`; the printed table appends `c_reuse/search=` and `c_carry/search=` where they are
+nonzero). Unit tests: `arena/tests/test_upstream.py` (`test_wave2_continuity_*`, `test_wave2_parses_reuse_line`,
+`test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`).
+
+### The rows (`bash cluster/launch_checks.sh wave2c`, 6 jobs, 7 with `WAVE2C_REF=1`)
+
+Common settings as section 4 (pool `wave2` contender, `clock_k 110`, `serial`, `charge "searched"`, `MEASURE=1` at
+800 nodes per binary and flag set, so fix 2's node cost is charged as measured; `bughouse` openings; rules v3), all
+against `upstream-it13` at 120 s, no SPRT. `SBATCH_DEPENDENCY=afterok:<build job>` holds every row behind the build.
+
+| Row | Opponent | `CONTENDER_KW` | Pairs | Question | Expected reading |
+|---|---|---|---|---|---|
+| `c_all_120` | upstream-it13 | `{"continuity": true}` | 600 | all three fixes on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
+| `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` | 600 | fix 1 alone | above `ref_120` (0.227) if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
+| `c_joint_120` | upstream-it13 | `{"joint_plans": true}` | 600 | fix 2 alone | above `ref_120` if joint planning below the root is what was missing; reuse and carries per search exactly 0 |
+| `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `ref_120`; carries per search above 0 |
+| `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
+| `c_same_120` | wave2c-self | `{"continuity": true}` | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
+| `c_ref_120` (only with `WAVE2C_REF=1`) | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary | within the noise of `ref_120` (0.227). Optional: with every fix off the new binary is bit-identical to the one `ref_120` ran (spec v5 tests 0.4, 0.6) |
+
+How to read them:
+
+1. Read `c_same_120` first. If it is not 0.50, nothing else in the round is read.
+2. Check that each fix fired: `c_reuse/search` above 0 in `c_reuse_120` and `c_all_120`, `c_carry/search` above 0 in
+   `c_carry_120` and `c_all_120`, both 0 in `c_joint_120` and `c_nodur_120` (`summary.json`, `results` ->
+   `by_opponent`). A fix row whose counter is 0 measured nothing: report it, do not read its score.
+3. Each fix-alone row against `ref_120` (or `c_ref_120`); `c_all_120` against `c_nodur_120`. With about 1200 games a
+   row's 95% range is about +-0.03, so a difference needs about 0.04 before it means anything.
+4. Fix 2 changes node cost; the per-arm `ms_per_node` measured for the row is in its `ms_per_node.json`. A row that
+   scores better only because it is charged less per node is a speed result, not a move-choice result.
+
+```sh
+SBATCH_DEPENDENCY=afterok:<build job> bash cluster/launch_checks.sh wave2c
+.venv/bin/python tools/compare_evals.py runs/wave2/ref_120 runs/wave2c/c_reuse_120
+.venv/bin/python tools/compare_evals.py runs/wave2c/c_nodur_120 runs/wave2c/c_all_120
+bash cluster/results.sh
+```
+
+Cost: 5 rows x 1200 games and `c_same_120` at 1600, about 8 GPU-hours each at section 5's rate: about 48
+GPU-hours, plus 8 for `c_ref_120`.
