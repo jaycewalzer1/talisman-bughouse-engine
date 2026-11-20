@@ -55,7 +55,7 @@ The three fixes answer these. Each is a UCI option and a self-play flag, off by 
 | `TeamTreeReuseToleranceMs` | spin 0..5000, 250 | `--team-tree-reuse-tolerance-ms <ms>` | Fix 1: largest per-seat clock (and opponent ready-time) difference a retained node may have from the real clocks. |
 | `JointPlans` | check, false | `--joint-plans <bool>` | Fix 2: below the root, a team that acts plans its other on-turn seat's move in the same joint action. |
 | `JointPlanFreePermille` | spin 0..1000, 500 | `--joint-plan-free-permille <n>` | Fix 2: prior share of "decide later" (no plan) for the planned seat. |
-| `PlanCarry` | check, false | `--plan-carry <bool>` | Fix 3: bias the next search toward the remembered half of the last chosen pair. |
+| `PlanCarry` | check, false | `--plan-carry <bool>` | Fix 3: bias the next search toward the remembered half of the last chosen pair. The flag needs `--durative-tree true` and `--base-mix` (as built: only the seat-clock loops play one seat's half and keep the agent until the partner decides). |
 | `PlanCarryPermille` | spin 0..1000, 300 | `--plan-carry-permille <n>` | Fix 3: prior mixing weight of the remembered move. |
 | `Continuity` | check, false | `--continuity <bool>` | Preset: `true` sets the three switches on, `false` sets them off. Knobs keep their values. Last write wins. |
 
@@ -731,7 +731,9 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     for an undecided seat, and that seat's next search applies it (counter in the summary line).
 3.7 `PlanCarry.BothBoardsAndHeldBackDrop`: both slots valid at once are both mixed. A planned drop of a piece that is
     held back at the new root (InstantTransfer false, landed mid-decision) is dropped with reason `not a root
-    action`, and the board's root priors still sum to 1.
+    action`, and the board's root priors still sum to 1. **Correction (fix 3 build):** no piece is ever held back
+    for the root team at a live root (`TimeState::durative` holds pieces back only for the other team's seats; the
+    root team decides anew), so the drop is a root action and is applied; the test checks that, and the priors sum.
 3.8 `PlanCarry.NoLeakAcrossGamesOrTeams`: two consecutive self-play games on the same agents, and two tournament
     games where contender and baseline swap teams. No search of game 2 applies a plan recorded in game 1, and no
     team applies the other team's plan.
@@ -986,3 +988,38 @@ corrected in place where they were wrong.
    state with the side invariant counted (`SearchThread::checkDurativeSides`), since the suite is a Release build
    where `assert` is off. 4.1 needs the `Continuity` preset and comes with fix 3; its fix-2 parts are the rules tests
    (`ContinuityRules.*`, v4 test 4 with plans). 4.3 runs with the arena plumbing (step 4).
+
+## Build corrections (fix 3, 2026-11-20)
+
+Found while building fix 3 on `talisman/wave2` (`docs/wave2_engine.md` there, "Fix 3"); corrected in place where the
+sections above were wrong.
+
+1. **Held-back drops cannot reach a root plan (3.7).** At a live root the root team decides anew: `TimeState::durative`
+   fills `pending` only for the other team's seats. So no carried drop is ever dropped as `not a root action` for a
+   held-back piece; the check stays as a guard. Side effect worth knowing (v4, not fix 3): under InstantTransfer false
+   the root may play a drop of a piece that landed during that seat's current decision.
+2. **Where the fresh-root mix happens.** Not in `process_batch` but in `Node::try_init_and_expand`, right after the
+   root noise that already lives there; the promotion is made there too, after the frontier and the Gumbel pool are
+   built and before the first child is taken (that function expands the first child itself, so a promotion made in
+   `process_batch` after it would be one child late).
+3. **No promotion when an expanded pair already holds the carried move** (an adopted root may have one): it has its
+   visits. With both slots valid the pair holding both is promoted when legal, else the better single pair.
+4. **Self-play flag needs seat clocks** (`--base-mix`), as fix 1's does (Options table corrected).
+5. **Recording in self-play and tournament** goes through `Agent::record_plans` after the action is chosen (self-play
+   samples one), for the team's on-turn seat that is neither deciding nor has a move in flight
+   (`SeatClockGame::in_flight`). In those games that seat is always a sitting one, so plans fire in about 3-7% of
+   searches (it13, 200 nodes, 30 s).
+6. **UCI permanent brain** is not started under `PlanCarry` with a durative clock either: the next search drops the
+   retained root anyway (Fix 1 step 7).
+7. **Telemetry and reasons.** `info string Plan carry: <A|B> <move> weight <w>` or `... <A|B> <move> dropped
+   (<reason>)` per slot that held a move; reasons `other team`, `not on turn`, `board changed`, `pocket`, `illegal`,
+   `not a root action`, `weight 0` (PlanCarryPermille 0 drops the slot).
+8. **Tests as built.** 3.1 with it13: A at the start, B after 1.e4; search 1 (200 nodes) chooses `(d2d4, e7e5)`, after
+   d2d4 d7d5 the 64-node search with plan carry chooses `e7e5`, without it `b8c6`. 3.8 is checked at the agent level
+   (other-team plans dropped, `reset_search_state` keeps plans, `clear_plans` empties them) plus self-play and
+   tournament smoke runs; the game loops' clears are not observed directly. 3.9's adopted-root half is a node-level
+   test (promotion before `configure_root_search` is lost, after it survives). 4.1 is built for v4 tests 1 and 6,
+   each sequenced so that fix 1 (test 1) or fix 3 (test 6) fires; v4 tests 3 and 4 are fix 2's rules tests, and the
+   mate race (test 5) is not rerun sequenced.
+9. **Python.** `rl-loop --continuity` is a plain switch that sets the three `Options` fields; an explicit switch
+   (`--joint-plans false`) overrides it.
