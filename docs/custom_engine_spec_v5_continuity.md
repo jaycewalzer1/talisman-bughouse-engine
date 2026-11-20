@@ -85,7 +85,10 @@ moves that landed since the last search are exactly the board difference, so the
    only if, after its applied moves (fix 2: planned halves are not applied), each board's ply count is at most the
    live board's (`Board::game_ply`) and a board whose ply count equals the live one has the live board's FEN
    (position, side to move, castling, en passant; pockets compared separately: each pocket a sub-multiset of the
-   live one, equal at a candidate). Wait edges `(pass, pass)` and pass edges keep ply counts and are followed. Depth
+   live one, equal at a candidate). The arena sends a FEN only and no move list (`position fen <A> | <B>`,
+   `upstream.py:266`), so the FEN comparison leaves out the halfmove and fullmove counters. Ply counts are compared
+   as offsets from the old root (moves applied on that board along the path, against the live ply minus the stored
+   root ply), both read from the same front end's counters. Wait edges `(pass, pass)` and pass edges keep ply counts and are followed. Depth
    cap `TEAM_TREE_MAX_PLIES = 8` joint plies (wait nodes count), node cap `TEAM_TREE_MAX_VISITED = 20000`. The path
    time is carried down with the durative charge the search used (`TimeState::after_action` with the edge's applied
    moves and hand pieces, as `time_after_action` does in `searchthread.cc:1438`), not `advance()`.
@@ -94,36 +97,79 @@ moves that landed since the last search are exactly the board difference, so the
    search was given):
    * same sides to move, same sitting bits for the seats on turn, same pending (delayed transfer) counts, same
      `outcome` (NONE);
+   * **no committed move for any seat** (fix 2), ours or the other team's. A live root never has one: the game has
+     not committed the other team to anything, and a node whose state holds an opponent commitment would force that
+     opponent move throughout the adopted subtree;
    * every seat clock within `TeamTreeReuseToleranceMs` of `T'`;
    * for the other team's seats on turn, ready time within the tolerance of `T'`'s;
    * the **shape check** at the candidate passes under `T'` (below). At the root this is the strict part: `T'` is
      `atRoot`, so our team acts on every board it is on turn on. A candidate where one of our on-turn seats was not
      ready (it acted on one board only) has the wrong shape and is not adopted.
    Among candidates: smallest largest-clock-difference, then most visits.
+
+   **Expected hit rate (read before tuning).** The Step 0 ceiling (33% of decisions) ignored clocks and shape. Two
+   things cut it, and neither is a bug in the design:
+   * the tree lands each opponent action at that seat's pace (an EMA), so at the candidate the opponent's clock is off
+     by |real think time - pace|, which is often far above 250 ms;
+   * the live root acts on every board our team is on turn on (`atRoot`), while in the tree a partner who is
+     mid-decision or sitting acts at its own node (a sitting partner wakes 1 ms after the landing,
+     `advance_action` step "a pass on the other board ends 1 ms after this landing"). When both our seats are on turn
+     the candidate almost never has the root's shape.
+   So step 1 of the implementation order ends with a **gate**: `tools/continuity_probe.py reuse` with fix 1 reports
+   the hit rate and the refusal reasons (`no node`, `clock`, `shape`, `committed`, `solved`) at tolerances 250, 1000
+   and 3000 ms, and the distribution of the largest clock difference at board-matching nodes. If the hit rate at the
+   chosen default is under 10% of searches, report it and choose the default from the data before fixes 2-3 and
+   before any PACE row. A larger tolerance is safe for correctness (everything below the root is re-timed, re-shaped
+   and verdict-checked); it only trades how stale the retained statistics are. Retained priors and values were also
+   computed from the old node's clock planes (and, for a wide network, its timing planes); that is part of the same
+   approximation.
 3. **Re-timing (`Agent::retime_team_tree`).** Nodes store no time: every path time is recomputed from the root time
    at each selection (`select_and_expand`, `pathTime`). What a node does store and depends on time is (a) its hash,
    (b) its expansion (which boards acted, forced waits, whether a sit was legal, which drops were held back), (c) a
-   solver verdict, (d) its transposition-table entry. The re-timing walk visits the adopted subtree breadth first
-   from `T'`, carrying the new path time, single-threaded, before workers start:
+   solver verdict, (d) its transposition-table entry. The re-timing walk visits the adopted subtree from `T'`,
+   carrying the new path time, single-threaded, before workers start. It is a depth-first walk with
+   `make_moves`/`unmake_moves`, because the path time needs `hand_piece_type` and the expansion key needs the board's
+   legal drops and pockets. A breadth-first count runs first, without a board, and marks the first
+   `TEAM_TREE_MAX_RETAINED` nodes, so the cap keeps the shallow part of the tree. The walk only enters marked nodes.
+   * **The tree is a graph (MCGS).** `canonicalize_child` merges children with equal `search_hash_key`, which
+     includes the durative key, so one node can have several parents. Two paths that reached the same time under the
+     old root can reach different times under `T'`, because flag clamps, pass caps and wake-ups are not
+     shift-invariant. The walk keeps a `visited` map from node to the hash it recomputed. When a node is reached
+     again with a different recomputed hash, the edge from the later parent is replaced by a fresh unexpanded node:
+     the node is split, and the shared copy keeps the hash and state of its first path. With an equal hash the node
+     stays shared and is not walked again;
    * (a) `set_hash(board.search_hash_key(team, nodeTime))` on every visited node, then the node goes into the fresh
-     transposition table (this replaces `reindex_reused_subtree`'s stored-hash insert, `agent.cc:8982`, for this path);
+     transposition table (this replaces `reindex_reused_subtree`'s stored-hash insert, `agent.cc:8982`, for this path).
+     Before overwriting, the walk keeps the node's **old** hash for (c);
    * (b) **shape check**: each node stores at expansion a 32-bit `expansionKey_` (new `Node` field, written in
      `try_init_and_expand`): a hash of the inputs that fixed its action lists besides the board: acting boards after
      the durative filter (`searchthread.cc:914-920`), `forcedWait`, the leaf `can_sit` (`leafTeamHasTimeAdvantage`,
      `:1055`), the held-back drop counts of the acting seats (`pending_in_hand`), and under fix 2 the planned board
      and any committed move. The walk recomputes the key under the new time; a mismatch replaces that child with a
      fresh unexpanded node (`Node::replace_child`, `node.h:828`; the old subtree goes to `discard()`);
-   * (c) a node holding a solver verdict (`WIN`, `LOSS`, `DRAW`) is replaced by a fresh node when any clock moved
-     (largest difference > 0). Flags and sit-off draws hinge on milliseconds; a fresh node re-proves a board mate at
-     its first visit. With exactly equal clocks verdicts are kept;
+   * (c) a node holding a solver verdict (`WIN`, `LOSS`, `DRAW`) is kept only when its recomputed hash equals its
+     old hash. The hash holds the whole durative key, so equal hashes mean the node's time state is unchanged. A
+     clock comparison alone is not enough: `rootMoveMs` (each search's own budget, which the arena changes every
+     decision) and the paces set every ready time of our team below the root (`action_time_ms`). Otherwise the node
+     is replaced by a fresh node. Flags, sit-off draws and landing-time mate races hinge on milliseconds, and a fresh
+     node re-proves a board mate at its first visit. The walk goes top-down, so the topmost solved node is replaced
+     and its parent is always `UNSOLVED`. That is the case in which `Node::replace_child` (`node.h:828`) restores
+     `childNodeTypes`, `unsolvedChildCount` and `provenWinningChildCount`;
    * nodes beyond `TEAM_TREE_MAX_RETAINED = 100000` walked nodes (`SearchParams::TREE_REUSE_REINDEX_MAX_NODES`) are not
      validated, so their parents' edges to them are replaced by fresh nodes too. Nothing unvalidated stays reachable.
-   * Edge statistics of the parent (visits, Q) are kept even where a child was replaced, as CrazyAra-style reuse keeps
-     them. This is a stated approximation; the replaced child earns its value again from its first visit.
+   * **Edge statistics where a child was replaced (by shape, verdict, split or cap) are cleared.** The parent's edge
+     visits, Q and value sum are set to 0, and the removed visits and value are taken off the parent node's own
+     `m_visits` and `valueSum`, with the sign convention backup uses (`accumulate_edge_value`). If they were kept, a
+     stale verdict would carry on as a soft one: an edge that proved a flag win holds Q near +1 over hundreds of
+     visits, and PUCT and the final visit-count choice would follow it after the proof itself is gone. Ancestors
+     above the parent keep their totals, which is a stated approximation bounded by the removed visits. Test 1.14
+     covers it.
+   * The adopted root's `parentEdges` are cleared, so that a proof found in the new search does not propagate into
+     the discarded old tree.
 4. **Adoption** goes through the existing guards in `run_search` (`agent.cc:6235-6267`: must-play loss, unexpanded
    loss, claimed win that loses the mate race), then `set_hash`, `set_depth(0)`, root noise, `configure_root_search`.
    Verbose UCI prints `info string Team tree reuse: <visits> visits recovered, clock diff <ms> ms, <pruned> pruned`
-   (or `... none (<reason>)` with reason `no node`, `clock`, `shape`, `solved`), so the arena and the probe can count
+   (or `... none (<reason>)` with reason `no node`, `clock`, `shape`, `committed`, `solved`), so the arena and the probe can count
    hits. The old exact path (`try_reuse_tree`) is not called when fix 1 is on for a durative clock.
 5. **Node budget.** UCI `go nodes N` still searches N new nodes on top of the adopted visits
    (`reusedVisitsCount = false`), and `info ... nodes` reports new nodes only (`agent.cc:7751`), so the arena's
@@ -131,7 +177,15 @@ moves that landed since the last search are exactly the board difference, so the
    (`reusedVisitsCount = true`, `minNewNodes = treeReuseMinNewFraction x budget`, as `--tree-reuse` does,
    `selfplay.cc:1550`).
 6. **After the search.** With fix 1 on and a durative clock, the end of `run_search` (`agent.cc:8455-8475`) stores the
-   whole tree as the `TeamTree` instead of `store_next_root_candidates`, and leaves `nextRootCandidates_` empty.
+   whole tree as the `TeamTree` instead of `store_next_root_candidates`, and leaves `nextRootCandidates_` empty. This
+   store does not depend on `options.retainForReuse`, which self-play sets to false (`selfplay.cc` search options).
+   A missed ponder still clears it, as it clears the candidates now.
+7. **Other state that persists between searches.** In the PACE rows `ucinewgame` came before every search, so
+   nothing survived from one search to the next. With fix 1 or fix 3 on, the arena stops sending it (arena section).
+   To keep each row's only difference its fix, `run_search` under a durative clock with `teamTreeReuse` or
+   `planCarry` on starts by clearing `mateContinuations_` (a legacy-flag cache that is not re-timed;
+   `try_reuse_mate_continuation`, `agent.cc:7529`), `nextRootCandidates_` and `lastSearchHash_`. With `planCarry` on
+   and `teamTreeReuse` off it also drops the retained root, as `reset_search_state` does, keeping only `plans_`.
 
 ### Data structures
 
@@ -160,7 +214,7 @@ field is written and never read.
 | `search/searchthread.cc` | `process_batch` computes the expansion key (`:1055-1118`) and passes it to `expand_leaf_node` |
 | `environment/time_state.h` | `clock_distance(const TimeState& live) const` and `same_turn_state(const TimeState&) const` for the candidate test |
 | `interface/uci.cc` | options; with `TeamTreeReuse` on, `go` (`uci.cc:300`) does not start `run_permanent_brain` for a durative clock (below) |
-| `tools/selfplay.cc` | `play_seat_clock_game` (`:904`): with `--team-tree-reuse`, no `agent.reset_search_state()` per decision (`:1045`; still once at game start, `:933`), `searchOptions.teamTreeReuse`, top-up budget; summary line `selfplay team tree reuse: <hit %> of searches, <mean visits>` like `:1745`; the comment at `:903` updated |
+| `tools/selfplay.cc` | `play_seat_clock_game` (`:904`): with `--team-tree-reuse`, no `agent.reset_search_state()` per decision (`:1045`; still once at game start, `:933`); the same in `tournament.cc` `play_seat_clock_match` (per-decision reset at `:564`, plus a new game-start reset), `searchOptions.teamTreeReuse`, top-up budget; summary line `selfplay team tree reuse: <hit %> of searches, <mean visits>` like `:1745`; the comment at `:903` updated |
 | `main.cc` | flags and help; the `:365` refusal stays for `--tree-reuse` only |
 
 ### Both seats of the team
@@ -181,8 +235,8 @@ which seat moved last.
   keeps the adopted root and re-noises it (`Node::refresh_root_noise`, as `run_search` already does at `:6273`).
 * **SitGate.** `can_sit` at each node is in the expansion key, so a shift that changes the gate or the sit-off rule
   re-expands that node.
-* **FlagLoss.** Clock-dependent verdicts are dropped when any clock moved (3c). A flag in the subtree is found again
-  under `T'`.
+* **FlagLoss.** Verdicts are dropped wherever the node's time state changed (3c), and their edge statistics go with
+  them. A flag in the subtree is found again under `T'`.
 * **InstantTransfer.** Pending counts must match at the candidate and are in the expansion key below it.
 * **MateRaceByLanding.** Root provers are off under it as before; `earlyMs` is part of the path time and is
   recomputed. `lastCapture` must match at the candidate.
@@ -241,13 +295,24 @@ true always; with it false only when the planned seat is sitting (its decision s
 capture lands; `pending` is cleared then) and never for a seat already deciding. Existing held-back drops are filtered
 as in `prepare_actions` (`searchthread.cc:930`).
 
+**What this means under the headline flags.** Wave 2 plays `InstantTransfer false` (`WAVE2_FLAGS`,
+`upstream.py:85`). A planned supplied drop is then possible only for a sitting partner. The v4 tree already wakes a
+sitting partner 1 ms after the capture lands, and it acts at the next node of our team, one forced wait later. So
+the drop rule adds little in the headline configuration. What fix 2 adds there is the pairing itself: the partner's
+quiet move or capture is chosen together with ours, and a capture by the planned half feeds our immediate seat's
+**next** decision when it lands before that decision starts. Test 2.4 therefore has a headline-flag variant
+(2.4b). Do not read a pass of 2.4a (InstantTransfer true) as evidence for the headline rows.
+
 **Priors.** Immediate halves as today. Planned half: the node's network policy for that board over the candidate list
 (drop indices that are illegal before the capture take their raw logits, softmaxed with the rest at the node's policy
 temperature). Then "decide later" gets `max(pass prior, JointPlanFreePermille / 1000)` and the moves share the rest in
 proportion. Then each planned move that gives mate on its landing board (checked once per candidate at expansion, on
 the board with the needed piece in the pocket) is raised to at least `SearchParams::JOINT_PLAN_MATE_PRIOR` = 0.25 and
-the half is renormalised. The mate raise is there because the planned half's priors are read before the immediate
-half's capture reaches the pocket; set the constant to 0 to ablate it. Joint factors (`jointFactorsA/B`,
+the half is renormalised. The mate test runs in `collect_batch`, where the board is at hand (`process_batch` has no
+board), and only on candidates that give check. It costs one make, a legal-move count and one unmake per checking
+candidate at each planning leaf. The scaling probe records how much it changes nodes/ms.
+The mate raise is there because the planned half's priors are read before the immediate half's capture reaches the
+pocket; set the constant to 0 to ablate it. Joint factors (`jointFactorsA/B`,
 `searchthread.cc:1105`) apply as for any half.
 
 **Pair legality.** The generator (`JointCandidateGenerator`, `joint_action.h:220`) checks immediate halves exactly as
@@ -258,10 +323,14 @@ most 6 x 6 products) so widening by prior mass stays exact.
 ### Data structures
 
 ```cpp
-// joint_action.h: JointActionCandidate. The new byte sits in existing padding (static_assert on sizeof).
-uint8_t plannedMask = 0;   // bit 0: moveA is planned (not applied now), bit 1: moveB
-Stockfish::Move applied_a() const { return plannedMask & 1 ? Stockfish::MOVE_NONE : moveA; }
-Stockfish::Move applied_b() const { return plannedMask & 2 ? Stockfish::MOVE_NONE : moveB; }
+// joint_action.h: JointActionCandidate. moveA/moveB stay the halves that are applied now; the planned half lives
+// in its own field, in the 4 bytes of padding after gumbelScore (offset 28, before the 8-aligned idxA; the
+// static_assert on sizeof stays 48).
+Stockfish::Move planned = Stockfish::MOVE_NONE;   // the planned seat's move; MOVE_NONE = no plan / decide later
+
+// node.h: Node. Which board a planning node plans on, -1 = none. One per node: at most one board can be on turn
+// for the acting team without being ready, because the other board is the one it acts on.
+int8_t plannedBoard_ = -1;
 
 // time_state.h: DurativeConfig
 bool jointPlans = false;
@@ -274,32 +343,71 @@ std::array<Stockfish::Move, 4> committed{MOVE_NONE, MOVE_NONE, MOVE_NONE, MOVE_N
 
 `Durative::key()` mixes `committed` only when `jointPlans` is set, so keys with fix 2 off are exactly v4's.
 
+**Why the planned half gets its own field (review change).** The draft stored the planned move in `moveA`/`moveB`
+with a `plannedMask`, which made every `make_moves(action.moveA, action.moveB)` on a below-root edge wrong unless it
+was rewritten. There are 11 such calls in `searchthread.cc` and 54 in `agent.cc`, and many in `agent.cc` walk
+below-root edges: PV and mate-line extraction (`:2816`, `:2949`), certification and prover walks (`:3070`, `:5081`,
+`:5422`), and the retained-candidate and reuse walks (`:8776-8878`, `:9075`, `:9250`, `:9305`). A missed site would
+play the planned move early: one seat acting before its ready time, with the board and the durative `side` no longer
+agreeing. With the separate field every existing site stays correct as it is.
+
+The new rule is the other way round. Any code that looks up or compares a **below-root** action by
+`(moveA, moveB)` must also compare `planned`:
+* `JointCandidateGenerator::promote`;
+* mate-hint matching (`mateCandidateTable`, `hintAction` in `select_and_expand`);
+* `retain_played_line`;
+* any child-by-action lookup.
+
+The generator keeps the planned board's list in the slot that board's `{MOVE_NONE}` list has today, so the
+`(idxA, idxB)` identity stays unique. When it builds a candidate it writes that list's entry into `planned` and
+leaves that board's move field `MOVE_NONE`. `is_joint_action_legal` therefore sees that board as not acting, exactly
+as today, and "decide later" is never judged as a sit. Only `time_after_action` (which passes `planned` and
+`plannedBoard_` to `advance_action`), the expansion key, PV printing and fix 1's descent (which ignores it) read the
+field.
+
+**Invariant (debug builds and tests).** At every leaf in `collect_batch`, `board.side_to_move(b) ==
+ctx.time.side_on(b)` for both boards under a durative clock. A planned move applied early, or a committed move never
+applied, breaks it at once.
+
 New `TimeState` API: `planned_boards(team)` (on-turn, not ready, not committed boards of `team`; empty outside a
 durative state, at the root or with fix 2 off), `committed_move(seat)`, and `advance_action(team, movedA, movedB,
 handA, handB, plannedA, plannedB)` with the two new arguments defaulting to `MOVE_NONE`: a planned move is stored as
 the seat's committed move and changes no ready time; a seat that acts with its committed move clears it; a committed
 seat counts as "deciding" for the pass wake-up rule (it lands at its ready time). A committed seat may not be planned
-again. `sit_off_forces_move` is unchanged (a committed seat is not sitting). Flags run as today: a committed seat whose
-clock runs out before its landing flags (FlagLoss).
+again. Flags run as today: a committed seat whose clock runs out before its landing flags (FlagLoss).
+
+**A sitting seat that receives a plan.** This is the main planned-drop case under `InstantTransfer false`. The seat
+keeps `sitting = true` for **timing and transfer**:
+* its landing is its wake-up, and the rule "a pass on the other board ends 1 ms after this landing" still fires
+  when the immediate half moves, so the planned drop lands 1 ms after the capture;
+* `pending_in_hand` is still 0 for it, and `pending` is cleared when it acts.
+
+For the **sit-off rules** a committed seat counts as not sitting:
+* the cross-team sit-off `DRAW` check at the end of `advance_action` skips committed seats (otherwise an opponent
+  sitting on the other board at an equal clock would end the line as a draw although our committed move is
+  certain to land);
+* in `sit_off_forces_move`, a committed seat is not the "other team's sitting seat".
+
+Both checks read `committed`, so with fix 2 off they are unchanged.
 
 ### Files and functions
 
 | File | Change |
 |---|---|
 | `environment/time_state.h` | `DurativeConfig::jointPlans`, `Durative::committed`, key, `planned_boards`, `committed_move`, `advance_action` planned arguments, `durative()` copies the switch |
-| `environment/joint_action.h` | `plannedMask`, `applied_a/b`; generator takes per-board planned flag, per-action needed type (planned board) and supplied type (immediate board); pair legality and `legalPriorMass` |
-| `search/node.h` | `try_init_and_expand` passes the new per-action vectors; candidates carry `plannedMask` |
+| `environment/joint_action.h` | `planned` field; generator takes the planned board, per-action needed type (planned board) and supplied type (immediate board), writes the planned entry into `planned`; `promote` compares `planned`; pair legality and `legalPriorMass` |
+| `search/node.h` | `plannedBoard_`; `try_init_and_expand` passes the planned board and the new per-action vectors |
 | `search/searchthread.h` | `LeafContext` gains `plannedA/B`, `forcedA/B`, the per-action needed/supplied vectors; `TrajectoryEntry` unchanged (the candidate carries the mask) |
-| `search/searchthread.cc` | `collect_batch` (`:914-965`): planned and forced boards, candidate lists, mate tags; `process_batch` (`:1055-1118`): planned-half priors; `select_and_expand` (`:1438-1590`): `time_after_action` passes planned halves, `board.make_moves(applied_a(), applied_b())`; every unmake loop (`collect_batch` `:721`, `:839`, `:897`, `:985`; `canonicalize_child` `:1387`; `select_and_expand` makes at `:1512`, `:1569` and unmakes at `:1527`, `:1584`) and the per-board ply count (`:810-817`) use the applied halves (one helper, `unmake_applied(board, action)`) |
+| `search/searchthread.cc` | `collect_batch` (`:914-965`): planned and forced boards, candidate lists, mate tags; `process_batch` (`:1055-1118`): planned-half priors; `select_and_expand` (`:1438-1590`): `time_after_action` passes `action.planned` and the node's `plannedBoard_` to `advance_action`; make/unmake sites and the per-board ply count (`:810-817`) are unchanged, because `moveA`/`moveB` are the applied halves; mate-hint matching compares `planned`; the debug invariant `side_to_move == side_on` |
 | `search/searchthread.cc` `classify_terminal_position` / `has_unavoidable_waiting_board_mate` | a seat with a committed move is not credited with a waiting-board mate unless its committed move is that mate |
-| `search/agent.cc` | PV printing and `extract_pv_from_child`: a planned half prints as `pass` at its step, the move prints at its landing step; `retain_played_line` (`:9046`) uses applied halves |
+| `search/agent.cc` | PV printing and `extract_pv_from_child`: a planned half prints as `pass` at its step (it already does, the move field is `MOVE_NONE`), the move prints at its landing step; below-root child lookups by action compare `planned` |
 | `interface/uci.cc` | option; `current_clock()` (`uci.cc:764`) sets `config.jointPlans`, `jointPlanFreePermille` |
 | `tools/seat_clock_game.h`, `selfplay.cc`, `tournament.cc` | flags into `durative_config()` |
 | `search/search_params.h` | `JOINT_PLAN_MATE_PRIOR` |
 
 ### Interactions
 
-* **Root.** Unchanged (Common rules). Root edges never carry `plannedMask`, so `bestmove`, `root_edge_stats`,
+* **Root.** Unchanged (Common rules). Root edges never carry a `planned` move, so `bestmove`, `root_edge_stats`,
   self-play policy targets and HVM6/HDST records keep their meaning.
 * **SitGate.** Immediate halves use `can_sit` as now; "decide later" is not a sit and is always allowed.
 * **FlagLoss.** As above. Acceptance test 4 of v4 (a 3 s seat makes at most 29 landed moves) holds with planned moves
@@ -311,8 +419,10 @@ clock runs out before its landing flags (FlagLoss).
 * **Seat options.** Build the root as now. `SeatSitting` matters for planned drops (sitting seats may drop supplied
   pieces with delayed transfer).
 * **Fix 1.** Committed moves are in the path time and in the expansion key, so re-timing is exact. A retained node
-  with a committed move for one of our seats cannot be adopted as a root (at the root both our on-turn seats decide):
-  the shape check refuses it. Fix 3 then still carries the plan (below).
+  with a committed move for **any** seat cannot be adopted as a root (reason `committed`, fix 1 step 2). For our
+  seats this is because both our on-turn seats decide at the root; for the other team's seats it is because the
+  real opponent has committed to nothing. Fix 3 then still carries our plan (below). Fix 1's descent follows edges
+  by their applied moves only, which are `moveA`/`moveB` under the representation below.
 * **Transpositions.** Different commitments never merge (key); equal ones do.
 
 ### Thread safety and memory
@@ -335,12 +445,17 @@ continues the plan unless the new search finds better.
 
 1. **Recording (end of a non-background `run_search`).** For each board where our team was on turn at the root and the
    chosen half is a move (not a pass): a `CarriedPlan{board, move, fen of that board (pockets included),
-   team, edgeQ, edgeVisitShare}`. Each search replaces both slots (an empty half clears its slot). Under fix 2, when
-   fix 1's adoption was refused because the candidate held a committed move for one of our seats, that committed move
-   is recorded too (it is the tree's plan for that seat).
+   team, edgeQ, edgeVisitShare}`. Each search replaces both slots (an empty half clears its slot). A second source,
+   used under fix 2: at the **start** of the next search, if fix 1 refused a board-matching candidate only because
+   it held a committed move for one of **our** seats, that commitment is the tree's plan for that seat. It fills that
+   board's slot only when the slot is empty, because the slot written at the end of the last search wins. It then
+   goes through the same validity check (2). Commitments of the other team's seats are never recorded.
 2. **Validity at the next search.** A slot applies when the team is the same, our team is on turn on that board, the
    board's position, side to move, castling and en passant equal the recorded FEN, our seat's pocket holds at least
-   what it held, and the move is legal now. Anything else drops the slot. So the half that was played (its board
+   what it held, and the move is one of this root's actions on that board. That means it is legal now **and** it
+   survives the held-back-drop filter (`prepare_actions`, `searchthread.cc:930`, InstantTransfer false). Otherwise the
+   mix would put weight on an action that does not exist and the board's priors would no longer sum to 1. Anything
+   else drops the slot. So the half that was played (its board
    changed) is never carried.
 3. **Bias.** At the root, the carried board's prior is mixed: `p(move) <- (1 - w) p(move) + w`, every other action on
    that board `p <- (1 - w) p`, with `w = PlanCarryPermille / 1000`, after root noise. Then the best joint candidate
@@ -348,15 +463,31 @@ continues the plan unless the new search finds better.
    so it gets its first visit before any other new edge: that is the "initial visit". A fresh root gets the mix in
    `process_batch` at its expansion (`searchPly == 0`); an adopted, already expanded root (fix 1) gets it through a new
    `Node::apply_root_plan(board, move, w)` that reweights the generator's priors under the node lock, like
-   `refresh_root_noise` (`node.cc:230`), and calls `reindex_edge_priors_locked`.
+   `refresh_root_noise` (`node.cc:230`): mix, `resortBoard`, `legalPriorMass`.
+
+   **Order matters.** `configure_root_search` calls `reprepareJointPolicyPool` -> `rebuildCandidateFrontier`, which
+   recomputes every joint prior from the per-board lists and **resets `promotedCandidate`**
+   (`joint_action.h:403-412`). So:
+   * on an adopted root the order is: noise (`refresh_root_noise`), plan mix (`apply_root_plan`),
+     `configure_root_search`, then the promotion;
+   * on a fresh root, `configure_root_search` returns early because the root is not yet expanded. The mix goes into
+     the per-board lists at the root's expansion in `process_batch`, after the root noise. The promotion comes after
+     `try_init_and_expand` has built the frontier, still under the root's lock, before any worker can select a child.
+
+   A promotion made earlier is silently lost. Test 3.1 checks the first expanded root edge, not only the prior.
 4. **Telemetry.** Verbose UCI: `info string Plan carry: <board> <move> weight <w>` or `... dropped (<reason>)`.
 
 ### Self-play
 
 `play_seat_clock_game` already plays only the deciding seats' halves (`selfplay.cc:1141-1152`). The undecided seat on
 turn (if any) gets the other half recorded as above; when that seat's own `DECIDE` event comes, its search carries the
-plan. With `--team-tree-reuse` the agent is not reset between decisions; without it, `reset_search_state()` must not
-clear the plan slots (they live outside the tree), only game start and `ucinewgame` do.
+plan. In self-play a seat's move is committed at its search and lands later, so the team's other on-turn seat can be
+one whose move is already decided and in flight (`committed[seat]`), not an undecided one. Its slot is not written,
+because the plan would be moot: the in-flight move lands and changes the FEN. With `--team-tree-reuse` the agent is
+not reset between decisions; without it, `reset_search_state()` must not clear the plan slots (they live outside the
+tree). The game-start loop (`selfplay.cc:933`) calls `reset_search_state()`, which leaves plans alone by design, so it
+must also call `clear_plans()` explicitly. Otherwise the last game's plans leak into the next game on the same
+agent.
 
 ### Data structures
 
@@ -372,9 +503,9 @@ struct CarriedPlan {
 };
 std::array<CarriedPlan, 2> plans_;   // one slot per board; cleared by clear_plans()
 
-// SearchParams::RuntimeConfig (per-search copy, immutable during the search)
-int rootPlanBoard = -1;
-Stockfish::Move rootPlanMove = Stockfish::MOVE_NONE;
+// SearchParams::RuntimeConfig (per-search copy, immutable during the search). One entry per board: both slots can
+// be valid at once (both our seats on turn, both halves recorded, neither landed yet).
+std::array<Stockfish::Move, 2> rootPlanMove{Stockfish::MOVE_NONE, Stockfish::MOVE_NONE};
 float rootPlanWeight = 0.0f;
 ```
 
@@ -387,7 +518,7 @@ float rootPlanWeight = 0.0f;
 | `environment/joint_action.h` | generator `applyRootPlan(board, move, w)` beside `applyRootNoise` |
 | `search/searchthread.cc` | `process_batch`: root mix for a fresh root |
 | `interface/uci.cc` | options; `new_game()` (`uci.cc:109`) calls `agent->clear_plans()` |
-| `tools/selfplay.cc`, `tournament.cc` | flag; plans cleared at game start |
+| `tools/selfplay.cc`, `tournament.cc` | flag; `clear_plans()` beside the game-start `reset_search_state()` (`selfplay.cc:933`). `tournament.cc` `play_seat_clock_match` has no game-start reset, only a per-decision `agent.reset_search_state()` (`:564`). It gains `reset_search_state()` + `clear_plans()` for both agents at game start, and skips the per-decision reset under `--team-tree-reuse`, as self-play does. The contender and baseline agents swap teams between games, so the `team` checks on `TeamTree` and `CarriedPlan` are what keep a tree or plan from crossing to the other team there |
 
 ### Interactions
 
@@ -418,7 +549,7 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     `current_clock()` with defaults equals the `261081b` clock for the same wave 2 options (`operator==` and
     `exact_key()`), on the wave 2 preset and on stock options.
 0.2 `ContinuityDefaults.CandidateLayoutUnchanged`: `static_assert(sizeof(JointActionCandidate) == 48)` (or whatever it
-    is at `261081b`, measured first), and every generated candidate has `plannedMask == 0` with fix 2 off.
+    is at `261081b`, measured first), and every generated candidate has `planned == MOVE_NONE` and every node `plannedBoard_ == -1` with fix 2 off.
 0.3 `ContinuityDefaults.DurativeKeysUnchanged`: random durative lines (2000, as v4 test 4) give the same keys with
     `jointPlans` false as a build of the state without the new fields would (compare against keys recorded from
     `261081b` in `tests/data/durative_keys_261081b.txt`).
@@ -439,7 +570,8 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
 1.2 `TeamTreeReuse.AdoptsAfterLandingWithClocksAFewMsOff`: search 800 nodes, play the chosen action and one opponent
     landing on the board, give the next search clocks 3, 5, 7 and 2 ms off the tree's path time; the adopted root is
     the expected node of the old tree (pointer, through a test peer), holds more than 0 visits, prints `Team tree
-    reuse: N visits recovered`, and the search completes with N + 300 root visits at `go nodes 300`.
+    reuse: N visits recovered` where N is the root's visits **after** re-timing (cleared edges subtracted), and the
+    search completes with N + 300 root visits at `go nodes 300`.
 1.3 `TeamTreeReuse.RefusesBeyondTolerance`: the same with one clock `TeamTreeReuseToleranceMs + 1` off: fresh root,
     reason `clock`.
 1.4 `TeamTreeReuse.RootShapeMismatchNotAdopted`: the matching node had one of our on-turn seats not ready; the live
@@ -449,7 +581,8 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     `search_hash_key(team, pathTime)` under the new root time, and the transposition table holds exactly the walked
     nodes.
 1.6 `TeamTreeReuse.ClockVerdictsDroppedWhenClocksMove`: a retained subtree with a FlagLoss-proven LOSS: dropped at a
-    1 ms offset, kept at 0.
+    1 ms clock offset; kept at 0 offset with the same `RootMoveTimeMs` and paces; **dropped** at 0 clock offset when
+    `RootMoveTimeMs` differs by 1 ms, and again when one opponent pace differs by 1 ms (the hash criterion, 3c).
 1.7 `TeamTreeReuse.BothSeatsOfTheTeam`: a sequence Aw decides, landings, Bb decides: Bb's search adopts a node of the
     tree Aw's search built.
 1.8 `SelfPlayWave2Test.TeamTreeReuseInSeatClockGames` (`test_selfplay_wave2.cc`): 3 games, uniform net, 4 s base,
@@ -463,16 +596,38 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
 1.11 `TeamTreeReuse.OpeningNoiseDiscards` (UCI) and `TeamTreeReuse.SelfPlayNoiseRefreshes` (self-play): as Interactions.
 1.12 `TeamTreeReuse.FourWorkersAfterAdoption`: 50 repeats of adopt + 4-worker search on the uniform net: no crash, root
     visits = adopted + searched.
+1.13 `TeamTreeReuse.RetainedExpansionsMatchFreshOnes` (independent of `expansionKey_`): after adoption, for every
+    retained expanded node, rebuild its action lists from scratch the way `collect_batch` does (acting boards,
+    forced wait, `can_sit`, held-back drops) under its new path time, and compare them with the node's generator
+    lists as move sets. Run it over 20 adoptions in self-play-like sequences with clock offsets of 0-200 ms.
+    Otherwise an expansion key that leaves out an input would pass 1.5 and still keep wrong expansions. The same
+    check runs as a debug-only `--team-tree-reuse-validate` inside 1.8.
+1.14 `TeamTreeReuse.StaleFlagEdgeCarriesNoValue`: the old tree proved a FlagLoss win along one of the adopted root's
+    edges (hundreds of visits, Q near +1). The new clocks no longer flag. After adoption that edge has 0 visits and Q
+    0, the root's visits fell by the same amount, and at `go nodes 64` the chosen action is not the stale line unless
+    the fresh search proves it again. This fails if only the child node is replaced and the edge statistics are
+    kept.
+1.15 `TeamTreeReuse.TranspositionSplitWhenPathsDiverge`: a retained node with two parents whose paths reach different
+    times under `T'` (one path's pass is clamped by the flag, the other's is not) is split. Each parent's child has
+    the hash of its own path, and the table holds both.
+1.16 `TeamTreeReuse.RefusesCommittedCandidate` (fix 2 on): a board-matching node with a committed move for our
+    partner is refused with reason `committed`, and so is one with a committed move for an **opponent** seat.
+1.17 `TeamTreeReuse.NoOtherStateSurvives`: with fix 1 (and, separately, fix 3 alone) on under a durative clock and no
+    `ucinewgame`, `mateContinuations_` and `nextRootCandidates_` are empty at the start of each search (7).
+    `Tree reuse:` (the exact path) is never printed.
 
 ### 2. Fix 2
 
 2.1 `JointPlans.PlannedHalfLandsAtItsReadyTime` (rules): a node where Aw is ready at 100 and Bb on turn at 400:
     `after_action` with a planned Bb move keeps Bb's ready time, stores the committed move, leaves board B unmoved; the
     node at 400 gives Bb only its committed move; the landing hands B to Bw as a normal move would.
-2.2 `JointPlans.CommittedMovesStayLegal`: 2000 random lines with fix 2: every committed move is legal when it lands.
+2.2 `JointPlans.CommittedMovesStayLegal`: 2000 random lines with fix 2: every committed move is legal when it lands,
+    and at every node `board.side_to_move(b) == time.side_on(b)` on both boards (the invariant under Data
+    structures). Also run the search-level version: a 4000-node fix-2 search with the debug assertion on, followed by
+    PV extraction, `retain_played_line` and a fix-1 adoption walk. The board's FENs equal the root's afterwards.
 2.3 `JointPlans.SuppliedDropOnlyWhenTransferAllows`: a capture of a knight on A offers the partner's planned `N@`
     drops with InstantTransfer true, and with InstantTransfer false only for a sitting partner.
-2.4 `JointPlans.FindsCaptureFeedingAMatingDropAtLowNodes` (needs it13). Construction:
+2.4a `JointPlans.FindsCaptureFeedingAMatingDropAtLowNodes` (needs it13). Construction:
     * Our team white (Aw, Bb). Board B: Bw's king on h1 smothered (rook g1, pawns g2, h2, nothing guarding f2), black
       (Bb) to move with an empty pocket: `N@f2#` needs a knight. Board A: Aw to move, `Qxf6` wins a black knight on f6
       that a pawn recaptures (a queen for a knight, so the capture looks bad on its own), and no mate for black on A
@@ -487,12 +642,29 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
       also finds `Qxf6` at that N, make the position harder (more Ab replies, a second plausible quiet move on A)
       until it misses, and say so in `docs/wave2_engine.md`.
     * Mirror for the black team (colours swapped) gives the same result.
+2.4b `JointPlans.HeadlineFlagsCoordination` (needs it13). Same expectations, with the headline flags
+    (InstantTransfer **false**, FlagLoss true, SitGate false), so the test exercises what the PACE rows play. Here the
+    transfer runs the other way, because a deciding partner cannot drop a piece that lands mid-decision:
+    * the planned half (Bb, on turn, ready at 400) captures a piece that Aw needs;
+    * the immediate half is Aw's preparatory move on A;
+    * Ab's reply lands **after** 400, so Aw's next decision starts after the capture landed and the piece is not
+      pending;
+    * Aw then drops it for mate.
+    The expected root edge is `(prep on A, capture on B planned)`. The same N rule and old-tree comparison apply as
+    in 2.4a. If no such position can be built so that the old tree misses and fix 2 finds it, say so plainly in
+    `docs/wave2_engine.md`: it would mean fix 2 has no tested benefit under the headline flags.
 2.5 `JointPlans.DecideLaterKeepsOldBehaviourAvailable`: at a planning node the "decide later" pair exists for every
     immediate half, with prior share at least `JointPlanFreePermille / 1000`.
 2.6 `JointPlans.RootUnchanged`: with fix 2 on, a search from a UCI root (atRoot) has no planned root edge and the same
     root action set as fix 2 off.
 2.7 `JointPlans.PvPrintsPlannedHalvesAsPass`: an `info ... pv` line through a planned step parses with the arena's
     `_INFO_RE` and shows the move at its landing step.
+2.8 `JointPlans.CommittedSittingSeatIsNoSitOff`: our partner sits on B and receives a planned move; the opponent on A
+    then sits at exactly the partner's clock. The state is **not** a sit-off `DRAW`, `sit_off_forces_move` ignores
+    the committed seat, and the committed move lands 1 ms after the immediate half's landing (the wake-up rule).
+2.9 `JointPlans.ActionLookupsComparePlanned`: at a planning node, two candidates `(mA, -, planned x)` and
+    `(mA, -, planned y)`: `promote`, the mate-hint match and the child-by-action lookups each pick the one asked
+    for.
 
 ### 3. Fix 3
 
@@ -509,6 +681,15 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
 3.5 `PlanCarry.ClearedByNewGame`: `ucinewgame` clears both slots; `reset_search_state` alone does not.
 3.6 `SelfPlayWave2Test.PlanCarryInSeatClockGames`: a seat-clock game with `--plan-carry`: some decisions record a plan
     for an undecided seat, and that seat's next search applies it (counter in the summary line).
+3.7 `PlanCarry.BothBoardsAndHeldBackDrop`: both slots valid at once are both mixed. A planned drop of a piece that is
+    held back at the new root (InstantTransfer false, landed mid-decision) is dropped with reason `not a root
+    action`, and the board's root priors still sum to 1.
+3.8 `PlanCarry.NoLeakAcrossGamesOrTeams`: two consecutive self-play games on the same agents, and two tournament
+    games where contender and baseline swap teams. No search of game 2 applies a plan recorded in game 1, and no
+    team applies the other team's plan.
+3.9 `PlanCarry.PromotionSurvivesRootConfiguration`: on a fresh root and on an adopted root, the first child expanded
+    at the root is the promoted pair. It fails if the promotion is made before `configure_root_search` or before the
+    root's frontier exists.
 
 ### 4. No change to flag and terminal semantics
 
@@ -516,17 +697,25 @@ worker (`HIVEMIND_SEARCH_WORKERS=1` builds, or one thread) so they are determini
     `DurativeMateRace.*`, `DurativeRepetition.*`, the search halves in `DurativeSearchTest` and
     `DurativePart2SearchTest`) rerun as typed/parameterised tests with `Continuity` on: same verdicts (single loser
     at 100/600 ms, sit-off draw and its 1 s flip, at most 29 landed moves for a 3 s seat with planned moves counted
-    on landing, mirror mate race WIN/LOSS, no repetition draw in the durative tree).
+    on landing, mirror mate race WIN/LOSS, no repetition draw in the durative tree). A single search starts with no
+    old tree and no plan, so fixes 1 and 3 would be inert in it and the test would pass on broken code. Each position
+    is therefore searched twice. The first search is from a predecessor position one opponent landing earlier. The
+    second, the checked one, comes after that landing with clocks 3 ms off. The test asserts that `Team tree reuse:
+    N visits recovered` (N > 0) or `Plan carry:` fired where the construction allows it, and checks the verdict on
+    the second search.
 4.2 `ContinuityRules.OutcomeUnchangedByCommitment`: a committed seat that flags before its landing loses on the clock
     (FlagLoss) exactly as an uncommitted one; a sit-off draw state is reached the same way.
 4.3 `tools/regression.py run --engine wave2 --engine-nodes 800` with the continuity flags: drop_mates and sit-off
     family at least the `261081b` numbers (`docs/wave2_local_check.md` section 7: 80/80, 20/20 ahead, 0/20 behind).
+    Regression sets are single positions searched cold, so this checks fix 2 only. Fixes 1 and 3 are covered by 4.1's
+    sequenced searches.
 
 ### 5. Python and arena
 
 5.1 `arena/tests/test_upstream.py`: `test_wave2_continuity_flags` (new keys, `continuity` expands to the three, unknown
-    keys refused), `test_wave2_continuity_implies_reuse_tree` (no `ucinewgame` between searches, one at the
-    controller's first search), `test_wave2_parses_reuse_line` (the `Team tree reuse` and `Plan carry` info strings
+    keys refused), `test_wave2_continuity_implies_reuse_tree` (with `team_tree_reuse` or `plan_carry` on: no `ucinewgame`
+    between searches, one at the controller's first search; with only `joint_plans` on: `ucinewgame` before every
+    search, as in `ref_120`), `test_wave2_parses_reuse_line` (the `Team tree reuse` and `Plan carry` info strings
     reach `SearchResult`).
 5.2 wave2-hivemind `tests/`: `Options` fields, `engine_args` emits only non-default flags, `--continuity`,
     `missing_engine_options` empty against the new `--help`.
@@ -537,9 +726,11 @@ One commit per numbered step at least, in this order; every step ends with the f
 `wave2_parity.sh` (8/8 each), and nothing is pushed.
 
 1. Fix 1: options and plumbing (no behaviour), tests 0.1, 0.4, 0.5. Then `expansionKey_`, descent, re-timing,
-   adoption, self-play; tests 1.x, 0.6, 0.7.
-2. Fix 2: `TimeState` and generator (rules tests 2.1-2.3, 2.5, 0.2, 0.3); then search integration and PV (2.4, 2.6,
-   2.7); then 4.1, 4.2.
+   adoption, self-play; tests 1.x, 0.6, 0.7. **Gate:** the `continuity_probe.py reuse` hit-rate run (fix 1 step 2,
+   "Expected hit rate"). Report the hit rate, the refusal reasons and the clock-difference distribution, and settle
+   `TeamTreeReuseToleranceMs` from them before step 2.
+2. Fix 2: `TimeState` and generator (rules tests 2.1-2.3, 2.5, 2.8, 0.2, 0.3); then search integration and PV
+   (2.2 search half, 2.4a, 2.4b, 2.6, 2.7, 2.9); then 4.1, 4.2.
 3. Fix 3: recording, validity, bias, self-play; tests 3.x.
 4. Arena, Python and cluster plumbing (below); 5.x; regression 4.3; a local smoke (2 pairs per row at 60 s on the Mac,
    plumbing only) and a rerun of `tools/continuity_probe.py reuse` and `scaling` with the new modes (`cont`,
@@ -560,9 +751,12 @@ run). Python through the main repo `.venv` and the wave2-hivemind `uv` env.
   `"plan_carry_permille": ("PlanCarryPermille", 300)`. `wave2_flag_options` validates the integer ranges as it does
   `pass_cap_k`. A player option `continuity: true` expands in Python to the three switches (no `Continuity` UCI sent,
   so the order of options never matters).
-* Any of the three switches on implies `reuse_tree=True` for the process (no `ucinewgame` before every search), and the
-  controller sends one `ucinewgame` at its first search, so the tree and the plans start clean each game. Rows with
-  the switches off keep `reuse_tree` false, as in the PACE round.
+* `team_tree_reuse` or `plan_carry` on implies `reuse_tree=True` for the process (no `ucinewgame` before every search),
+  and the controller sends one `ucinewgame` at its first search, so the tree and the plans start clean each game.
+  `joint_plans` alone does **not** imply it: fix 2 works inside one search, and dropping the per-search
+  `ucinewgame` would add a second difference from `ref_120`. Rows with the switches off keep `reuse_tree` false, as in
+  the PACE round. The engine side (fix 1, step 7) clears every other piece of cross-search state, so `c_reuse` and
+  `c_carry` differ from `ref_120` only by their fix.
 * `UpstreamHivemindProcess._parse` records `reused_visits` and `plan_carried` from the info strings into
   `SearchResult`; the controller counts them and the eval summary reports reuse hits per search.
 * `measure_wave2_ms_per_node` takes the new flags through `flags` as now, so `MEASURE=1` measures each row's own flag
@@ -623,3 +817,69 @@ comment at `wave2_iterate.sbatch:35` gets the continuity example.
 * Root semantics for a seat that is mid-decision in self-play (the root still lets every on-turn seat of the root
   team act at the root budget; fix 3 carries the half that is not played).
 * TensorRT build of all of this on PACE (`cluster/build.sh`), after the user pushes.
+
+## Review changes
+
+Adversarial review against the code at `261081b`, 2026-11-20. Each item was a design that would not have worked as
+written, or a test that would have passed on broken code.
+
+1. **Fix 1: opponent commitments.** The draft refused only candidates where one of *our* seats had a committed move.
+   A node holding an opponent commitment would have forced that opponent move throughout the adopted subtree. Now
+   any commitment refuses (reason `committed`; test 1.16).
+2. **Fix 1: transpositions.** The re-timing walk treated the tree as a tree. It is an MCGS graph
+   (`canonicalize_child` merges on the durative key), and two paths that met under the old root can part under
+   `T'`. The walk now keeps a visited map and splits a node whose recomputed hash differs between parents (test
+   1.15). It is depth-first with make/unmake, because the path time needs `hand_piece_type`; a breadth-first
+   pre-count applies the 100k cap.
+3. **Fix 1: stale verdicts.**
+   * "Keep verdicts when no clock moved" missed `RootMoveTimeMs` and pace changes. Both set every ready time of our
+     team below the root, and the arena changes the budget every decision. Verdicts are now kept only when the
+     node's recomputed hash equals its old hash.
+   * The draft kept the parent's edge statistics where a child was replaced. A dropped flag proof would then live
+     on as an edge with Q near +1 and hundreds of visits. Those edges are now cleared, and their visits come off the
+     parent (tests 1.6, 1.14).
+4. **Fix 1: expected hit rate.** The draft did not say that two things cut the 33% ceiling:
+   * opponent landings are predicted at pace, so the opponent's clock often misses the 250 ms tolerance;
+   * the `atRoot` shape rarely matches when both our seats are on turn.
+   Step 1 now ends with a measured gate (hit rate, refusal reasons, clock-difference distribution at 250, 1000 and
+   3000 ms) before fixes 2-3 or PACE. A FEN-only arena also means move counters are left out of the descent's FEN
+   comparison.
+5. **Fix 1: state that would survive without `ucinewgame`.**
+   * `mateContinuations_` (not re-timed) and the exact-reuse candidates are now cleared at each search under fix 1
+     or fix 3.
+   * The team-tree store no longer depends on `retainForReuse`, which self-play sets to false.
+   * Tournament seat-clock matches reset the agent every decision and swap teams between games. They are now
+     covered like self-play.
+6. **Fix 2: representation.** Storing the planned move in `moveA`/`moveB` behind a `plannedMask` would have needed
+   every make/unmake site rewritten: 11 in `searchthread.cc` and 54 in `agent.cc`, of which the draft listed
+   searchthread's and two in agent.cc. A missed site lets a seat act before its ready time. The planned move now has
+   its own `planned` field in the candidate's existing padding (size still 48), with `Node::plannedBoard_`. Existing
+   sites stay correct, and below-root lookups by action compare `planned` instead (test 2.9). A debug invariant
+   `side_to_move == side_on` catches early or missing landings (test 2.2).
+7. **Fix 2: sitting partner with a plan.** A committed seat that was sitting either lost its wake-up rule or counted
+   as sitting for the cross-team sit-off `DRAW`, which would end lines as draws although the move was certain to
+   land. It now keeps `sitting` for timing and transfer and is skipped by both sit-off checks (test 2.8).
+8. **Fix 2: headline flags.**
+   * Wave 2 plays `InstantTransfer false`. Under it a planned supplied drop exists only for a sitting partner, which
+     the v4 tree already reaches 1 ms after the capture. So test 2.4 (InstantTransfer true) did not test the
+     configuration the PACE rows play.
+   * Added 2.4b under the headline flags, with the transfer running from the planned half to the immediate seat's
+     next decision, and the instruction to report it plainly if no such case can be built.
+   * The planned-mate tag runs only on checking moves, in `collect_batch`.
+9. **Fix 3: promotion order.** `configure_root_search` rebuilds the frontier and resets `promotedCandidate`, so a
+   promotion made before it, or before a fresh root is expanded, was silently lost. The order is now fixed (test
+   3.9).
+10. **Fix 3: smaller defects.**
+    * `RuntimeConfig` held one plan board, but both slots can be valid; it now holds one per board.
+    * "Legal now" is now "one of this root's actions", because a held-back drop is legal but not a root action, and
+      mixing toward it unnormalises the priors (3.7).
+    * The tree-committed source of a plan now has a defined precedence.
+    * Self-play's game-start reset does not clear plans, so `clear_plans()` is now explicit there (3.8).
+11. **Arena: `joint_plans` alone no longer implies `reuse_tree`**, which would have made `c_joint` differ from
+    `ref_120` in two ways.
+12. **Tests that would pass on broken code.**
+    * 4.1 ran single cold searches, where fixes 1 and 3 never fire. It is now sequenced and asserts that they fired.
+    * 4.3 is noted as testing fix 2 only.
+    * 1.13 checks retained expansions against fresh ones, independently of `expansionKey_`.
+    * 1.2's visit count accounts for cleared edges.
+    * 1.17 checks that no other state survives between searches.
