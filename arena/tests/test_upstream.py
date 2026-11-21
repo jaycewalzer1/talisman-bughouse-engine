@@ -274,22 +274,30 @@ def test_a_sitting_opponent_sends_elapsed_0_as_in_self_play():
     assert sitting["A_white"] == 0 and elapsed["A_white"] == 2_500
 
 
-def test_a_landing_that_wakes_a_sitting_opponent_restarts_its_decision():
+def test_a_landing_that_wakes_a_sitting_opponent_keeps_it_sitting_as_self_play_does():
     paces = {s: 600 for s in ("A_white", "A_black", "B_white", "B_black")}
-    # B_white (T2) has board B since 1000 and sits; at 2500 a move lands on A (T2's A_black moved, A_white on turn),
-    # which ends its pass 1 ms later: self-play restarts its decision at 2501 and it is no longer sitting.
+    # B_white (T2) has board B since 1000 and sits; at 2500 a move lands on A (T2's A_black moved, our A_white on
+    # turn). Self-play's landed() moves its pass's end and decision start to 2501 but leaves sitting_ set (only
+    # commit_move clears it), so the search at the landing instant gets sitting 1, elapsed 0.
     sp = _SelfPlay({"A": "A_black", "B": "B_white"})
     sp.landed("B_black", 1_000, "B_white")
     sp.commit_pass("B_white", 1_100, 8 * 600)
     sp.landed("A_black", 2_500, "A_white")
-    sp.sitting["B_white"] = False  # it re-decides at its wake and, here, thinks about a move
-    obs = _d4_obs(2_800, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
+    obs = _d4_obs(2_500, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
     elapsed, sitting = seat_decisions(obs, "T1", paces, 400)
-    assert elapsed["B_white"] == sp.elapsed("B_white", 2_800) == 299 and sitting["B_white"] == 0
-    # Still not moving 1.5 x min(pace 600, budget 400) = 600 ms after the wake: sitting again, elapsed 0.
-    later = _d4_obs(3_200, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
-    assert seat_decisions(later, "T1", paces, 400)[0]["B_white"] == 0
-    assert seat_decisions(later, "T1", paces, 400)[1]["B_white"] == 1
+    assert (elapsed["B_white"], sitting["B_white"]) == (sp.elapsed("B_white", 2_500), int(sp.sitting["B_white"]))
+    assert (elapsed["B_white"], sitting["B_white"]) == (0, 1)  # review finding: before, sitting 0
+    # It re-decides at 2501 and passes again: self-play keeps sitting 1 with elapsed 0; the arena, which cannot see
+    # the pass, sends the same at once instead of sitting 0 for one more threshold.
+    sp.commit_pass("B_white", 2_501, 8 * 600)
+    for now in (2_800, 3_200):
+        later = _d4_obs(now, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
+        got = seat_decisions(later, "T1", paces, 400)
+        assert (got[0]["B_white"], got[1]["B_white"]) == (sp.elapsed("B_white", now), int(sp.sitting["B_white"]))
+    # Its own move lands on B at 3300: the next seat there comes on turn, thinking, as in self-play.
+    sp.landed("B_white", 3_300, "B_black")
+    moved = _d4_obs(3_400, {"A": "A_white", "B": "B_black"}, {"A": 2_500, "B": 3_300})
+    assert seat_decisions(moved, "T1", paces, 400)[1]["B_white"] == 0 and "B_white" not in sp.sitting
     # A landing on A before it went past its threshold did not wake a pass: the decision still began at 1000.
     early = _d4_obs(1_500, {"A": "A_white", "B": "B_white"}, {"A": 1_400, "B": 1_000})
     assert seat_decisions(early, "T1", paces, 400) == ({"A_white": 100, "A_black": 0, "B_white": 500, "B_black": 0},

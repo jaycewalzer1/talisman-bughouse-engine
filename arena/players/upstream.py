@@ -656,12 +656,16 @@ def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
     its next move.
 
     The arena cannot see an opponent pass, so for each seat of the other team on turn, with ``L`` its board's last
-    landing and ``L'`` the other board's: its decision began at ``L``, or at ``L' + 1`` when ``L'`` came after
-    ``L`` and the seat had by then gone longer than its sit threshold without moving (it sat, and that landing
-    woke it). It is sitting when the time since that start exceeds the threshold, ``factor x min(its pace, its
-    budget)``, the budget being its clock at the decision start (its clock + elapsed) / ``clock_k`` (``budget_ms``
-    without ``clock_k``), doubled while the other team is on turn on both boards. A sitting seat sends elapsed 0,
-    as in self-play. A seat that thought through a landing on the other board keeps its start at ``L``.
+    landing and ``L'`` the other board's: it is sitting when the time since ``L`` exceeds its sit threshold,
+    ``factor x min(its pace, its budget)``, the budget being its clock at ``L`` (its clock + elapsed) / ``clock_k``
+    (``budget_ms`` without ``clock_k``), doubled while the other team is on turn on both boards; or when ``L'``
+    came after ``L`` and the seat had by then already gone past that threshold. That landing woke it, but in
+    self-play ``landed`` moves only its decision start (to ``L' + 1``) and leaves ``sitting_`` set: only
+    ``commit_move`` clears it, so at the landing instant self-play sends sitting 1, elapsed 0, and a woken seat that
+    passes again stays at 1. The arena cannot tell a re-pass from a woken seat that thinks about a move (self-play:
+    sitting 0, elapsed since ``L' + 1``), so a seat once inferred sitting stays sitting until its own board lands.
+    A sitting seat sends elapsed 0, as in self-play (its decision starts at its wake, which is never in the past
+    while it sits). A seat that thought through a landing on the other board keeps its start at ``L``.
 
     Our own seats: sitting 0, elapsed ``seat_on_turn_ms`` (the tree ignores the root team's elapsed; through UCI the
     wide planes read it as the board's time since its last landing, self-play's ``boardElapsedMs``). All 0 when
@@ -685,11 +689,9 @@ def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
     for board, seat in on_turn.items():
         handed = int(obs.last_move_ms[board])
         woke = int(obs.last_move_ms["B" if board == "A" else "A"])
-        start = handed
-        if woke > handed and woke - handed > threshold(seat, handed):
-            start = woke + 1
-        since = max(0, now - start)
-        if since > threshold(seat, start):
+        since = max(0, now - handed)
+        sat_before_wake = woke > handed and woke - handed > threshold(seat, handed)
+        if sat_before_wake or since > threshold(seat, handed):
             sitting[seat], elapsed[seat] = 1, 0
         else:
             elapsed[seat] = since
