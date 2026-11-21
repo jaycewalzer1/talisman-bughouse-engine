@@ -380,8 +380,9 @@ class UpstreamTeamController:
     that ends when the next move lands (any board) or after ``sit_ms`` (default: the team's move time, at least
     100 ms), then the controller searches again. ``serial`` (default True): the team has one machine.
 
-    ``reuse_tree=True`` keeps the tree between searches (no ``ucinewgame``; upstream reuses ~13% of visits);
-    off by default so every decision gets exactly its budget.
+    ``reuse_tree=True`` keeps the tree between searches (no ``ucinewgame``); off by default so every decision gets
+    exactly its budget. Under the arena's seat clocks upstream reuses nothing anyway: 0 of 522 searches started from
+    a reused subtree (docs/continuity_baseline.md), because its reuse key includes the clock state.
     """
 
     kind = "upstream"
