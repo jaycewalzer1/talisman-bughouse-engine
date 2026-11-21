@@ -119,6 +119,10 @@ WAVE2_STATE_FLAGS = ("TeamTreeReuse", "PlanCarry")
 # sends it, but a row may pass it raw through engine_options.
 CONTINUITY_PRESET_OPTION = "Continuity"
 CONTINUITY_UCI_OPTIONS = frozenset({*(uci for uci, _ in WAVE2_CONTINUITY_FLAGS.values()), CONTINUITY_PRESET_OPTION})
+# The switches the raw preset sets. A continuity-round binary built before the diagnosis fixes also advertises
+# Continuity but sets only the first three there, so a row that sends Continuity raw also needs the binary to
+# advertise every switch here (UpstreamHivemindProcess.start), or it would run without D1 and D5.
+CONTINUITY_PRESET_SWITCHES = tuple(WAVE2_FLAGS[k][0] for k in WAVE2_PRESETS["continuity"])
 TEAM_OPTION = {"T1": "white", "T2": "black"}
 MAX_LEAD_MS = 1 << 30
 
@@ -275,7 +279,10 @@ class UpstreamHivemindProcess(HivemindProcess):
         handshake: list[str] = []
         self._wait_for(lambda l: l == "uciok", collect=handshake)
         advertised = {l[len("option name "):].split(" type ", 1)[0] for l in handshake if l.startswith("option name ")}
-        missing = sorted(k for k in self.extra_options if k in CONTINUITY_UCI_OPTIONS and k not in advertised)
+        wanted = {k for k in self.extra_options if k in CONTINUITY_UCI_OPTIONS}
+        if CONTINUITY_PRESET_OPTION in wanted:  # a stale binary's preset sets fewer switches than this one's
+            wanted.update(CONTINUITY_PRESET_SWITCHES)
+        missing = sorted(k for k in wanted if k not in advertised)
         if missing:  # a pre-2c binary would ignore them and the row would measure nothing (spec v5)
             self.close()
             raise RuntimeError(f"{self.binary} does not advertise {missing}: build the wave 2c engine")

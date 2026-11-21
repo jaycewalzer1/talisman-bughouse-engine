@@ -907,3 +907,19 @@ def test_wave2_continuity_refuses_a_binary_without_the_options(tmp_path, monkeyp
     log.write_text("")
     ctl, d1, d2 = _play_two_searches(binary, model)  # rows without a fix still run on it
     assert d1.kind == "move" and not any("TeamTreeReuse" in c for c in log.read_text().splitlines())
+
+
+def test_wave2_raw_continuity_preset_refuses_a_binary_from_before_the_diagnosis_fixes(tmp_path, monkeypatch):
+    # Review finding: a continuity-round binary (before 426339a) advertises Continuity but its preset sets only
+    # TeamTreeReuse, JointPlans and PlanCarry. A row sending Continuity raw must not pass the start-up check there.
+    stale = ["TeamTreeReuse", "JointPlans", "PlanCarry", "TeamTreeReuseToleranceMs", "JointPlanFreePermille",
+             "PlanCarryPermille", "Continuity"]
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, stale)
+    with pytest.raises(RuntimeError, match="BlockableCheckNotMate.*OwnPaceBelowRoot"):
+        _play_two_searches(binary, model, engine_options={"Continuity": "true"})
+    # The binary with the diagnosis fixes advertises every switch the preset sets: the row runs and sends it.
+    log.write_text("")
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, stale + ["OwnPaceBelowRoot", "WaitNodeActingEval",
+                                                                       "BlockableCheckNotMate"])
+    ctl, d1, d2 = _play_two_searches(binary, model, engine_options={"Continuity": "true"})
+    assert d1.kind == "move" and "setoption name Continuity value true" in log.read_text().splitlines()
