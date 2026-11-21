@@ -236,8 +236,9 @@ if [ "$WHAT" = wave2c ]; then  # not part of "all": 6 jobs (7 with WAVE2C_REF=1)
   w2c  c_nodur_120   upstream-it13  '{"durative_tree": false, "sit_gate": true}'     120000  600
   # control: continuity against itself (pool opponent wave2c-self) must read 0.50; 800 pairs, the noise floor
   w2c  c_same_120    wave2c-self    '{"continuity": true}'                           120000  800
-  # optional same-week durative-on reference: with every fix off the new binary is bit-identical to the one ref_120
-  # ran (spec v5 tests 0.4, 0.6), so ref_120 stands unless the round wants it again
+  # optional same-week durative-on reference: with every fix off the new binary matches the one ref_120 ran in single
+  # searches (spec v5 test 0.4) and in whole games and multi-search UCI sessions (0.6, self-play less node counts),
+  # so ref_120 stands unless the round wants it again
   if [ "${WAVE2C_REF:-0}" = 1 ]; then
     w2c  c_ref_120   upstream-it13  '{}'                                             120000  600
   fi

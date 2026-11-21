@@ -217,7 +217,7 @@ against `upstream-it13` at 120 s, no SPRT. `SBATCH_DEPENDENCY=afterok:<build job
 | `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `ref_120`; carries per search above 0 |
 | `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
 | `c_same_120` | wave2c-self | `{"continuity": true}` | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
-| `c_ref_120` (only with `WAVE2C_REF=1`) | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary | within the noise of `ref_120` (0.227). Optional: with every fix off the new binary is bit-identical to the one `ref_120` ran (spec v5 tests 0.4, 0.6) |
+| `c_ref_120` (only with `WAVE2C_REF=1`) | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary | within the noise of `ref_120` (0.227). Optional: with every fix off the new binary matches the one `ref_120` ran in one-search (0.4, `wave2_parity.sh`) and whole-game and multi-search (0.6, `wave2_game_parity.sh`) checks; self-play is compared less node counts, which are not reproducible run to run on either binary |
 
 How to read them:
 

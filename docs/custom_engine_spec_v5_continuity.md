@@ -253,7 +253,8 @@ which seat moved last.
   out of scope; listed under Open.
 * **Dirichlet noise.** UCI keeps its rule (`uci.cc:283-291`): with root noise on (`OpeningNoise` inside its plies)
   `reset_search_state()` runs before the search, so the team tree is dropped as retained roots are now. Self-play
-  keeps the adopted root and re-noises it (`Node::refresh_root_noise`, as `run_search` already does at `:6273`).
+  keeps the adopted root and re-noises it (`Node::refresh_root_noise`, as `run_search` already does at `:6273`),
+  unless the adopted node is the old root itself, which already holds that search's noise (review fixes 1).
 * **SitGate.** `can_sit` at each node is in the expansion key, so a shift that changes the gate or the sit-off rule
   re-expands that node.
 * **FlagLoss.** Verdicts are dropped wherever the node's time state changed (3c), and their edge statistics go with
@@ -827,7 +828,7 @@ nodes, `WARM_KINDS=upstream wave2`), against `upstream-it13` at 120 s, 600 pairs
 | `c_carry_120` | upstream-it13 | `'{"plan_carry": true}'` | fix 3 alone |
 | `c_nodur_120` | upstream-it13 | `'{"durative_tree": false, "sit_gate": true}'` | the durative-off, gate-on reference, rerun on the new binary in the same round |
 | `c_same_120` | wave2c-self | `'{"continuity": true}'` | control: continuity against itself must read 0.50 (800 pairs) |
-| `c_ref_120` (with `WAVE2C_REF=1`) | upstream-it13 | `'{}'` | the durative-on reference on the new binary. Optional: tests 0.4 and 0.6 make the binary bit-identical to the one `ref_120` ran, so the PACE `ref_120` (0.227) stands unless the round wants a same-week reference |
+| `c_ref_120` (with `WAVE2C_REF=1`) | upstream-it13 | `'{}'` | the durative-on reference on the new binary. Optional: with every fix off, tests 0.4 (one search per process, `engine/tests/wave2_parity.sh`) and 0.6 (whole self-play and tournament games and a 10-search UCI session in one process, `engine/tests/wave2_game_parity.sh`) match `261081b`, the binary `ref_120` ran, so the PACE `ref_120` (0.227) stands unless the round wants a same-week reference. 0.6 compares self-play on its PGN and clock rows less node counts, with the mate probe off (see build corrections, review fixes) |
 
 Reading: each fix-alone row against `ref_120` (0.227, or `c_ref_120`); `c_all_120` against `c_nodur_120`. With about
 1200 games a row's 95% range is about +-0.03, so a difference needs about 0.04. Read `c_same_120` first. The success
@@ -952,7 +953,7 @@ Found while building fix 1 on `talisman/wave2`; the sections above are corrected
    landings only in their predicted order. First self-play numbers there. The arena gate run is still owed.
 7. **Options.** This step adds `TeamTreeReuse` and `TeamTreeReuseToleranceMs` only; the other four options and the
    `Continuity` preset come with fixes 2 and 3 (test 0.1 covers the two). Tests 0.2, 0.3, 0.6 and 1.16 belong to
-   fix 2 or need recorded `261081b` self-play outputs and are not built yet; 0.4 (`engine/tests/wave2_parity.sh`)
+   fix 2 or need recorded `261081b` self-play outputs and are not built yet (0.6 is built since, review fixes 7); 0.4 (`engine/tests/wave2_parity.sh`)
    and 0.5 are, 8/8 each.
 
 ## Build corrections (fix 2, 2026-11-20)
@@ -1023,3 +1024,39 @@ sections above were wrong.
    mate race (test 5) is not rerun sequenced.
 9. **Python.** `rl-loop --continuity` is a plain switch that sets the three `Options` fields; an explicit switch
    (`--joint-plans false`) overrides it.
+
+## Build corrections (review fixes, 2026-11-20)
+
+From the confirmed review of the continuity work (`talisman/wave2` `fe11956`, `8aff7b6`, `06143ba`, `c627626`; main
+repo `a06db42`). The sections above are corrected in place where they were wrong.
+
+1. **Fix 1 on the old root.** When no move landed since the last search (the partner decides while our move is in
+   flight) the walk's match is the old root itself. Its priors already hold that search's root noise and plan mix, and
+   both helpers mix into the current priors, so re-noising it compounded the noise (eps 0.25 became about 0.44) and
+   the carried-move boost. It is still adopted (`TeamTreeReuseReport::oldRoot`), because in self-play it is a large
+   share of all adoptions, but without `refresh_root_noise` or `apply_root_plan`; its carried halves report
+   `old root` and are not mixed (its own visits carry the pair it chose). "Self-play keeps the adopted root and
+   re-noises it" holds for adopted descendants only.
+2. **Refusal ties.** Equal-rank refusals go to the node with more visits, so a `committed` refusal carries the most
+   visited line's plan (siblings that differ only in the planned half reach the same live boards).
+3. **Proven returns.** `return_proven_mate` and `return_proven_loss` record the returned pair and keep the tree, like
+   the normal end of a search (UCI relies on that record alone).
+4. **Missed ponders** record no plan, as their tree is dropped.
+5. **Knobs need their switch** in self-play, tournament and `hivemind rl-loop`: a knob off its default without its
+   switch is refused, and does not count as a search change (it used to move a stock run onto the clock time model).
+6. **Arena:** the engine's raw `Continuity` option, passed through `engine_options`, now keeps the tree between
+   searches and is checked in the startup advertisement.
+7. **Test 0.6 is built** (`engine/tests/wave2_game_parity.sh`): 2 self-play games, 2 tournament games and a 10-search
+   UCI session, base `261081b` vs ours, one worker, 5/5 identical. Self-play is not bit-reproducible run to run even on
+   `261081b` itself: a search's node count can overshoot its target by a visit (so the `nodes` column and the
+   training records' visit targets move), and the Fairy-Stockfish mate probe's proofs reach the tree at wall-clock
+   times, which can change a move. 0.6 therefore runs self-play with the probe off and compares games.pgn and
+   seat_clocks.tsv less `nodes`. The same timing noise makes `wave2_parity.sh` position 8 (a mate-in-2 loss, 100
+   nodes) occasionally differ by two nodes, base against itself included: rerun before reading a 7/8.
+8. **Tournament telemetry.** Seat-clock tournaments with TeamTreeReuse or PlanCarry print a per-game continuity line
+   (adoptions, refusals, plans recorded/applied/other team, state left after the game-start clear);
+   `TournamentWithContinuity` checks the clears and that fixes 1 and 3 fire (build correction 8 of fix 1 no longer
+   applies).
+9. **Fix 2 visits.** `JointPlansSearch.PlannedPairsGetVisits` checks that planned pairs hold over a tenth of the root
+   visits and that forced landings are searched, so a prior bug that starves them fails a unit test. A behavioural
+   benefit is still only measurable in the arena (`c_joint_120`); 2.4b stays unbuilt.
