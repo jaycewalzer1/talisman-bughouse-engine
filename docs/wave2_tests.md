@@ -183,7 +183,21 @@ chose for it). These rows need the wave 2c engine build (`cluster/wave2_engine.r
 | `JointPlanFreePermille` | `joint_plan_free_permille` (0..1000) | 500 | only when not 500 |
 | `PlanCarry` | `plan_carry` | false | only when true |
 | `PlanCarryPermille` | `plan_carry_permille` (0..1000) | 300 | only when not 300 |
-| (none) | `continuity` | - | expands in Python to the three switches; a switch the row sets itself wins; no `Continuity` option is sent |
+| `OwnPaceBelowRoot` | `own_pace_below_root` | false | only when true |
+| `WaitNodeActingEval` | `wait_node_acting_eval` | false | only when true |
+| `BlockableCheckNotMate` | `blockable_check_not_mate` | false | only when true |
+| (none) | `continuity` | - | expands in Python to the three switches plus `own_pace_below_root` and `blockable_check_not_mate` (not `wait_node_acting_eval`); a switch the row sets itself wins; no `Continuity` option is sent |
+
+The last three come from the durative diagnosis (`docs/durative_diagnosis.md`, 2026-11-20, at `261081b`):
+**D1** `OwnPaceBelowRoot`: below the root our seats act at their own `SeatPaceMs`, as the opponent's do, and
+`RootMoveTimeMs` is charged only for the root action (before, every action of ours in the line cost the budget, mean
+546 ms against an observed 629, so our team moved about 15% faster in the tree than the opponent and the root q read
+optimistic). **D3** `WaitNodeActingEval`: a forced-wait node takes the network value from the team that acts next,
+negated (before, from the waiting team, which the network's tempo bonus favours by about 0.26). **D5**
+`BlockableCheckNotMate`: a check that a drop could block is never mate, as in the arena's rules (before, the engine
+called it mate when the partner had no capture available). D1 and D5 are correctness fixes and part of `continuity`;
+D3 was correct by construction but showed no gain in the diagnosis (18-19/40 against 20-23/40 agreement with it13 at
+64k), so it is its own row only. None of the three keeps state between searches.
 
 Unlike the six wave 2 flags, these are sent only off the engine default. A row without them therefore sends exactly
 the options it sent before and still runs on a pre-2c binary. A row that sets one refuses to start on a binary that
@@ -201,9 +215,10 @@ search (`SearchResult.reused_visits`, `reuse_refusal`, `plan_carried`; the `thin
 plan carries per team) and per row (`contender_reuse_per_search`, `contender_plan_carries_per_search` and the
 baseline's in `summary.json`; the printed table appends `c_reuse/search=` and `c_carry/search=` where they are
 nonzero). Unit tests: `arena/tests/test_upstream.py` (`test_wave2_continuity_*`, `test_wave2_parses_reuse_line`,
-`test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`).
+`test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`,
+`test_wave2_durative_diagnosis_*`).
 
-### The rows (`bash cluster/launch_checks.sh wave2c`, 6 jobs, 7 with `WAVE2C_REF=1`)
+### The rows (`bash cluster/launch_checks.sh wave2c`, 9 jobs, 10 with `WAVE2C_REF=1`)
 
 Common settings as section 4 (pool `wave2` contender, `clock_k 110`, `serial`, `charge "searched"`, `MEASURE=1` at
 800 nodes per binary and flag set, so fix 2's node cost is charged as measured; `bughouse` openings; rules v3), all
@@ -211,10 +226,13 @@ against `upstream-it13` at 120 s, no SPRT. `SBATCH_DEPENDENCY=afterok:<build job
 
 | Row | Opponent | `CONTENDER_KW` | Pairs | Question | Expected reading |
 |---|---|---|---|---|---|
-| `c_all_120` | upstream-it13 | `{"continuity": true}` | 600 | all three fixes on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
+| `c_all_120` | upstream-it13 | `{"continuity": true}` | 600 | all three fixes plus D1 and D5 on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
 | `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` | 600 | fix 1 alone | above `ref_120` (0.227) if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
 | `c_joint_120` | upstream-it13 | `{"joint_plans": true}` | 600 | fix 2 alone | above `ref_120` if joint planning below the root is what was missing; reuse and carries per search exactly 0 |
 | `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `ref_120`; carries per search above 0 |
+| `c_ownpace_120` | upstream-it13 | `{"own_pace_below_root": true}` | 600 | D1 alone: our seats at their own pace below the root | at or above `ref_120`; the diagnosis saw no move-agreement change, only a less optimistic q, so no gain is the likely reading; reuse and carries per search 0 |
+| `c_waiteval_120` | upstream-it13 | `{"wait_node_acting_eval": true}` | 600 | D3 alone: wait nodes valued from the acting team (not in `continuity`) | within the noise of `ref_120`; a gain here would put D3 into `continuity` |
+| `c_mateblock_120` | upstream-it13 | `{"blockable_check_not_mate": true}` | 600 | D5 alone: a drop-blockable check is never mate | within the noise of `ref_120` (the case is rare); a loss would mean the engine's mate calls were helping it, against the rules |
 | `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
 | `c_same_120` | wave2c-self | `{"continuity": true}` | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
 | `c_ref_120` (only with `WAVE2C_REF=1`) | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary | within the noise of `ref_120` (0.227). Optional: with every fix off the new binary matches the one `ref_120` ran in one-search (0.4, `wave2_parity.sh`) and whole-game and multi-search (0.6, `wave2_game_parity.sh`) checks; self-play is compared less node counts, which are not reproducible run to run on either binary |
@@ -223,7 +241,7 @@ How to read them:
 
 1. Read `c_same_120` first. If it is not 0.50, nothing else in the round is read.
 2. Check that each fix fired: `c_reuse/search` above 0 in `c_reuse_120` and `c_all_120`, `c_carry/search` above 0 in
-   `c_carry_120` and `c_all_120`, both 0 in `c_joint_120` and `c_nodur_120` (`summary.json`, `results` ->
+   `c_carry_120` and `c_all_120`, both 0 in `c_joint_120`, `c_nodur_120` and the three diagnosis rows (`summary.json`, `results` ->
    `by_opponent`). A fix row whose counter is 0 measured nothing: report it, do not read its score.
 3. Each fix-alone row against `ref_120` (or `c_ref_120`); `c_all_120` against `c_nodur_120`. With about 1200 games a
    row's 95% range is about +-0.03, so a difference needs about 0.04 before it means anything.
@@ -237,5 +255,6 @@ SBATCH_DEPENDENCY=afterok:<build job> bash cluster/launch_checks.sh wave2c
 bash cluster/results.sh
 ```
 
-Cost: 5 rows x 1200 games and `c_same_120` at 1600, about 8 GPU-hours each at section 5's rate: about 48
-GPU-hours, plus 8 for `c_ref_120`.
+Cost: 8 rows x 1200 games and `c_same_120` at 1600, about 8 GPU-hours each at section 5's rate: about 72
+GPU-hours, plus 8 for `c_ref_120`. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
+switches (D1 and D5 included); on one without them they refuse to start.
