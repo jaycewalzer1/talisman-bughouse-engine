@@ -311,3 +311,21 @@ is for `c_all_120` against `c_nodur_120` on PACE.
 * Wave 2 at 64k nodes was not run (as in the baseline); the deep references are it13 at 64k and each mode at 16k.
 * Spec v5 4.3 on the behind rows: one new sit at -3 s at 800 nodes (8.2).
 * Test 2.4b stays unbuilt (`wave2_engine.md`).
+
+## 9. Review of the durative diagnosis fixes (2026-11-21)
+
+Three findings on the diagnosis-fix work (D1-D7), fixed in the main repo only; no engine source changed, so the
+wave2-hivemind binaries are the ones of section 8 plus the diagnosis fixes (`ec81b9a`).
+
+| Finding | Fix | Regression test |
+|---|---|---|
+| A row passing the engine's `Continuity` preset raw through `engine_options` passed the start-up check on a continuity-round binary from before `426339a`, whose preset sets only three switches, and ran without D1 and D5 | start-up also requires `OwnPaceBelowRoot` and `BlockableCheckNotMate` (`CONTINUITY_PRESET_SWITCHES`) whenever `Continuity` is sent (`344aa80`) | `test_wave2_raw_continuity_preset_refuses_a_binary_from_before_the_diagnosis_fixes` |
+| `seat_decisions` reset an inferred sitter to sitting 0 when a landing on the other board woke it; self-play's `landed` leaves `sitting_` set (only `commit_move` clears it), so at the landing instant it sends 1, elapsed 0 | a seat inferred sitting stays at 1, elapsed 0, until its own board lands (`9f98a7e`). Left as is: a woken seat that thinks about a move (self-play 0, elapsed since the wake) also reads 1, since the arena cannot tell it from a re-pass | `test_a_landing_that_wakes_a_sitting_opponent_keeps_it_sitting_as_self_play_does` (no hand-set mirror; checks the landing instant and a re-pass) |
+| `wave2c` kept `c_ref_120` optional and read the fix rows against the PACE `ref_120`, which ran on the pre-D4 arena inputs | `c_ref_120` always runs (10 jobs, `WAVE2C_REF` gone); every fix-alone row is read against it (`1c714f8`) | fake-`sbatch` run of `launch_checks.sh wave2c`: 10 submissions, `c_ref_120` last |
+
+Checks after the fixes: `build-ninja` and `build-sp1` rebuilt with 2 jobs (no work to do). C++ suite 606 tests: 605
+passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`). `stock_parity.sh` 8/8 identical, `wave2_parity.sh`
+8/8 identical. wave2-hivemind Python: without `tests/distill` 184 passed, 8 failed (the same 8 bsdtar
+`--compare` failures, environment only); `tests/distill` 19 passed. Main repo `arena/tests` 312 passed,
+`arena/tests_phase1` 105 passed. No measurement was made, so no network was used beyond the parity scripts' own
+twin-s-clock network.
