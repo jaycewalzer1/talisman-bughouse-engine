@@ -1060,3 +1060,37 @@ repo `a06db42`). The sections above are corrected in place where they were wrong
 9. **Fix 2 visits.** `JointPlansSearch.PlannedPairsGetVisits` checks that planned pairs hold over a tenth of the root
    visits and that forced landings are searched, so a prior bug that starves them fails a unit test. A behavioural
    benefit is still only measurable in the arena (`c_joint_120`); 2.4b stays unbuilt.
+
+## Diagnosis fixes (2026-11-21)
+
+From `docs/durative_diagnosis.md` (at `261081b`), built on `talisman/wave2` (`426339a`..`0e53f24`; details, tests and
+checks in `docs/wave2_engine.md` there, "Diagnosis fixes"). Each is a UCI option and a `selfplay`/`tournament`/`rl-loop`
+flag, off by default. With them off, `stock_parity.sh` 8/8, `wave2_parity.sh` 8/8 and `wave2_game_parity.sh` 5/5 are
+identical.
+
+| Finding | UCI option / flag | In `Continuity` | What it does |
+|---|---|---|---|
+| D1 | `OwnPaceBelowRoot` / `--own-pace-below-root` | yes | Below the root our seats act at their own `SeatPaceMs` (the budget where none is given); the root action and a pass made at the root keep `RootMoveTimeMs`. Composes with fix 1 (re-timing recomputes it, keyed) and fix 2 (planned halves land at the pace-based ready time) |
+| D3 | `WaitNodeActingEval` / `--wait-node-acting-eval` | no | Forced-wait leaves are evaluated from the team that acts next, value (and WDL) negated. No gain was shown, so it is not in the preset |
+| D5 | `BlockableCheckNotMate` / `--blockable-check-not-mate` | yes | A check a drop could block is never mate (the arena's `is_bughouse_mate`), on the board, so in every search, prover line and game-end check |
+
+The `Continuity` preset (UCI, `--continuity` in self-play and tournament, Python `CONTINUITY_FIELDS`) now sets five
+switches: the three fixes, D1 and D5. The arena's `continuity: true` expansion (`arena/players/upstream.py`) still
+names the three v5 switches only. It needs `own_pace_below_root` and `blockable_check_not_mate` in `WAVE2_FLAGS` and in
+the expansion before a `c_*` row means the same as the engine preset.
+
+**D5 was confirmed before it was fixed.** Position: A `k7/pp6/8/8/8/8/8/4K2R[] w`, B `4k3/8/8/8/8/8/8/4K3[] w`, white
+to play. After Rh1-h8 the arena plays on (Ab waits). The engine answered `score mate 1` in both trees.
+
+**Residual, not fixed.** The engine still scores that position as lost wherever it denies the checked team the right
+to sit, because a team that may not sit and has no move on a board it is on turn on has no legal action:
+* the v3 tree at a lead of 0 or less;
+* the durative tree's root provers whatever the lead. The sat-partner single-board proofs never let the defenders sit,
+  and the reduced-partner proofs run on the v3 clock's lead gate.
+
+So in the headline setting with the provers on, the root still says `mate 1` there. The tree alone does not. Fixing
+it means a free sit for the provers under `SitGate false`, which changes every prover verdict in that setting.
+
+D2 (no new work): on the 25 positions where we are on turn on one board, the continuity round's scaling rows give
+continuity 12/14/17 of 25 against off 15/17/17 at 1k/4k/16k (it13 at 64k as reference, it13 fp32): fix 2 closes the gap
+at 16k only. D4 and D7 (arena) and D6 (a Python test mock, fixed) change no engine default.
