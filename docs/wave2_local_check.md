@@ -329,3 +329,157 @@ passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`). `stock_parity.sh`
 `--compare` failures, environment only); `tests/distill` 19 passed. Main repo `arena/tests` 312 passed,
 `arena/tests_phase1` 105 passed. No measurement was made, so no network was used beyond the parity scripts' own
 twin-s-clock network.
+
+## 10. Diagnosis fixes (2026-11-21, final local check)
+
+The final local check of the durative diagnosis fixes (`docs/durative_diagnosis.md`): D1 `OwnPaceBelowRoot`, D3
+`WaitNodeActingEval` and D5 `BlockableCheckNotMate` in the engine, D4 and D7 in the arena, D6 in the wave2-hivemind
+tests. The `continuity` preset now sets five switches (fixes 1-3 plus D1 and D5); D3 is not in it. Engine:
+`talisman/wave2` at `ec81b9a` (clean tree). Main repo: `custom-engine` at `9a73bed`, plus the probe modes below.
+Network for every measurement: twin-s-clock it13 (`engine/models/twin-s-clock-fp32.onnx`, HF
+`aminwoo/bughouse-twin-s-clock@edaa246`) on ONNX Runtime (Core ML EP); the self-play smoke used its FP32 copy
+`twin-s-clock-it13-fp32.onnx`. Output: `runs/continuity_diag/` and `runs/wave2_local/diag_fixes/`.
+
+**These are plumbing checks, not strength results.** Another job (a reels script) ran on the Mac during the
+1k/4k scaling runs (load average about 15), so the wall times there are noisy; node counts, moves and q are not
+affected.
+
+### 10.1 Build and suites
+
+| Check | Result |
+|---|---|
+| Clean build: old `build-ninja` and `build-sp1` moved to the Trash; `build-ninja` with the `ninja-release` preset, `HIVEMIND_BACKEND=onnxruntime`, 4 workers, tests on, GoogleTest from the local source dir (8.1); `build-sp1` 1 worker, fast build, tests off; 2 jobs each, one at a time | OK, 47/47 steps in 45 s and 11/11 in 11 s (6 and 4 compiler warnings, as before). The preset alone configures the TensorRT backend and fails on this Mac; `-DHIVEMIND_BACKEND=onnxruntime` is needed |
+| C++ suite `build-ninja/tests/hivemind_tests` | 606 tests: 605 passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`, as before), 0 failed; 40 s |
+| `engine/tests/stock_parity.sh` (`JOBS=2`) | 8/8 positions identical |
+| `engine/tests/wave2_parity.sh` (every wave 2c option off vs `261081b`, `JOBS=2`) | 8/8 identical |
+| wave2-hivemind Python (`uv run --offline pytest`), in two parts | without `tests/distill`: 184 passed, 8 failed, all macOS tar "Option --compare is not supported" (6 in `tests/data/test_archive.py`, 2 in `tests/test_cli_rl_loop.py`). With the diagnosis' GNU-tar shim on PATH, those two files pass 32/32, so D6 holds. `tests/distill`: 19 passed (153 s). Total 203 passed, 8 failed (environment only) |
+| Main repo `arena/tests` | 312 passed |
+| Main repo `arena/tests_phase1` | 105 passed |
+
+`wave2_game_parity.sh` was not rerun (no engine source changed since the engine agent ran it: 5/5).
+
+### 10.2 Node scaling, same 40 positions (`tools/continuity_probe.py scaling`)
+
+`go nodes N` on a fresh tree (`ucinewgame`), `build-sp1`, one worker, the 40 positions of
+`runs/continuity_baseline/positions.jsonl`; agreement is the joint action against upstream it13 at 64k (the
+baseline's rows, copied into `runs/continuity_diag/scaling.jsonl`). Only JointPlans, D1, D3 and D5 act here (fixes 1
+and 3 need a previous search of the same game). New probe modes: `cont_d3` (preset + `wait_node_acting_eval`),
+`cont_fp200` (preset, `joint_plan_free_permille` 200), `cont_nod1` (preset with `own_pace_below_root` false, added to
+split D1 from D5), `cont_tol1000` / `cont_tol3000` (reuse tolerance).
+
+Identity check: the rerun of wave 2 defaults (`on`) and durative off (`off`) gives the baseline's joint action on
+40/40, 39/40, 40/40 (on, 1k/4k/16k; 39/40 is the baseline's own repeat floor) and 40/40 at every budget (off).
+
+| Arm | Nodes | Joint vs it13@64k (40) | Per board | Mean root q | Root passes on an on-turn board | One board on turn (25): joint | (25): q | Both boards (15): joint |
+|---|---|---|---|---|---|---|---|---|
+| baseline on (`261081b`) | 1k / 4k / 16k | 23 / 20 / 22 | 64 / 59 / 61% | -0.083 / -0.091 / -0.116 | 4 / 4 / 7 | 15 / 13 / 13 | -0.100 / -0.107 / -0.131 | 8 / 7 / 9 |
+| baseline off | 1k / 4k / 16k | 23 / 25 / 27 | 65 / 69 / 70% | -0.127 / -0.131 / -0.137 | 3 / 4 / 4 | 15 / 17 / 17 | -0.112 / -0.121 / -0.133 | 8 / 8 / 10 |
+| continuity round preset (`8fe9b37`, fixes 1-3) | 1k / 4k / 16k | 20 / 22 / 26 | 57 / 61 / 71% | -0.100 / -0.115 / -0.123 | 4 / 5 / 5 | 12 / 14 / 17 | -0.107 / -0.123 / -0.142 | 8 / 8 / 9 |
+| **wave 2 defaults now** (`on`) | 1k / 4k / 16k | 23 / 20 / 22 | 64 / 59 / 61% | -0.083 / -0.093 / -0.116 | 4 / 5 / 7 | 15 / 13 / 13 | -0.100 / -0.107 / -0.131 | 8 / 7 / 9 |
+| **preset now** (`cont`: fixes 1-3, D1, D5) | 1k / 4k / 16k | 20 / 22 / **23** | 59 / 60 / 64% | -0.135 / -0.143 / **-0.170** | 6 / 6 / 7 | 13 / 13 / **14** | -0.140 / -0.147 / -0.192 | 7 / 9 / 9 |
+| **preset + D3** (`cont_d3`) | 1k / 4k / 16k | 21 / 20 / 24 | 60 / 57 / 65% | -0.148 / -0.168 / -0.178 | 5 / 7 / 7 | 13 / 13 / 15 | -0.154 / -0.171 / -0.194 | 8 / 7 / 9 |
+| **preset, free share 200** (`cont_fp200`) | 1k / 4k / 16k | 19 / 21 / 20 | 56 / 59 / 56% | -0.131 / -0.159 / -0.182 | 4 / 5 / 7 | 12 / 13 / 12 | -0.132 / -0.158 / -0.191 | 7 / 8 / 8 |
+| **preset without D1** (`cont_nod1`) | 4k / 16k | 22 / 26 | 61 / 71% | -0.115 / -0.123 | 5 / 5 | 14 / 17 | -0.123 / -0.142 | 8 / 9 |
+| **durative off + gate now** (`off`) | 1k / 4k / 16k | 23 / 25 / 27 | 65 / 69 / 70% | -0.127 / -0.131 / -0.137 | 3 / 4 / 4 | 15 / 17 / 17 | -0.112 / -0.121 / -0.133 | 8 / 8 / 10 |
+
+it13 at 64k: mean q -0.128; it13 at 16k agrees with it13 at 64k on 28/40.
+
+Same joint action as the preset (`cont`): `cont_d3` 36 / 32 / 31 of 40, `cont_fp200` 38 / 37 / 29, the continuity
+round's preset 36 / 28 / 31 (1k / 4k / 16k). `cont_nod1` equals the continuity round's preset on 40/40 at 4k and 16k
+(q within 0.001).
+
+Reading:
+1. **D5 changes nothing on these positions**; the whole difference between the preset now and the continuity round's
+   preset is D1. `cont_nod1` reproduces the continuity round's moves exactly.
+2. **D1 lowers agreement at 16k and overshoots on q.** With D1 the preset agrees 23/40 at 16k against 26/40 without
+   it, and per board 64% against 71%; at 1k and 4k it is level (20 and 22 both ways). Mean root q moves from -0.123 to
+   -0.170, below off (-0.137) and it13 at 64k (-0.128), and it still drifts down with nodes (-0.135, -0.143, -0.170).
+   The diagnosis predicted the level shift (it removed about +0.05 of optimism); here it goes past the reference by
+   about 0.04. A difference of 3 of 40 is within noise (about +-6 at 95%), so this does not show D1 is wrong, but it
+   gives no support for keeping D1 in the preset either. A likely cause: the arena's own-seat `SeatPaceMs` is clock
+   drop per move, which counts sits and the serial brain's queueing, so charging it below the root may make our team
+   too slow. `c_ownpace_120` (D1 alone) and `c_all_120` on PACE are the test.
+3. **D3** (`cont_d3`): 21 / 20 / 24 against 20 / 22 / 23; no gain shown, as in the diagnosis. q moves down a further
+   0.01-0.03. It stays out of the preset.
+4. **JointPlanFreePermille 200** is no better at low nodes (19 / 21 against 20 / 22) and clearly worse at 16k (20
+   against 23; 12 of 25 one-board positions against 14). **Use the default 500 for the PACE rows.**
+5. **D2 (does JointPlans close the one-board gap?)** Not with the preset as it now stands: on the 25 positions where
+   we are on turn on one board, the preset agrees 13 / 13 / 14 of 25 against off's 15 / 17 / 17. Without D1
+   (`cont_nod1`, the continuity round's preset) it reaches off at 16k (17/25) but not at 4k (14 against 17). On
+   the 15 both-board positions every arm is within 7-10, so the remaining gap is in the one-board positions.
+
+### 10.3 Fix 1 hit-rate gate at 250 / 1000 / 3000 ms (`tools/continuity_probe.py reuse`)
+
+The continuity round ran the arena gate only at 250 ms (8.3). Here: the preset now (D1, D5 on, arena with D4), local
+arena, `arena/pools/wave2.json`, wave 2 vs upstream it13, 60 s, `reuse_tree` on for both, seed 0, 2 pairs (4 games
+each), `build-ninja`. Different tolerances play different games, so the denominators differ.
+
+| Run | Tolerance | Wave 2 searches | Adopted | Mean visits recovered (hits) | Recovered / searched (hits) | Refused: shape / no node / clock / committed / solved / no tree | Carried plan applied | Score vs it13 (4 games) |
+|---|---|---|---|---|---|---|---|---|
+| continuity round (8.3, before D1/D4/D5) | 250 ms | 271 | 19 (7.0%) | 328 | about 15% | 97 / 92 / 46 / 8 / 5 / 4 | 96 | |
+| `reuse_cont` | 250 ms | 229 | 9 (3.9%) | 377 | 18% | 86 / 80 / **24** / 19 / 7 / 4 | 81 | 0.500 |
+| `reuse_cont_tol1000` | 1000 ms | 208 | 10 (4.8%) | 347 | 15% | 80 / 73 / **4** / 29 / 8 / 4 | 77 | 0.500 |
+| `reuse_cont_tol3000` | 3000 ms | 240 | 20 (8.3%) | 291 | 14% | 69 / 93 / **6** / 34 / 14 / 4 | 91 | 0.250 |
+
+Upstream it13 reused nothing in any of these games (0 of 204-231 searches each). All 12 games ended in checkmate.
+
+Reading: the tolerance acts only on the `clock` refusals, and 1000 ms removes almost all of them (24 to 4, about 10%
+to 2% of searches); 3000 ms removes no more (6). The rest of the 3000 ms run's higher hit rate (8.3%) comes from its
+games, not from the clock: its `no node` and `shape` counts are as large as at 250 ms, and 4 games per run cannot
+separate 3.9%, 4.8% and 8.3%. Recovered subtrees shrink as the tolerance grows (377, 347, 291 visits), as expected
+from re-timing older nodes further. **Recommendation: default tolerance 1000 ms** (it recovers what the clock
+refusals cost at the smallest re-timing; 3000 ms adds nothing measurable). This is a recommendation only: the
+engine and arena defaults stay at 250 ms, and changing them is a separate decision. The hit rate is also lower than
+in the continuity round (3.9% against 7.0% at 250 ms), with fewer `clock` refusals; whether D1's slower own seats,
+D4's arena inputs or simply other games cause it, 4 games cannot say.
+
+### 10.4 Self-play smoke and cluster dry run
+
+`build-sp1/hivemind.bin selfplay --model models/twin-s-clock-it13-fp32.onnx --games 3 --nodes 48 --seed 11
+--base-mix 15000:1`, wave 2 flags (`--durative-tree true --sit-gate false --flag-loss true --instant-transfer false
+--mate-race-by-landing false --pass-cap-k 8`) and `--continuity true`:
+
+| Network | Games | Samples | Team tree reuse | Plan carry | Wall, peak memory |
+|---|---|---|---|---|---|
+| it13 fp32 | 3, no error: flag (Bb), resignation, flag (Bw) | 158 | 14.6% of searches (23/158), 53.5 mean visits, by seat Aw 7 Ab 8 Bw 1 Bb 7; refused `no node` 57, `shape` 43, `clock` 15, `committed` 8, `no tree` 6, `solved` 6 | 9 recorded, 0 applied (9 dropped `old root`, as in 8.4) | 252 s, 201 MB |
+
+The self-play log does not print which switches the preset set, so this smoke shows only that the preset with D1 and
+D5 runs whole games without error; that `--continuity` sets D1 and D5 is covered by the C++ tests
+(`test_diag_fixes.cc`).
+
+`bash cluster/launch_checks.sh wave2c` with a fake `sbatch`/`squeue` on PATH and `SBATCH_DEPENDENCY=afterok:12345`:
+10 submissions, all with `--dependency=afterok:12345`, 120000 ms: `c_all_120` (`{"continuity": true}`),
+`c_reuse_120`, `c_joint_120`, `c_carry_120`, `c_ownpace_120`, `c_waiteval_120`, `c_mateblock_120`, `c_nodur_120`
+(600 pairs each, against `upstream-it13`), `c_same_120` (800 pairs, `wave2c-self`) and `c_ref_120` (`{}`, 600
+pairs). `bash -n cluster/launch_checks.sh`: OK.
+
+**Still not ready for PACE as is:** `cluster/wave2_engine.ref` still pins `261081b`, and `talisman/wave2` is 35
+commits ahead of `fork/talisman/wave2` (nothing pushed). A `261081b` binary does not advertise the wave 2c or
+diagnosis options, so the arena would refuse every row except `c_ref_120` and `c_nodur_120` at start-up. Push
+`talisman/wave2` at `ec81b9a`, set the pin and push `custom-engine` first. None of this was done here.
+
+### 10.5 Arena smoke: preset vs durative off + gate on
+
+`arena.pool run --pool arena/pools/wave2.json --opponent wave2-self --contender-kw '{"continuity": true}'
+--opponent-kw '{"durative_tree": false, "sit_gate": true}' --openings bughouse --rules v3 --base-ms 30000 --pairs 4
+--seed 3 --measure-ms-per-node --measure-nodes 800`, both sides `build-ninja`
+(`runs/wave2_local/diag_fixes/arena_cont_vs_nodur`, 251 s).
+
+| Games | Preset score | Results | Measured ms/node (preset / nodur) | Preset telemetry |
+|---|---|---|---|---|
+| 8 (0 errors, 0 unplayed) | 0.125 (1 win, 7 losses; 95% range 0.00-0.25) | 8 checkmates | 0.202 / 0.211 | reuse 0.06 per search, plan carries 0.44 per search |
+
+`specs.jsonl` shows the contender got `continuity: true` and the opponent `durative_tree: false, sit_gate: true`.
+**Smoke only:** 8 games at 30 s say nothing about strength (the continuity round's smoke was 0.188 on the same
+seeds). Whether the preset closes the gap to nodur is for `c_all_120` against `c_nodur_120` and `c_ref_120` on PACE.
+
+### 10.6 Not done or still open
+
+* D1 in the preset is not supported by this check: 23/40 against 26/40 without it at 16k, and q overshoots the it13
+  reference by about 0.04 (10.2). Within noise, so the preset is unchanged; `c_ownpace_120` and `c_all_120` decide.
+  If D1 loses there, the preset should drop it (or the arena should send our seats a thinking-only pace).
+* D2 is not closed: the preset with D1 is at 13-14 of 25 one-board positions against off's 17 at 4k and 16k.
+* The reuse tolerance recommendation (1000 ms) is from 3 x 4 games; the defaults were not changed.
+* `wave2_game_parity.sh` was not rerun (no engine source change since the engine agent's 5/5).
+* Wave 2 at 64k nodes was not run, as in the baseline.
+* PACE needs the push and the new pin (10.4). Nothing was pushed.
