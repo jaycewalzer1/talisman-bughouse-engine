@@ -1075,9 +1075,9 @@ identical.
 | D5 | `BlockableCheckNotMate` / `--blockable-check-not-mate` | yes | A check a drop could block is never mate (the arena's `is_bughouse_mate`), on the board, so in every search, prover line and game-end check |
 
 The `Continuity` preset (UCI, `--continuity` in self-play and tournament, Python `CONTINUITY_FIELDS`) now sets five
-switches: the three fixes, D1 and D5. The arena's `continuity: true` expansion (`arena/players/upstream.py`) still
-names the three v5 switches only. It needs `own_pace_below_root` and `blockable_check_not_mate` in `WAVE2_FLAGS` and in
-the expansion before a `c_*` row means the same as the engine preset.
+switches: the three fixes, D1 and D5. The arena expands `continuity: true` to the same five (`a9419ed`,
+`arena/players/upstream.py` `WAVE2_PRESETS`); the single-switch PACE rows are `c_ownpace_120`, `c_waiteval_120`,
+`c_mateblock_120` (`870b476`).
 
 **D5 was confirmed before it was fixed.** Position: A `k7/pp6/8/8/8/8/8/4K2R[] w`, B `4k3/8/8/8/8/8/8/4K3[] w`, white
 to play. After Rh1-h8 the arena plays on (Ab waits). The engine answered `score mate 1` in both trees.
