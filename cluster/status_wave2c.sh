@@ -17,7 +17,7 @@ echo
 if [ -z "$ROUND" ] || [ ! -d "$OUT" ]; then
   echo "no wave 2c round yet (runs/wave2c/LATEST): bash cluster/launch_wave2c.sh"
 else
-  echo "== round $OUT    jobs: $(tr '\t\n' ' ;' < "$OUT/jobs.tsv" 2>/dev/null)"
+  echo "== round $OUT    jobs: $( { tr '\t\n' ' ;' < "$OUT/jobs.tsv"; } 2>/dev/null)"
   echo "build: $([ -f "$OUT/build.ok" ] && echo "ok ($(cat "$OUT/build.ok"))" || echo "not passed (yet): build_w2c_<job>.log")"
   if [ -f "$OUT/gpu_check.tsv" ]; then
     echo "gpu check: $(grep -o '"overall": "[A-Z]*"' "$OUT/gpu_check.json" 2>/dev/null || echo running)"
@@ -70,8 +70,9 @@ if os.path.isdir(out):
     benches = sorted(glob.glob(os.path.join(out, "bench", "*", "bench.json")))
     for path in benches:
         b = json.load(open(path))
-        print(f"{os.path.basename(os.path.dirname(path)):<22} games {b['games']}/{b['games_asked']}  exit {b['exit']}  "
-              f"R end-to-end {b['games_per_gpu_hour']}  steady {b['games_per_gpu_hour_steady']}  wall {b['wall_s']} s")
+        print(f"{os.path.basename(os.path.dirname(path)):<22} games {b.get('games')}/{b.get('games_asked')}  "
+              f"exit {b.get('exit')}  R end-to-end {b.get('games_per_gpu_hour')}  "
+              f"steady {b.get('games_per_gpu_hour_steady')}  wall {b.get('wall_s')} s")
     if not benches:
         print("(no bench finished yet)")
     print()
