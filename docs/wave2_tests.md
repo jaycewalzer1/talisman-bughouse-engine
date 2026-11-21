@@ -219,23 +219,27 @@ nonzero). Unit tests: `arena/tests/test_upstream.py` (`test_wave2_continuity_*`,
 `test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`,
 `test_wave2_durative_diagnosis_*`).
 
-### The rows (`bash cluster/launch_checks.sh wave2c`, 10 jobs)
+### The rows (`bash cluster/launch_checks.sh wave2c`, 11 jobs)
 
 Common settings as section 4 (pool `wave2` contender, `clock_k 110`, `serial`, `charge "searched"`, `MEASURE=1` at
 800 nodes per binary and flag set, so fix 2's node cost is charged as measured; `bughouse` openings; rules v3), all
 against `upstream-it13` at 120 s, no SPRT. `SBATCH_DEPENDENCY=afterok:<build job>` holds every row behind the build.
+Every row with fix 1 on (`c_all_120`, `c_all_nod1_120`, `c_reuse_120`, `c_same_120` and its opponent) sends
+`team_tree_reuse_tolerance_ms` 1000 (2026-11-21: clock refusals 24 -> 4 against 250, `docs/wave2_local_check.md`
+10.3); the engine default stays 250. `W2C_PREFIX` (default `wave2c`) sets the folder under `runs/`.
 
 | Row | Opponent | `CONTENDER_KW` | Pairs | Question | Expected reading |
 |---|---|---|---|---|---|
-| `c_all_120` | upstream-it13 | `{"continuity": true}` | 600 | all three fixes plus D1 and D5 on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
-| `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` | 600 | fix 1 alone | above `c_ref_120` if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
+| `c_all_120` | upstream-it13 | `{"continuity": true}` (+ tolerance 1000) | 600 | all three fixes plus D1 and D5 on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
+| `c_all_nod1_120` | upstream-it13 | `{"continuity": true, "own_pace_below_root": false}` (+ tolerance 1000) | 600 | the preset without D1 | at or above `c_all_120` if D1 costs strength: the local 40-position agreement with it13@64k was 20/22/26 without D1 against 20/22/23 with it (`docs/wave2_local_check.md` 10.2) |
+| `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` (+ tolerance 1000) | 600 | fix 1 alone | above `c_ref_120` if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
 | `c_joint_120` | upstream-it13 | `{"joint_plans": true}` | 600 | fix 2 alone | above `c_ref_120` if joint planning below the root is what was missing; reuse and carries per search exactly 0 |
 | `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `c_ref_120`; carries per search above 0 |
 | `c_ownpace_120` | upstream-it13 | `{"own_pace_below_root": true}` | 600 | D1 alone: our seats at their own pace below the root | at or above `c_ref_120`; the diagnosis saw no move-agreement change, only a less optimistic q, so no gain is the likely reading; reuse and carries per search 0 |
 | `c_waiteval_120` | upstream-it13 | `{"wait_node_acting_eval": true}` | 600 | D3 alone: wait nodes valued from the acting team (not in `continuity`) | within the noise of `c_ref_120`; a gain here would put D3 into `continuity` |
 | `c_mateblock_120` | upstream-it13 | `{"blockable_check_not_mate": true}` | 600 | D5 alone: a drop-blockable check is never mate | within the noise of `c_ref_120` (the case is rare); a loss would mean the engine's mate calls were helping it, against the rules |
 | `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
-| `c_same_120` | wave2c-self | `{"continuity": true}` | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
+| `c_same_120` | wave2c-self | `{"continuity": true}` (+ tolerance 1000, both arms) | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
 | `c_ref_120` | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary **and the new arena inputs**: every fix-alone row is read against it | near `ref_120` (0.227) if D4 changed nothing. Required, not optional: with every fix off the new binary matches the one `ref_120` ran (0.4 `wave2_parity.sh`, 0.6 `wave2_game_parity.sh`), but D4 changed `SeatElapsedMs`/`SeatSitting` for every wave 2 arm with no flag, so `ref_120` ran on the old arena inputs (a sitting opponent landed at `max(1, pace - elapsed)`, often 1 ms). A difference between `c_ref_120` and `ref_120` is the D4 effect, not any fix |
 
 How to read them:
@@ -256,6 +260,73 @@ SBATCH_DEPENDENCY=afterok:<build job> bash cluster/launch_checks.sh wave2c
 bash cluster/results.sh
 ```
 
-Cost: 9 rows x 1200 games (`c_ref_120` included) and `c_same_120` at 1600, about 8 GPU-hours each at section
-5's rate: about 80 GPU-hours. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
+Cost: one 8 h job per row, 11 rows: 88 GPU-hours. At the 2026-11-19 round's pace (about 270-300 games per 8 h row
+at 120 s) no row reaches its 1200 (1600) games in one job; a resubmission with the same `NAME` continues it. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
 switches (D1 and D5 included); on one without them they refuse to start.
+
+## 8. Wave 2c readiness round (GO / NO-GO for the full run)
+
+Added 2026-11-21. One PACE round whose results decide the full training run (10 iterations x 50,000 games, about
+1,700 GPU-hours at R = 300; budget about 10,000) and its settings: which engine config to train, narrow or wide.
+Operating steps and the job table: `cluster/README.md`, "Wave 2c readiness round".
+
+```sh
+bash cluster/launch_wave2c.sh                 # everything, after a pull; prints job ids
+bash cluster/status_wave2c.sh                 # progress, plus the 2026-11-19 round and ab2
+.venv/bin/python cluster/decide_full_run.py   # GO / NO-GO, reasons, the full run's command
+```
+
+### What each job measures
+
+| Job | Question | Read it |
+|---|---|---|
+| build (`cluster/build.sh`) | do all engines build on TensorRT at the pin and pass their tests and parity? | `build_w2c_<job>.log` ends "build ok"; `runs/wave2c/<ROUND>/build.ok` exists |
+| (a) GPU check | does the pinned engine run on the GPU the way the Mac checks say: `build-sp1` at the pin (`cluster/build_sp1.sh`; before this round a stale `build-sp1` from an older pin was kept), both engines advertise the wave 2c options, it13 **and the wide network** match ONNX Runtime on TensorRT (the wide path was never compiled before), stock parity, and self-play runs on TensorRT for both candidates and both widths | `gpu_check.tsv`, one PASS / FAIL / SKIP per check. `stock_binary` (bit-for-bit stock v3.0.3) needs an ONNX Runtime C++ install and is SKIP without one. `cluster/check_clock_engine.py` is not in it: it checks our fork's clock network's think_gain head, which it13 and the wide net do not have (the build runs it on the clock network) |
+| (b) 11 rows | section 7: which continuity config plays best against it13 at equal clock; is the harness fair | `c_same_120` first, then each candidate against `c_nodur_120` |
+| (c) bench | self-play rate R (games per GPU-hour) of `nodur` and `cont`, narrow and wide, on the exact rl-loop segment command (`cluster/wave2_selfplay_bench.py`, 6 games at once, 800 nodes) | `bench/<config>_<width>/bench.json`: `games_per_gpu_hour_steady` (pipeline full, used by decide) and end to end (with the TensorRT engine build and the tail) |
+| (d) smokes | does one training iteration run end to end with each config, narrow and wide: self-play (2 segments of 100 games), validation, label check, training, gate vs the generator and vs it13 (60 games each) | `smoke_<config>/<width>/results.tsv` has `rl-it1` with a `vs_it13` score. The scores are 60 games: plumbing, not strength |
+| (e) watchdog | stop spending if the build or GPU check fails | `watchdog.log` |
+
+### Decision rules (`cluster/decide_full_run.py`)
+
+NO-GO on any blocker:
+
+| | Blocker |
+|---|---|
+| B1 | `build.ok` missing |
+| B2 | `gpu_check.json` missing or not `"overall": "PASS"` |
+| B3 | any of the four smoke arms (`nodur`, `cont` x narrow, wide) without `rl-it1/stages/iteration.done` and a `vs_it13` score |
+| B4 | `c_same_120` outside [0.46, 0.54] |
+| B5 | a row missing, under 250 games, errors in over 5% of its games, or any `w2c_*` job still queued |
+| B6 | no complete bench for the chosen config's benched stand-in (`nodur` or `cont`) at the chosen width |
+| B7 | estimate over 10,000 GPU-hours |
+
+Config: candidates `c_all_120` (`cont`), `c_all_nod1_120` (`cont_nod1`) and the best-scoring single-switch row, each
+against `c_nodur_120` of this round. A candidate qualifies if its 95% range lies wholly above `c_nodur_120`'s, or it
+scores at least 0.05 more with at least 500 games in both rows. The highest-scoring qualifier is chosen, else `nodur`
+(`--durative-tree false --sit-gate true`, the ab2 settings). A choice other than `nodur` or `cont` was not benched or
+smoke-trained: it borrows `cont`'s rate and smoke, and the output says so.
+
+Width: from `runs/wave2/ab2/results_ab.tsv` (the A/B launched 2026-11-19 with the `nodur` settings; each iteration's
+gate is 400 games, about +-0.05). Wide when at least 2 iterations have both arms gated, the wide mean is at least
+0.03 above the narrow mean, and the wide arm's last score is not below the narrow arm's; otherwise narrow, also when
+the file is missing.
+
+Estimate: 10 x (50,000 + 500) / R + 10 x 1.3 GPU-hours, R the bench's steady rate; `CHAIN = ceil(1.1 x estimate /
+16) + 10` chained 16 h jobs. Printed with the command, e.g.
+`RUN=full1 CONFIG=nodur WIDE=0 CHAIN=127 GAMES_PER_ITER=50000 bash cluster/launch_full_run.sh`.
+
+Reading limits, stated up front: with one 8 h job per row (about 300 games, +-0.055) the 0.05 rule cannot fire and
+only a gap of about 0.11 clears disjoint ranges, so a continuity config is chosen only on a large effect; a smaller
+one reads as `nodur`. Resubmitting the rows into the same folders (`W2C_PREFIX=wave2c/<ROUND>/rows bash
+cluster/launch_checks.sh wave2c`, about 88 GPU-hours) gives them the 500+ games the 0.05 rule needs. The full run is
+one GPU at a time (rl-loop's `--distributed` refuses wave 2 options), so 1,700 GPU-hours is about 71 days of wall clock.
+
+Cost of the round: at most 118 GPU-hours by the time limits (build 4, GPU check 4, bench 2 x 3, smokes 2 x 8, rows
+11 x 8), about 100 expected.
+
+Checked locally (2026-11-21, Mac, no GPU): `bash -n` on every cluster script; `arena/tests/test_decide_full_run.py`
+(decide on synthetic rounds: GO, every blocker, nodur / cont / cont_nod1 / single switch / wide chosen; dry runs of
+`launch_wave2c.sh` and `launch_full_run.sh` with a fake `sbatch` and `squeue` on PATH checking every submission's
+dependency); `cluster/wave2_selfplay_bench.py` end to end on the Mac's ONNX Runtime `build-sp1`. Not checkable here:
+TensorRT, the GPU check itself, R, the smokes on PACE.

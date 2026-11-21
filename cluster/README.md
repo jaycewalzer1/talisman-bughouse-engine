@@ -123,3 +123,59 @@ and rescale before committing to the rest.
 Checked locally 2026-11-19 (Mac CPU, `AB=1 ITERS=1 GAMES_PER_ITER=4 VAL_GAMES=2 BATCH_SIZE=128 NO_GATE=1`, engine
 `build-ninja` for both): both arms ran init, self-play, label check, training and results; the wide arm's chunks went
 to v3 with arrivals labels on all 676 + 386 records; `results_ab.tsv` written. 4 min 16 s. No matches, no GPU.
+
+## Wave 2c readiness round
+
+One round on PACE after which one script says GO or NO-GO for the full training run and prints its launch command.
+Background and the rows' meaning: `docs/wave2_tests.md` sections 7 and 8.
+
+```bash
+bash cluster/launch_wave2c.sh                 # pull, pin check, submit everything (prints job ids and GPU-hours)
+bash cluster/status_wave2c.sh                 # queue, build, GPU check, rows, R, smokes; then the old round and ab2
+.venv/bin/python cluster/decide_full_run.py   # GO / NO-GO with reasons, and the full run's command on GO
+```
+
+`launch_wave2c.sh` refuses while wave 2 jobs of the earlier round (`w2_*`, `ab*_w*`) are queued, because they run
+from the same `third_party/wave2-hivemind` checkout, which the round moves to `cluster/wave2_engine.ref` and rebuilds
+(`ALLOW_BUSY=1` goes ahead). Each round gets a new folder `runs/wave2c/rN` (named in `runs/wave2c/LATEST`), never
+an old one: eval resumes any partial games it finds.
+
+| Job | Waits for | What it measures | Output | GPU-h (limit) |
+|---|---|---|---|---|
+| `w2c_build` | - | `cluster/build.sh`: TensorRT builds (stock, clock, upstream, wave 2 at the pin), engine tests, parity | `build_w2c_<job>.log`, `rN/build.ok` | 4 |
+| `w2c_gpu` (a) | build ok | `cluster/wave2c_gpu_check.sbatch`: pin, wave2 env, `build-sp1` at the pin (`cluster/build_sp1.sh`), wave 2c options in both engines, it13 and wide parity on TensorRT, stock parity, 6 self-play games per candidate config and width on TensorRT | `rN/gpu_check.tsv`, `.json` | 4 |
+| `w2c_<row>` (b) | build ok | the 11 `launch_checks.sh wave2c` rows, one 8 h job each | `rN/rows/<row>` | 11 x 8 |
+| `w2c_bench_nodur`, `_cont` (c) | gpu ok | self-play rate R on the rl-loop segment command, narrow then wide, 150 games each (`cluster/wave2c_bench.sbatch`) | `rN/bench/<config>_<width>/bench.json` | 2 x 3 |
+| `w2c_smoke_nodur`, `_cont` (d) | gpu ok | one `wave2_iterate.sbatch` iteration per config, narrow and wide (`AB=1`): 200 self-play games, train, gate (60 games) | `rN/smoke_<config>/{narrow,wide}` | 2 x 8 |
+| `w2c_watchdog` (e) | build ends | cancels every `w2c_*` job if the build or the GPU check fails, and a row with errors in over 5% of its games | `rN/watchdog.log` | CPU |
+
+**Cost: at most 118 GPU-hours** by the time limits, about 100 expected (the rows use their whole 8 h, the rest
+end sooner). An 8 h row plays about 270-300 games at 120 s (the 2026-11-19 round), a 95% range of about +-0.055.
+
+Decision rules (`cluster/decide_full_run.py` docstring, `docs/wave2_tests.md` section 8): NO-GO on any of B1 build
+not passed, B2 GPU check not PASS, B3 a smoke arm without a finished, gated iteration, B4 `c_same_120` outside
+[0.46, 0.54], B5 a row missing, under 250 games, over 5% errors or still queued, B6 no self-play rate for the chosen
+config and width, B7 the full run over 10,000 GPU-hours. Config: `cont` (`c_all_120`), `cont_nod1`
+(`c_all_nod1_120`) or the best single switch only when it beats `c_nodur_120` with disjoint 95% ranges, or by 0.05
+with 500 games in both rows; otherwise `nodur`. Width: wide only when `runs/wave2/ab2/results_ab.tsv` has at least
+2 gated iterations with the wide mean 0.03 above narrow and the wide last not behind; otherwise narrow.
+
+With one 8 h job per row the 0.05 rule cannot fire (under 500 games); only a gap of about 0.11 clears disjoint ranges.
+To give it the games, resubmit the rows into the same folders (eval resumes each; about 88 GPU-hours more):
+`W2C_PREFIX=wave2c/r1/rows bash cluster/launch_checks.sh wave2c`.
+
+### The full run
+
+`decide_full_run.py` prints, on GO, one line such as
+
+```bash
+RUN=full1 CONFIG=nodur WIDE=0 CHAIN=127 GAMES_PER_ITER=50000 bash cluster/launch_full_run.sh
+```
+
+`launch_full_run.sh` checks the pin, makes `runs/full/<RUN>` (refused if it exists; `RESUME=1` adds jobs with the
+same settings), submits CHAIN chained 16 h `wave2_iterate.sbatch` jobs (`-J full_<RUN>`, `--dependency=singleton`,
+one iteration per job, `MAX_ITER` 10 so leftover jobs exit at once) and `cluster/full_run_watchdog.sh` (cancels the
+chain on a failed job or a gate under 0.40 vs it13). `CONFIG` sets `WAVE2_EXTRA` from `cluster/wave2c_configs.py`.
+The estimate is 10 x (50,000 + 500) / R + 10 x 1.3 GPU-hours (about 1,700 at R = 300). The chain uses one GPU at a
+time: rl-loop's `--distributed` self-play refuses wave 2 options, so wall clock is about the GPU-hour total (1,700
+GPU-hours is about 71 days). Splitting self-play over GPUs is not built.
