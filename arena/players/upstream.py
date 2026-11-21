@@ -86,26 +86,36 @@ WAVE2_FLAGS = {"durative_tree": ("DurativeTree", True), "sit_gate": ("SitGate", 
                "flag_loss": ("FlagLoss", True), "instant_transfer": ("InstantTransfer", False),
                "mate_race_by_landing": ("MateRaceByLanding", False), "pass_cap_k": ("PassCapK", 8)}
 # Wave 2c (spec v5, docs/custom_engine_spec_v5_continuity.md): three tree switches, all off, and their knobs at the
-# engine's defaults. Unlike the six above they are sent only when set to something other than the engine default,
+# engine's defaults, plus the three switches of the durative diagnosis (docs/durative_diagnosis.md), all off:
+# own_pace_below_root (D1: below the root our seats act at their SeatPaceMs, RootMoveTimeMs only for the root
+# action), wait_node_acting_eval (D3: a forced-wait node is evaluated from the acting team and negated) and
+# blockable_check_not_mate (D5: a drop-blockable check is never mate, as in the arena's rules). Unlike the six above they are sent only when set to something other than the engine default,
 # so a row without them sends exactly the options it sent before (and still runs on a pre-2c binary, which does not
 # know them). A row that sets one checks at start-up that the binary advertises it (UpstreamHivemindProcess.start).
 WAVE2_CONTINUITY_FLAGS = {"team_tree_reuse": ("TeamTreeReuse", False), "joint_plans": ("JointPlans", False),
                           "plan_carry": ("PlanCarry", False),
                           "team_tree_reuse_tolerance_ms": ("TeamTreeReuseToleranceMs", 250),
                           "joint_plan_free_permille": ("JointPlanFreePermille", 500),
-                          "plan_carry_permille": ("PlanCarryPermille", 300)}
+                          "plan_carry_permille": ("PlanCarryPermille", 300),
+                          "own_pace_below_root": ("OwnPaceBelowRoot", False),
+                          "wait_node_acting_eval": ("WaitNodeActingEval", False),
+                          "blockable_check_not_mate": ("BlockableCheckNotMate", False)}
 WAVE2_FLAGS.update(WAVE2_CONTINUITY_FLAGS)
 # Integer flags and their ranges (the engine's spin limits); every other flag is a check (true/false).
 WAVE2_INT_RANGES = {"PassCapK": (1, 64), "TeamTreeReuseToleranceMs": (0, 5000), "JointPlanFreePermille": (0, 1000),
                     "PlanCarryPermille": (0, 1000)}
 # Player-option presets, expanded in Python (no preset option is sent, so option order never matters): "continuity"
-# true/false sets the three wave 2c switches it names that the row does not set itself; the knobs are untouched.
-WAVE2_PRESETS = {"continuity": ("team_tree_reuse", "joint_plans", "plan_carry")}
+# true/false sets the switches it names that the row does not set itself: the three wave 2c fixes and the two
+# correctness fixes of the durative diagnosis (D1, D5); the knobs and wait_node_acting_eval (D3, no shown gain) are
+# untouched.
+WAVE2_PRESETS = {"continuity": ("team_tree_reuse", "joint_plans", "plan_carry", "own_pace_below_root",
+                                "blockable_check_not_mate")}
 # Switches whose engine state carries from one search to the next (the team tree, the carried plans). With one on,
 # the process keeps its tree between searches (no ucinewgame per search) and the controller sends one ucinewgame at
 # its first search instead. JointPlans works inside one search and does not imply it (spec v5, review change 11).
 WAVE2_STATE_FLAGS = ("TeamTreeReuse", "PlanCarry")
-# The engine's own preset option: it sets TeamTreeReuse, JointPlans and PlanCarry at once. wave2_flag_options never
+# The engine's own preset option: it sets TeamTreeReuse, JointPlans, PlanCarry, OwnPaceBelowRoot and
+# BlockableCheckNotMate at once. wave2_flag_options never
 # sends it, but a row may pass it raw through engine_options.
 CONTINUITY_PRESET_OPTION = "Continuity"
 CONTINUITY_UCI_OPTIONS = frozenset({*(uci for uci, _ in WAVE2_CONTINUITY_FLAGS.values()), CONTINUITY_PRESET_OPTION})
@@ -843,7 +853,8 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
     """{seat: Player} for one team played by the wave 2 engine (``kind="wave2"``, always one team brain). Options as
     ``upstream_team`` (``binary``/``model`` default to ``WAVE2_BINARY``/``WAVE2_MODEL``) plus the flags of
     ``WAVE2_FLAGS`` (``durative_tree``, ``sit_gate``, ``flag_loss``, ``instant_transfer``, ``mate_race_by_landing``,
-    ``pass_cap_k``, and wave 2c's ``team_tree_reuse``, ``joint_plans``, ``plan_carry`` with their knobs) and the
+    ``pass_cap_k``, wave 2c's ``team_tree_reuse``, ``joint_plans``, ``plan_carry`` with their knobs, and the
+    durative diagnosis' ``own_pace_below_root``, ``wait_node_acting_eval``, ``blockable_check_not_mate``) and the
     preset ``continuity`` (``WAVE2_PRESETS``); ``engine_options`` are sent after the flags, so they win.
     ``team_tree_reuse`` or ``plan_carry`` on implies ``reuse_tree`` plus one ``ucinewgame`` at the first search."""
     flags = wave2_flag_options(**{k: kw.get(k) for k in (*WAVE2_FLAGS, *WAVE2_PRESETS)})

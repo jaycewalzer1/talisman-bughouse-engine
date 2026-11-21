@@ -566,14 +566,18 @@ def test_wave2_continuity_flags():
     knobs = wave2_flag_options(team_tree_reuse_tolerance_ms=1000, joint_plan_free_permille=0, plan_carry_permille=1000)
     assert knobs == {**WAVE2_BASE, "TeamTreeReuseToleranceMs": 1000, "JointPlanFreePermille": 0,
                      "PlanCarryPermille": 1000}
-    # continuity expands to the three switches (no Continuity option is ever sent); a switch set by the row wins.
-    all3 = {**WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True}
+    # continuity expands to the three wave 2c switches and the durative diagnosis' D1 and D5 fixes (no Continuity
+    # option is ever sent); a switch set by the row wins. D3 (wait_node_acting_eval) is not part of it.
+    all3 = {**WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True, "OwnPaceBelowRoot": True,
+            "BlockableCheckNotMate": True}
     assert wave2_flag_options(continuity=True) == all3
-    assert wave2_flag_options(continuity=True, joint_plans=False) == {**WAVE2_BASE, "TeamTreeReuse": True,
-                                                                      "PlanCarry": True}
+    assert wave2_flag_options(continuity=True, joint_plans=False) == {
+        **WAVE2_BASE, "TeamTreeReuse": True, "PlanCarry": True, "OwnPaceBelowRoot": True,
+        "BlockableCheckNotMate": True}
     assert wave2_flag_options(continuity=False) == WAVE2_BASE
     assert expand_wave2_presets({"continuity": True, "sit_gate": True}) == {
-        "sit_gate": True, "team_tree_reuse": True, "joint_plans": True, "plan_carry": True}
+        "sit_gate": True, "team_tree_reuse": True, "joint_plans": True, "plan_carry": True,
+        "own_pace_below_root": True, "blockable_check_not_mate": True}
     assert "Continuity" not in wave2_flag_options(continuity=True)
     # Ablation flags and continuity combine (c_nodur-style overrides keep working).
     assert wave2_flag_options(continuity=True, durative_tree=False)["DurativeTree"] is False
@@ -584,6 +588,39 @@ def test_wave2_continuity_flags():
         with pytest.raises(ValueError):
             wave2_flag_options(**bad)
     assert set(WAVE2_CONTINUITY_FLAGS) <= set(WAVE2_FLAGS)
+
+
+def test_wave2_durative_diagnosis_flags():
+    # D1, D3, D5 (docs/durative_diagnosis.md): engine switches, default off and sent only when on, so rows without
+    # them send what they sent before; each alone maps to its UCI option and joins no other switch.
+    assert wave2_flag_options(own_pace_below_root=False, wait_node_acting_eval=False,
+                              blockable_check_not_mate=False) == WAVE2_BASE
+    assert wave2_flag_options(own_pace_below_root=True) == {**WAVE2_BASE, "OwnPaceBelowRoot": True}
+    assert wave2_flag_options(wait_node_acting_eval=True) == {**WAVE2_BASE, "WaitNodeActingEval": True}
+    assert wave2_flag_options(blockable_check_not_mate=True) == {**WAVE2_BASE, "BlockableCheckNotMate": True}
+    # continuity carries D1 and D5, never D3; a row can still switch either off, or add D3.
+    assert "WaitNodeActingEval" not in wave2_flag_options(continuity=True)
+    assert "OwnPaceBelowRoot" not in wave2_flag_options(continuity=True, own_pace_below_root=False)
+    assert wave2_flag_options(continuity=True, wait_node_acting_eval=True)["WaitNodeActingEval"] is True
+    # Per-search switches: none of them keeps the engine's tree between searches.
+    for uci in ("OwnPaceBelowRoot", "WaitNodeActingEval", "BlockableCheckNotMate"):
+        assert uci in CONTINUITY_UCI_OPTIONS  # a binary that does not advertise it is refused at start-up
+        assert not wave2_carries_state({uci: True})
+    for bad in ({"own_pace_below_root": "yes"}, {"wait_node_acting_eval": 1}, {"blockable_check_not_mate": "true"}):
+        with pytest.raises(ValueError):
+            wave2_flag_options(**bad)
+
+
+def test_wave2_durative_diagnosis_rows_in_the_pool():
+    from arena.pool import Pool, arm_key, for_evaluation, make_schedule, unbuildable
+
+    pool = Pool.load("arena/pools/wave2.json")
+    for key, uci in (("own_pace_below_root", "OwnPaceBelowRoot"), ("wait_node_acting_eval", "WaitNodeActingEval"),
+                     ("blockable_check_not_mate", "BlockableCheckNotMate")):
+        row = for_evaluation(pool, opponent="upstream-it13", contender_kw={key: True})
+        assert unbuildable(make_schedule(row, 2, openings="bughouse", rules="v3")) == []
+        assert arm_key(row.contender).endswith(f"|{key}=True")
+        assert wave2_flag_options(**{key: True})[uci] is True
 
 
 def test_wave2_continuity_in_the_pool_and_its_measurement_key(tmp_path):
@@ -601,7 +638,8 @@ def test_wave2_continuity_in_the_pool_and_its_measurement_key(tmp_path):
     c_all = for_evaluation(pool, opponent="wave2c-self", contender_kw={"continuity": True})
     c_joint = for_evaluation(pool, opponent="upstream-it13", contender_kw={"joint_plans": True})
     assert arm_key(ref.contender).endswith("|")
-    assert arm_key(c_all.contender).endswith("|team_tree_reuse=True,joint_plans=True,plan_carry=True")
+    assert arm_key(c_all.contender).endswith("|team_tree_reuse=True,joint_plans=True,plan_carry=True,"
+                                             "own_pace_below_root=True,blockable_check_not_mate=True")
     assert arm_key(c_all.contender) == arm_key(c_all.opponents[0])
     assert arm_key(c_joint.contender).endswith("|joint_plans=True")
     calls = []
@@ -613,10 +651,12 @@ def test_wave2_continuity_in_the_pool_and_its_measurement_key(tmp_path):
     apply_ms_per_node(for_evaluation(pool, opponent="upstream-it13",
                                      contender_kw={"ms_per_node": "measure", "continuity": True}),
                       str(tmp_path / "ms.json"), measure_upstream=fake)
-    assert {"team_tree_reuse": True, "joint_plans": True, "plan_carry": True} in calls
-    assert wave2_flag_options(**calls[calls.index({"team_tree_reuse": True, "joint_plans": True,
-                                                   "plan_carry": True})]) == {
-        **WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True}
+    cont = {"team_tree_reuse": True, "joint_plans": True, "plan_carry": True, "own_pace_below_root": True,
+            "blockable_check_not_mate": True}
+    assert cont in calls
+    assert wave2_flag_options(**calls[calls.index(cont)]) == {
+        **WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True, "OwnPaceBelowRoot": True,
+        "BlockableCheckNotMate": True}
 
 
 def test_wave2_team_continuity_implies_reuse_tree():
@@ -637,8 +677,9 @@ def test_wave2_team_continuity_implies_reuse_tree():
                {"engine_options": {"Continuity": "true", "TeamTreeReuse": "false", "PlanCarry": "false"}}):
         ctl = ctl_of(**kw)
         assert ctl.process.reset_tree is True and not ctl.new_game_at_start, kw
-    assert ctl_of(continuity=True).process.extra_options == {**WAVE2_BASE, "TeamTreeReuse": True,
-                                                             "JointPlans": True, "PlanCarry": True}
+    assert ctl_of(continuity=True).process.extra_options == {
+        **WAVE2_BASE, "TeamTreeReuse": True, "JointPlans": True, "PlanCarry": True, "OwnPaceBelowRoot": True,
+        "BlockableCheckNotMate": True}
 
 
 def test_wave2_raw_continuity_preset_carries_state_and_is_checked_at_startup():
