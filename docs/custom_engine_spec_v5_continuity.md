@@ -805,9 +805,9 @@ run). Python through the main repo `.venv` and the wave2-hivemind `uv` env.
 * `team_tree_reuse` or `plan_carry` on implies `reuse_tree=True` for the process (no `ucinewgame` before every search),
   and the controller sends one `ucinewgame` at its first search, so the tree and the plans start clean each game.
   `joint_plans` alone does **not** imply it: fix 2 works inside one search, and dropping the per-search
-  `ucinewgame` would add a second difference from `ref_120`. Rows with the switches off keep `reuse_tree` false, as in
+  `ucinewgame` would add a second difference from `c_ref_120`. Rows with the switches off keep `reuse_tree` false, as in
   the PACE round. The engine side (fix 1, step 7) clears every other piece of cross-search state, so `c_reuse` and
-  `c_carry` differ from `ref_120` only by their fix.
+  `c_carry` differ from `c_ref_120` only by their fix (the PACE `ref_120` ran on the pre-D4 arena inputs).
 * `UpstreamHivemindProcess._parse` records `reused_visits` and `plan_carried` from the info strings into
   `SearchResult`; the controller counts them and the eval summary reports reuse hits per search.
 * `measure_wave2_ms_per_node` takes the new flags through `flags` as now, so `MEASURE=1` measures each row's own flag
@@ -828,13 +828,13 @@ nodes, `WARM_KINDS=upstream wave2`), against `upstream-it13` at 120 s, 600 pairs
 | `c_carry_120` | upstream-it13 | `'{"plan_carry": true}'` | fix 3 alone |
 | `c_nodur_120` | upstream-it13 | `'{"durative_tree": false, "sit_gate": true}'` | the durative-off, gate-on reference, rerun on the new binary in the same round |
 | `c_same_120` | wave2c-self | `'{"continuity": true}'` | control: continuity against itself must read 0.50 (800 pairs) |
-| `c_ref_120` (with `WAVE2C_REF=1`) | upstream-it13 | `'{}'` | the durative-on reference on the new binary. Optional: with every fix off, tests 0.4 (one search per process, `engine/tests/wave2_parity.sh`) and 0.6 (whole self-play and tournament games and a 10-search UCI session in one process, `engine/tests/wave2_game_parity.sh`) match `261081b`, the binary `ref_120` ran, so the PACE `ref_120` (0.227) stands unless the round wants a same-week reference. 0.6 compares self-play on its PGN and clock rows less node counts, with the mate probe off (see build corrections, review fixes) |
+| `c_ref_120` | upstream-it13 | `'{}'` | the durative-on reference on the new binary, required (review of the diagnosis fixes). With every fix off, tests 0.4 (one search per process, `engine/tests/wave2_parity.sh`) and 0.6 (whole self-play and tournament games and a 10-search UCI session in one process, `engine/tests/wave2_game_parity.sh`) match `261081b`, the binary `ref_120` ran, but that covers only the engine: the durative diagnosis fix D4 changed the arena's `SeatElapsedMs`/`SeatSitting` for every wave 2 arm with no flag, so the PACE `ref_120` (0.227) ran on inputs the new rows no longer get and does not stand as their reference. 0.6 compares self-play on its PGN and clock rows less node counts, with the mate probe off (see build corrections, review fixes) |
 
-Reading: each fix-alone row against `ref_120` (0.227, or `c_ref_120`); `c_all_120` against `c_nodur_120`. With about
+Reading: each fix-alone row against `c_ref_120` (not the PACE `ref_120`: D4); `c_all_120` against `c_nodur_120`. With about
 1200 games a row's 95% range is about +-0.03, so a difference needs about 0.04. Read `c_same_120` first. The success
 mark for this round is `c_all_120` at or above `c_nodur_120`; the PACE gap between durative on and off was 0.21. Each
 row also reports reuse hits per search and plan carries per search (from the arena summary), so a fix that never fires
-is visible. Cost: 6 rows x about 8 GPU-hours = about 48 GPU-hours (plus 8 for `c_ref_120`), behind the build with
+is visible. Cost: 6 rows x about 8 GPU-hours = about 48 GPU-hours (plus 8 for `c_ref_120`, required), behind the build with
 `SBATCH_DEPENDENCY=afterok:<build job>`.
 
 The header comment of `launch_checks.sh` lists `wave2c`; the `WHAT` error message names it; `docs/wave2_tests.md` gets a

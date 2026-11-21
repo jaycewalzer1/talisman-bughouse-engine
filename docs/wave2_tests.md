@@ -205,7 +205,8 @@ does not advertise it (`RuntimeError ... build the wave 2c engine`), so a fix ca
 
 `team_tree_reuse` or `plan_carry` on: the engine keeps its tree and plans between searches, so the arena sends no
 `ucinewgame` before each search (as `reuse_tree`), and the controller sends one at its first search of each game.
-`joint_plans` alone keeps the per-search `ucinewgame` of `ref_120`, so `c_joint_120` differs from it only by fix 2.
+`joint_plans` alone keeps the per-search `ucinewgame` of `ref_120`, so `c_joint_120` differs from `c_ref_120` only by
+fix 2.
 The engine side clears the rest of its cross-search state under fixes 1 and 3 (spec v5 fix 1 step 7).
 
 Telemetry: the engine prints `info string Team tree reuse: <visits> visits recovered, ...` or `... none (<reason>)`
@@ -218,7 +219,7 @@ nonzero). Unit tests: `arena/tests/test_upstream.py` (`test_wave2_continuity_*`,
 `test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`,
 `test_wave2_durative_diagnosis_*`).
 
-### The rows (`bash cluster/launch_checks.sh wave2c`, 9 jobs, 10 with `WAVE2C_REF=1`)
+### The rows (`bash cluster/launch_checks.sh wave2c`, 10 jobs)
 
 Common settings as section 4 (pool `wave2` contender, `clock_k 110`, `serial`, `charge "searched"`, `MEASURE=1` at
 800 nodes per binary and flag set, so fix 2's node cost is charged as measured; `bughouse` openings; rules v3), all
@@ -227,15 +228,15 @@ against `upstream-it13` at 120 s, no SPRT. `SBATCH_DEPENDENCY=afterok:<build job
 | Row | Opponent | `CONTENDER_KW` | Pairs | Question | Expected reading |
 |---|---|---|---|---|---|
 | `c_all_120` | upstream-it13 | `{"continuity": true}` | 600 | all three fixes plus D1 and D5 on top of the headline settings | **success mark: at or above `c_nodur_120`** (the PACE gap between durative on and off was 0.21) |
-| `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` | 600 | fix 1 alone | above `ref_120` (0.227) if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
-| `c_joint_120` | upstream-it13 | `{"joint_plans": true}` | 600 | fix 2 alone | above `ref_120` if joint planning below the root is what was missing; reuse and carries per search exactly 0 |
-| `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `ref_120`; carries per search above 0 |
-| `c_ownpace_120` | upstream-it13 | `{"own_pace_below_root": true}` | 600 | D1 alone: our seats at their own pace below the root | at or above `ref_120`; the diagnosis saw no move-agreement change, only a less optimistic q, so no gain is the likely reading; reuse and carries per search 0 |
-| `c_waiteval_120` | upstream-it13 | `{"wait_node_acting_eval": true}` | 600 | D3 alone: wait nodes valued from the acting team (not in `continuity`) | within the noise of `ref_120`; a gain here would put D3 into `continuity` |
-| `c_mateblock_120` | upstream-it13 | `{"blockable_check_not_mate": true}` | 600 | D5 alone: a drop-blockable check is never mate | within the noise of `ref_120` (the case is rare); a loss would mean the engine's mate calls were helping it, against the rules |
+| `c_reuse_120` | upstream-it13 | `{"team_tree_reuse": true}` | 600 | fix 1 alone | above `c_ref_120` if memory between decisions is what was missing; reuse per search well above 0 (the gate run of the engine work sets the expected hit rate) |
+| `c_joint_120` | upstream-it13 | `{"joint_plans": true}` | 600 | fix 2 alone | above `c_ref_120` if joint planning below the root is what was missing; reuse and carries per search exactly 0 |
+| `c_carry_120` | upstream-it13 | `{"plan_carry": true}` | 600 | fix 3 alone | at or above `c_ref_120`; carries per search above 0 |
+| `c_ownpace_120` | upstream-it13 | `{"own_pace_below_root": true}` | 600 | D1 alone: our seats at their own pace below the root | at or above `c_ref_120`; the diagnosis saw no move-agreement change, only a less optimistic q, so no gain is the likely reading; reuse and carries per search 0 |
+| `c_waiteval_120` | upstream-it13 | `{"wait_node_acting_eval": true}` | 600 | D3 alone: wait nodes valued from the acting team (not in `continuity`) | within the noise of `c_ref_120`; a gain here would put D3 into `continuity` |
+| `c_mateblock_120` | upstream-it13 | `{"blockable_check_not_mate": true}` | 600 | D5 alone: a drop-blockable check is never mate | within the noise of `c_ref_120` (the case is rare); a loss would mean the engine's mate calls were helping it, against the rules |
 | `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
 | `c_same_120` | wave2c-self | `{"continuity": true}` | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
-| `c_ref_120` (only with `WAVE2C_REF=1`) | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary | within the noise of `ref_120` (0.227). Optional: with every fix off the new binary matches the one `ref_120` ran in one-search (0.4, `wave2_parity.sh`) and whole-game and multi-search (0.6, `wave2_game_parity.sh`) checks; self-play is compared less node counts, which are not reproducible run to run on either binary |
+| `c_ref_120` | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary **and the new arena inputs**: every fix-alone row is read against it | near `ref_120` (0.227) if D4 changed nothing. Required, not optional: with every fix off the new binary matches the one `ref_120` ran (0.4 `wave2_parity.sh`, 0.6 `wave2_game_parity.sh`), but D4 changed `SeatElapsedMs`/`SeatSitting` for every wave 2 arm with no flag, so `ref_120` ran on the old arena inputs (a sitting opponent landed at `max(1, pace - elapsed)`, often 1 ms). A difference between `c_ref_120` and `ref_120` is the D4 effect, not any fix |
 
 How to read them:
 
@@ -243,18 +244,18 @@ How to read them:
 2. Check that each fix fired: `c_reuse/search` above 0 in `c_reuse_120` and `c_all_120`, `c_carry/search` above 0 in
    `c_carry_120` and `c_all_120`, both 0 in `c_joint_120`, `c_nodur_120` and the three diagnosis rows (`summary.json`, `results` ->
    `by_opponent`). A fix row whose counter is 0 measured nothing: report it, do not read its score.
-3. Each fix-alone row against `ref_120` (or `c_ref_120`); `c_all_120` against `c_nodur_120`. With about 1200 games a
+3. Each fix-alone row against `c_ref_120` (not the PACE `ref_120`, which ran on the pre-D4 arena inputs); `c_all_120` against `c_nodur_120`. With about 1200 games a
    row's 95% range is about +-0.03, so a difference needs about 0.04 before it means anything.
 4. Fix 2 changes node cost; the per-arm `ms_per_node` measured for the row is in its `ms_per_node.json`. A row that
    scores better only because it is charged less per node is a speed result, not a move-choice result.
 
 ```sh
 SBATCH_DEPENDENCY=afterok:<build job> bash cluster/launch_checks.sh wave2c
-.venv/bin/python tools/compare_evals.py runs/wave2/ref_120 runs/wave2c/c_reuse_120
+.venv/bin/python tools/compare_evals.py runs/wave2c/c_ref_120 runs/wave2c/c_reuse_120
 .venv/bin/python tools/compare_evals.py runs/wave2c/c_nodur_120 runs/wave2c/c_all_120
 bash cluster/results.sh
 ```
 
-Cost: 8 rows x 1200 games and `c_same_120` at 1600, about 8 GPU-hours each at section 5's rate: about 72
-GPU-hours, plus 8 for `c_ref_120`. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
+Cost: 9 rows x 1200 games (`c_ref_120` included) and `c_same_120` at 1600, about 8 GPU-hours each at section
+5's rate: about 80 GPU-hours. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
 switches (D1 and D5 included); on one without them they refuse to start.

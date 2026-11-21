@@ -10,7 +10,7 @@
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
 #   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
 #   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (11 jobs)
-#   bash cluster/launch_checks.sh wave2c     # wave 2c continuity fixes vs it13, one fix at a time (9 jobs, 10 with WAVE2C_REF=1)
+#   bash cluster/launch_checks.sh wave2c     # wave 2c continuity fixes vs it13, one fix at a time (10 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
@@ -209,7 +209,7 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 11 jobs. Read docs/wave2_test
   # stock it13 at its own 800 fixed nodes (D1's opponent setting) instead of clock_k 110
   w2  vs_it13_800n_120 upstream-it13-800n '{}'                                          120000  800    SPRT=0,20
 fi
-if [ "$WHAT" = wave2c ]; then  # not part of "all": 9 jobs (10 with WAVE2C_REF=1). Read docs/wave2_tests.md "Wave 2c rows".
+if [ "$WHAT" = wave2c ]; then  # not part of "all": 10 jobs. Read docs/wave2_tests.md "Wave 2c rows".
   # Spec v5 (docs/custom_engine_spec_v5_continuity.md): team tree reuse (fix 1), joint team actions (fix 2) and plan
   # carry (fix 3), each a player option of the wave 2 arm that is off by default. Same common settings as "wave2"
   # (pool contender, equal clock, MEASURE=1 per binary + flags, so a fix that changes node cost is charged its own
@@ -231,7 +231,7 @@ if [ "$WHAT" = wave2c ]; then  # not part of "all": 9 jobs (10 with WAVE2C_REF=1
   # all three fixes plus D1 and D5 on top of the headline settings; the round's success mark is this row at or above
   # c_nodur_120
   w2c  c_all_120     upstream-it13  '{"continuity": true}'                           120000  600
-  # one fix each, read as the difference from ref_120 (0.227 in the 2026-11-19 PACE round) or c_ref_120
+  # one fix each, read as the difference from c_ref_120 (not the PACE ref_120: see c_ref_120 below)
   w2c  c_reuse_120   upstream-it13  '{"team_tree_reuse": true}'                      120000  600
   w2c  c_joint_120   upstream-it13  '{"joint_plans": true}'                          120000  600
   w2c  c_carry_120   upstream-it13  '{"plan_carry": true}'                           120000  600
@@ -244,11 +244,10 @@ if [ "$WHAT" = wave2c ]; then  # not part of "all": 9 jobs (10 with WAVE2C_REF=1
   w2c  c_nodur_120   upstream-it13  '{"durative_tree": false, "sit_gate": true}'     120000  600
   # control: continuity against itself (pool opponent wave2c-self) must read 0.50; 800 pairs, the noise floor
   w2c  c_same_120    wave2c-self    '{"continuity": true}'                           120000  800
-  # optional same-week durative-on reference: with every fix off the new binary matches the one ref_120 ran in single
-  # searches (spec v5 test 0.4) and in whole games and multi-search UCI sessions (0.6, self-play less node counts),
-  # so ref_120 stands unless the round wants it again
-  if [ "${WAVE2C_REF:-0}" = 1 ]; then
-    w2c  c_ref_120   upstream-it13  '{}'                                             120000  600
-  fi
+  # the durative-on reference, the one every fix-alone row is read against. Not optional: with every fix off the
+  # new binary matches the one ref_120 ran (spec v5 tests 0.4 and 0.6), but the arena no longer does. D4
+  # (docs/durative_diagnosis.md) changed SeatElapsedMs/SeatSitting for every wave 2 arm with no flag, so the PACE
+  # ref_120 (0.227) ran on the old arena inputs and an effect of D4 would be credited to whichever fix is read against it
+  w2c  c_ref_120     upstream-it13  '{}'                                             120000  600
 fi
 squeue -u "$USER"
