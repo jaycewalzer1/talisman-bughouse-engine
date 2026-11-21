@@ -156,3 +156,158 @@ Rerun after the fixes (same Mac, `build-ninja` and `build-sp1` rebuilt at `26108
 Still owed before PACE: push `talisman/wave2` (`git -C third_party/wave2-hivemind push fork talisman/wave2`) and
 `custom-engine`; `cluster/build.sh` now refuses to build anything but the pinned `261081b`, so the pin has to be on
 GitHub. Update `cluster/wave2_engine.ref` with every engine commit that should run.
+
+## 8. Continuity round (spec v5)
+
+The final local check of wave 2c (`docs/custom_engine_spec_v5_continuity.md`): team tree reuse (fix 1), joint team
+actions in the durative tree (fix 2), plan carry (fix 3) and the `continuity` preset that turns on all three. Run on
+2026-11-21 on this Mac. Engine: `talisman/wave2` at `8fe9b37` (all three fixes and the review fixes, clean tree).
+Main repo: `custom-engine` at `799a0dc`, plus `b279075` (probe mode `cont`, below). Network everywhere:
+twin-s-clock it13 (`engine/models/twin-s-clock-fp32.onnx`, HF `aminwoo/bughouse-twin-s-clock@edaa246`) on ONNX
+Runtime. The self-play smoke also used the FP32 copy `twin-s-clock-it13-fp32.onnx` and the widened copy
+`twin-s-clock-wide-fp32.onnx`. Output: `runs/wave2_local/continuity_v5/` and `runs/continuity_v5/`.
+
+**These are plumbing checks, not strength results.** The arena smoke is 8 games, and the probe is 4 games plus
+40 positions.
+
+### 8.1 Build and suites
+
+| Check | Result |
+|---|---|
+| Clean build: old `build-ninja` and `build-sp1` moved to the Trash; `build-ninja` with the `ninja-release` preset, ONNX Runtime, 4 workers, tests on; `build-sp1` configured as before (1 worker, fast build, ccache, tests off); 2 jobs each, one at a time | OK, 46/46 and 11/11 steps (6 and 4 compiler warnings, unused constants) |
+| Snag on the way: the first `build-ninja` configure hung for about 50 min at 0% CPU in FetchContent's GoogleTest download (no network here) | stopped; the half-made dir went to the Trash. The old cache had `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` pointing at `third_party/upstream-hivemind/engine/build-ninja/_deps/googletest-src` (v1.14.0, the pinned version), so the rebuild sets it again. A clean configure on a Mac with no network needs that flag |
+| C++ suite `build-ninja/tests/hivemind_tests` | 589 tests: 588 passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`, as before), 0 failed; 39 s |
+| `engine/tests/stock_parity.sh` (defaults vs stock v3.0.3, one worker, `JOBS=2`) | 8/8 positions identical |
+| `engine/tests/wave2_parity.sh` (spec v5 0.4: every wave 2c option off vs `261081b`, headline flags, seat clocks) | 8/8 identical |
+| `engine/tests/wave2_game_parity.sh` (0.6: whole games and a 10-search UCI session vs `261081b`) | 5/5 identical (self-play pgn and clocks, tournament pgn and tsv, UCI session) |
+| wave2-hivemind Python (`uv run pytest`), run in two parts | without `tests/distill`: 183 passed, 8 failed (the same 8 bsdtar `tar --compare` failures: 6 in `tests/data/test_archive.py`, 2 in `test_cli_rl_loop.py`, "Option --compare is not supported"). `tests/distill` on its own: 19 passed in 134 s (`test_a_training_step_reduces_the_loss` 112 s; it ran over 30 min and was stopped last round). Total 202 passed, 8 failed |
+| Main repo `arena/tests` | 305 passed |
+| Main repo `arena/tests_phase1` | 105 passed |
+
+### 8.2 Regression sets (`tools/regression.py run --engine wave2`, `build-ninja`)
+
+`--wave2-flags '{}'` (wave 2 defaults: headline flags, wave 2c off) and `'{"continuity": true}'`. Regression cases
+are single positions searched cold (`ucinewgame` before each one clears the team tree and the plans), so the
+continuity rows test fix 2 only. Spec v5 4.3 says the same; fixes 1 and 3 are covered by the sequenced C++ test 4.1.
+
+| Run | drop_mates net / value / engine | sit_move net / engine | sit-off family ahead +10 / +3 s; behind -10 / -3 s (engine) | spec v4 test 8 |
+|---|---|---|---|---|
+| wave 2 defaults, 200 nodes | 80/80, 80/80, 80/80 | 192/208, 176/208 | 12/20, 12/20; 0/20, 0/20 | net PASS, **engine FAIL** (12/20 when ahead) |
+| continuity, 200 nodes | 80/80, 80/80, 80/80 | 192/208, 176/208 | 12/20, 13/20; **1/20**, 0/20 | net PASS, **engine FAIL** (12/20 when ahead, 1/20 when behind) |
+| wave 2 defaults, 800 nodes | 80/80, 80/80, 80/80 | 192/208, 192/208 | 20/20, 20/20; 0/20, 0/20 | **PASS** |
+| continuity, 800 nodes | 80/80, 80/80, 80/80 | 192/208, 191/208 | 20/20, 20/20; 0/20, **1/20** | **PASS** (test 8 reads the +-10 s rows) |
+
+The defaults match section 7 exactly: drop mates, sit_move and test 8 are the same, and test 8 fails at 200 nodes
+and passes at 800 as before. The continuity runs differ from the defaults in only these engine actions: 2 of 288 at
+200 nodes and 1 of 288 at 800 nodes, all in `sitoff_for_piece`:
+
+| Nodes | Case | Expected | Defaults | Continuity |
+|---|---|---|---|---|
+| 200 | `sitoff-minor-pinBe4@B_black/diag+3` | sit | move | sit (now right) |
+| 200 | `sitoff-smoth-pinNe4@B_white/diag-10` | move | move | sit (now wrong) |
+| 800 | `sitoff-smoth-pinNe4@A_white/diag-3` | move | move | sit (now wrong) |
+
+Spec v5 4.3 asks for at least the `261081b` numbers: 80/80 drop mates, 20/20 sits when ahead, 0/20 when behind.
+Read on the +-10 s rows that test 8 uses, it **passes** at 800 nodes. Read on every behind row, it does not quite:
+the same smothered-mate case now sits once when 3 s behind (1/20, against 0/20). One case cannot say whether
+JointPlans is biased toward sitting. The PACE rows `c_joint_120` / `c_all_120` measure sit rates over whole games.
+
+### 8.3 Step 0 rerun with the continuity preset (`tools/continuity_probe.py`, mode `cont`)
+
+The probe got a mode `cont` (`{"continuity": true}` over the headline flags) in `b279075`. In `reuse` it counts a
+hit from the engine's `Team tree reuse: N visits recovered` line and logs the refusal reasons and the carried plans.
+The summary tables gain a continuity column. The baseline numbers below are from `docs/continuity_baseline.md` (the
+`261081b` binaries, which wave2_parity shows are identical to this build with the options off).
+
+Reuse (local arena, `arena/pools/wave2.json`, wave 2 vs upstream it13, 60 s, `reuse_tree` on for both, seed 0, 2
+pairs; `runs/continuity_v5/reuse_cont`, 223 s):
+
+| Run | Wave 2 searches | Started from a reused subtree | Mean visits recovered (hits) | Recovered / searched nodes (hits) | Mean nodes searched |
+|---|---|---|---|---|---|
+| baseline, durative on (exact-hash reuse) | 316 | 0 (0.0%) | 0 | 0 | about 2050 |
+| baseline, probe ceiling (same board, clocks ignored) | 316 | 104 (32.9%) | 583 | about 28% | about 2050 |
+| **continuity** (fix 1, tolerance 250 ms) | 271 | **19 (7.0%)** | 328 | about 15% | 1892 |
+| upstream it13 in the same games | 260 | 0 (0.0%) | 0 | 0 | 1932 |
+
+Refusals in the continuity run (each of the 271 searches printed a `Team tree reuse` line): `shape` 97, `no node` 92,
+`clock` 46, `committed` 8, `solved` 5, `no tree` 4. A carried plan was applied in 96 of 271 searches (35%). Fix 1
+reaches about a fifth of the probe's ceiling. The main losses are `shape` (the node with the live boards was
+expanded under another expansion key) and `no node` (no node holds the live boards: the other team's landings
+arrived in another order than the tree's paces predicted, `wave2_engine.md` fix 1). `clock` (46) is the part a wider
+tolerance could recover; self-play at 1000 and 3000 ms (`wave2_engine.md`) gained only a few points.
+
+Node scaling (the same 40 positions, `go nodes N` on a fresh tree, `build-sp1`, one worker). Here every search starts
+after `ucinewgame`, so **only fix 2 acts**; fixes 1 and 3 need a previous search of the same game. Rows:
+`runs/continuity_v5/scaling.jsonl` (the baseline rows copied, plus `cont`).
+
+| Nodes | on agrees with it13@64k (baseline) | off agrees (baseline) | **continuity agrees** |
+|---|---|---|---|
+| 1k | 23/40 (57%) | 23/40 (57%) | 20/40 (50%) |
+| 4k | 20/40 (50%) | 25/40 (62%) | 22/40 (55%) |
+| 16k | 22/40 (55%) | 27/40 (68%) | 26/40 (65%) |
+
+| Nodes | continuity: per board vs it13@64k | root passes on an on-turn board (on / off / cont) | mean root q (on / off / cont) | ms per node (on / off / cont) |
+|---|---|---|---|---|
+| 1k | 57% | 4 / 3 / 4 | -0.083 / -0.127 / -0.100 | 0.514 / 0.518 / 0.517 |
+| 4k | 61% | 4 / 4 / 5 | -0.091 / -0.131 / -0.115 | 0.511 / 0.523 / 0.519 |
+| 16k | 71% | 7 / 4 / 5 | -0.116 / -0.137 / -0.123 | 0.604 / 0.518 / 0.518 |
+
+Noise floor: continuity at 4k repeated gives the same joint action 40/40. Continuity agrees with durative on at 16k
+on 32/40 and with off at 16k on 24/40.
+
+Reading: unlike durative on, the continuity column **rises with nodes** (50%, 55%, 65%). At 16k it is about where off
+is (26 against 27 of 40) and where it13's own 16k search is (28/40). It does not pass 16k on, which holds at 55%.
+It starts lower at 1k, where planned pairs take visits from the immediate moves. The 16k wall time per node is
+off's, not on's slower 0.60 ms. With 40 positions a difference of 4 is within noise (about +-6 at 95%), so this is
+direction, not proof. It is the first sign that fix 2 moves the tree toward the "more nodes help" behaviour the
+baseline found missing.
+
+### 8.4 Self-play smoke and cluster dry run
+
+`build-sp1/hivemind.bin selfplay --games 3 --nodes 48 --seed 11 --base-mix 15000:1`, wave 2 flags (`--durative-tree
+true --sit-gate false --flag-loss true --instant-transfer false --mate-race-by-landing false --pass-cap-k 8`) and
+`--continuity true`:
+
+| Network | Games | Samples | Team tree reuse | Plan carry | Wall, peak memory |
+|---|---|---|---|---|---|
+| it13 fp32 | 3: a flag (Bb), 2 resignations; no error | 127 | 14.2% of searches (18/127), 52.8 mean visits, by seat Aw 9 Ab 8 Bw 0 Bb 1; refused `no node` 46, `shape` 38, `clock` 12, `no tree` 6, `solved` 5, `committed` 2 | 6 recorded, 0 applied (6 dropped `old root`) | 195 s, 232 MB |
+| widened it13 fp32 | 3: a flag (Bb), 2 resignations; no error | 93 | 12.9% (12/93), 39.5 mean visits, Aw 2 Ab 6 Bw 3 Bb 1; `no node` 39, `shape` 21, `clock` 12, `no tree` 6, `solved` 2, `committed` 1 | 2 recorded, 0 applied (2 `old root`) | 155 s, 229 MB |
+
+0 applied is expected with fix 1 on: the carried half is met by an old-root re-adoption, whose priors already hold
+it (`wave2_engine.md`, review fixes). Both seats of both teams adopted trees.
+
+`bash cluster/launch_checks.sh wave2c` with a fake `sbatch`/`squeue` on PATH (the script has no dry-run switch) and
+`SBATCH_DEPENDENCY=afterok:12345`: 6 submissions (`c_all_120`, `c_reuse_120`, `c_joint_120`, `c_carry_120`,
+`c_nodur_120`, `c_same_120`), 7 with `WAVE2C_REF=1` (`c_ref_120`). All carry `--dependency=afterok:12345`. Each has
+its NAME, OPPONENT (`upstream-it13`, `wave2c-self` for `c_same_120`), CONTENDER_KW, 120000 ms and pairs (600, 800
+for `c_same_120`), plus the common settings (pool `arena/pools/wave2.json`, `SETUP=pool`, bughouse openings, rules
+v3, MEASURE=1 at 800 nodes, `WARM_KINDS=upstream wave2`). `bash -n` on every `cluster/*.sh` and `cluster/*.sbatch`:
+OK.
+
+**Not ready for PACE as is:** `cluster/wave2_engine.ref` still pins `261081b`, and `cluster/build.sh` builds only the
+pinned commit. A `261081b` binary does not advertise the wave 2c options, so the arena would refuse every wave 2c
+row at start-up (`UpstreamHivemindProcess.start`). Before `launch_checks.sh wave2c`: push `talisman/wave2` with
+`8fe9b37`, set the pin to it, and push `custom-engine`. None of this was done here.
+
+### 8.5 Arena smoke: continuity vs durative off + gate on
+
+`arena.pool run --pool arena/pools/wave2.json --opponent wave2-self --contender-kw '{"continuity": true}'
+--opponent-kw '{"durative_tree": false, "sit_gate": true}' --openings bughouse --rules v3 --base-ms 30000 --pairs 4
+--seed 3 --measure-ms-per-node --measure-nodes 800`. Both sides run the same `build-ninja` binary (`runs/wave2_local/continuity_v5/arena_cont_vs_nodur`, 207 s).
+
+| Games | Continuity score | Results | Measured ms/node (cont / nodur) | Continuity telemetry |
+|---|---|---|---|---|
+| 8 (0 errors, 0 unplayed) | 0.188 (1 win, 6 losses, 1 draw; 95% range 0.00-0.25) | 7 checkmates, 1 repetition draw, no flags | 0.207 / 0.213 | reuse 0.094 per search, plan carries 0.40 per search; opponent 0 and 0 |
+
+`specs.jsonl` shows each side got its options: the contender `continuity: true` (the measurement key lists
+`team_tree_reuse`, `joint_plans`, `plan_carry` true), the opponent `durative_tree: false, sit_gate: true`. **Smoke
+only:** 8 games at 30 s say nothing about strength. The question of whether continuity closes the 0.227 vs 0.436 gap
+is for `c_all_120` against `c_nodur_120` on PACE.
+
+### 8.6 Not done or still open
+
+* PACE needs the push and the new pin (8.4). Nothing was pushed.
+* The Step 0 probe build (`ReuseProbe` print) was not rebuilt; the ceiling numbers are the baseline's.
+* Wave 2 at 64k nodes was not run (as in the baseline); the deep references are it13 at 64k and each mode at 16k.
+* Spec v5 4.3 on the behind rows: one new sit at -3 s at 800 nodes (8.2).
+* Test 2.4b stays unbuilt (`wave2_engine.md`).
