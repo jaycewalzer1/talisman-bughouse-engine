@@ -600,9 +600,10 @@ def wave2_carries_state(options: dict) -> bool:
     return any(state.values())
 
 
-def seat_elapsed_ms(obs: Observation) -> dict:
-    """{seat: ms} the seat on turn on each board has been thinking (``now - last landing`` there), 0 for the seats
-    not on turn and for every seat when the observation has no landing times."""
+def seat_on_turn_ms(obs: Observation) -> dict:
+    """{seat: ms} since the last landing on the board of the seat on turn there (``now - last landing``: how long
+    that board has been handed to it), 0 for the seats not on turn and for every seat when the observation has no
+    landing times. Self-play's board elapsed (``SeatClockGame::board_elapsed_ms``), not its ``SeatElapsedMs``."""
     out = {s: 0 for s in SEATS}
     if obs.last_move_ms is not None:
         for board, seat in obs.to_move.items():
@@ -626,26 +627,69 @@ def seat_elapsed_ms(obs: Observation) -> dict:
 SIT_INFER_FACTOR = 1.5
 
 
-def seat_sitting(obs: Observation, team: str, paces: dict, budget_ms: int,
-                 factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> dict:
-    """{seat: 0/1} for ``SeatSitting``: 1 for a seat of the other team on turn whose thinking so far
-    (``seat_elapsed_ms``) exceeds ``factor x min(its pace, its budget)``, its budget being (its clock + elapsed) /
-    ``clock_k`` (``budget_ms`` without ``clock_k``), doubled while the other team is on turn on both boards; 0 for
-    every other seat (the engine ignores our own)."""
-    elapsed = seat_elapsed_ms(obs)
-    out = {s: 0 for s in SEATS}
-    on_turn = [s for s in obs.to_move.values() if s in out and TEAM_OF[s] != team]
-    for seat in on_turn:
+def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
+                   factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> tuple[dict, dict]:
+    """``({seat: SeatElapsedMs}, {seat: SeatSitting})`` with self-play's meaning (``SeatClockGame``,
+    ``engine/src/tools/seat_clock_game.h`` in wave2-hivemind; durative diagnosis D4), inferred from what the arena
+    sees. Self-play sends both for the other team's seats on turn only: ``elapsed_ms`` = ms since the seat's
+    current decision began, which is when its board was handed to it (``come_on_turn``) or when a pass of its own
+    ended (1 ms after the next landing on the other board, ``landed``, or at its cap); a sitting seat's decision
+    begins at its wake time, so it reads 0 while it sits (``commit_pass``), and ``sitting`` stays 1 from its pass to
+    its next move.
+
+    The arena cannot see an opponent pass, so for each seat of the other team on turn, with ``L`` its board's last
+    landing and ``L'`` the other board's: its decision began at ``L``, or at ``L' + 1`` when ``L'`` came after
+    ``L`` and the seat had by then gone longer than its sit threshold without moving (it sat, and that landing
+    woke it). It is sitting when the time since that start exceeds the threshold, ``factor x min(its pace, its
+    budget)``, the budget being its clock at the decision start (its clock + elapsed) / ``clock_k`` (``budget_ms``
+    without ``clock_k``), doubled while the other team is on turn on both boards. A sitting seat sends elapsed 0,
+    as in self-play. A seat that thought through a landing on the other board keeps its start at ``L``.
+
+    Our own seats: sitting 0, elapsed ``seat_on_turn_ms`` (the tree ignores the root team's elapsed; through UCI the
+    wide planes read it as the board's time since its last landing, self-play's ``boardElapsedMs``). All 0 when
+    the observation has no landing times."""
+    elapsed = seat_on_turn_ms(obs)
+    sitting = {s: 0 for s in SEATS}
+    if obs.last_move_ms is None:
+        return elapsed, sitting
+    now = int(obs.now_ms)
+    on_turn = {b: s for b, s in obs.to_move.items() if s in sitting and TEAM_OF[s] != team}
+
+    def threshold(seat: str, start: int) -> float:
         if clock_k:
-            own = (max(0, int(obs.clocks_ms[seat])) + elapsed[seat]) / float(clock_k)
+            own = (max(0, int(obs.clocks_ms[seat])) + max(0, now - start)) / float(clock_k)
         else:
             own = float(budget_ms)
         if len(on_turn) == 2:
             own *= 2
-        expected = max(1.0, min(float(paces[seat]), own))
-        if elapsed[seat] > factor * expected:
-            out[seat] = 1
-    return out
+        return factor * max(1.0, min(float(paces[seat]), own))
+
+    for board, seat in on_turn.items():
+        handed = int(obs.last_move_ms[board])
+        woke = int(obs.last_move_ms["B" if board == "A" else "A"])
+        start = handed
+        if woke > handed and woke - handed > threshold(seat, handed):
+            start = woke + 1
+        since = max(0, now - start)
+        if since > threshold(seat, start):
+            sitting[seat], elapsed[seat] = 1, 0
+        else:
+            elapsed[seat] = since
+    return elapsed, sitting
+
+
+def seat_elapsed_ms(obs: Observation, team: str, paces: dict, budget_ms: int,
+                    factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> dict:
+    """{seat: ms} for ``SeatElapsedMs``, self-play's meaning (``seat_decisions``)."""
+    return seat_decisions(obs, team, paces, budget_ms, factor, clock_k)[0]
+
+
+def seat_sitting(obs: Observation, team: str, paces: dict, budget_ms: int,
+                 factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> dict:
+    """{seat: 0/1} for ``SeatSitting`` (``seat_decisions``): 1 for a seat of the other team on turn that has gone
+    longer than its sit threshold since its current decision began; 0 for every other seat (the engine ignores
+    our own)."""
+    return seat_decisions(obs, team, paces, budget_ms, factor, clock_k)[1]
 
 
 # Wave 2b: the UCI names of the seats' pockets (SeatArrivalsMs) and how long a landing counts as recent (the engine's
@@ -711,8 +755,9 @@ class Wave2TeamController(UpstreamTeamController):
     """The wave 2 engine (spec v4 durative tree in upstream v3) as a team brain: everything ``UpstreamTeamController``
     sends, plus per search ``SeatClocksMs`` (the arena's four clocks, current at ``now``: the on-turn seats are
     already charged their thinking so far), ``SeatPaceMs`` (per-seat EMA of observed action times; a seat without a
-    sample uses its team's EMA, then this search's budget), ``SeatElapsedMs`` (``seat_elapsed_ms``) and
-    ``SeatSitting`` (``seat_sitting``: opponent seats on turn well past their pace, so the sit-off rule applies) and
+    sample uses its team's EMA, then this search's budget), ``SeatElapsedMs`` and ``SeatSitting``
+    (``seat_decisions``: self-play's meaning, inferred; an opponent seat on turn well past its expected thinking
+    time since its decision began is sitting, so the sit-off rule applies, and sends elapsed 0) and
     ``SeatArrivalsMs`` (``PocketLandingTracker``: pieces that landed in each pocket in the last 5 s; the wide planes
     read them only with a wave 2b wide network; without InstantTransfer any network's tree holds an opponent seat's
     landings younger than its elapsed time as not yet droppable). The flags
@@ -725,9 +770,9 @@ class Wave2TeamController(UpstreamTeamController):
     ``RootMoveTimeMs`` (what each of our actions costs in the tree) is ``max(budget, root_min_ms) + root_lag_ms``:
     under arena rules v3 a landing costs at least ``min_move_ms`` (100) plus a lag of 0..150 ms (mean 75), so the
     wave 2 pool sets 100 and 75; the opponents' paces, read off the clocks, already include both. Both 0 (the
-    default) send the bare budget. ``SeatElapsedMs`` is ``now - last landing`` on the board: the arena cannot see
-    when a sitting opponent re-decided, while self-play sends the time since the seat's current decision began,
-    so for a sitting opponent the tree here lands it sooner (``max(1, pace - elapsed)``) than self-play would."""
+    default) send the bare budget. ``SeatElapsedMs`` was ``now - last landing`` on the board until durative
+    diagnosis D4 (docs/durative_diagnosis.md): for a sitting opponent the tree then landed it at
+    ``max(1, pace - elapsed)``, often 1 ms, where self-play (and so training) lands it a full pace later."""
 
     kind = "wave2"
     label = "Wave2"
@@ -754,11 +799,12 @@ class Wave2TeamController(UpstreamTeamController):
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
         paces = {s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}
         self.landings.observe(obs.fens, obs.now_ms, obs.last_move_ms)
+        elapsed, sitting = seat_decisions(obs, self.team, paces, budget_ms, clock_k=self.clock_k)
         opts["options"] = {
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
-            "SeatElapsedMs": seat_values(seat_elapsed_ms(obs)),
-            "SeatSitting": seat_values(seat_sitting(obs, self.team, paces, budget_ms, clock_k=self.clock_k)),
+            "SeatElapsedMs": seat_values(elapsed),
+            "SeatSitting": seat_values(sitting),
             "SeatArrivalsMs": self.landings.value(obs.now_ms),
         }
         opts["root_move_ms"] = max(int(budget_ms), self.root_min_ms) + self.root_lag_ms
@@ -829,6 +875,7 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "lead_ms", "parse_policy", "upstream_team", "upstream_available", "measure_upstream_ms_per_node",
            "UPSTREAM_BINARY", "UPSTREAM_MODEL", "UPSTREAM_MS_PER_NODE", "UPSTREAM_NETWORK",
            "Wave2TeamController", "wave2_team", "wave2_flag_options", "seat_values", "seat_elapsed_ms", "seat_sitting",
+           "seat_decisions", "seat_on_turn_ms",
            "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
            "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "CONTINUITY_PRESET_OPTION",
            "expand_wave2_presets", "wave2_carries_state", "parse_continuity"]

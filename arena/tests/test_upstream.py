@@ -170,7 +170,9 @@ from arena.players.upstream import (  # noqa: E402
     PocketLandingTracker,
     Wave2TeamController,
     fen_pockets,
+    seat_decisions,
     seat_elapsed_ms,
+    seat_on_turn_ms,
     seat_sitting,
     seat_values,
     wave2_carries_state,
@@ -196,13 +198,125 @@ def test_wave2_flags_default_ablation_and_validation():
             wave2_flag_options(**bad)
 
 
-def test_seat_elapsed_only_for_the_seats_on_turn():
+def test_seat_on_turn_ms_only_for_the_seats_on_turn():
     obs = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START}, clocks_ms=clocks(1, 1, 1, 1),
                       to_move={"A": "A_black", "B": "B_white"}, legal_moves=[], last_move_ms={"A": 4_200, "B": 1_000})
-    assert seat_elapsed_ms(obs) == {"A_white": 0, "A_black": 800, "B_white": 4_000, "B_black": 0}
+    assert seat_on_turn_ms(obs) == {"A_white": 0, "A_black": 800, "B_white": 4_000, "B_black": 0}
     no_landings = Observation(now_ms=5_000, seat="A_white", fens={"A": START, "B": START},
                               clocks_ms=clocks(1, 1, 1, 1), to_move={"A": "A_white", "B": "B_white"}, legal_moves=[])
-    assert seat_elapsed_ms(no_landings) == {s: 0 for s in ("A_white", "A_black", "B_white", "B_black")}
+    assert seat_on_turn_ms(no_landings) == {s: 0 for s in ("A_white", "A_black", "B_white", "B_black")}
+    assert seat_decisions(no_landings, "T1", {s: 100 for s in no_landings.clocks_ms}, 100) == (
+        {s: 0 for s in no_landings.clocks_ms}, {s: 0 for s in no_landings.clocks_ms})
+
+
+# D4 (docs/durative_diagnosis.md): SeatElapsedMs/SeatSitting must mean what self-play sends, since the network
+# trains on it. _SelfPlay mirrors SeatClockGame's decision start and sitting (wave2-hivemind
+# engine/src/tools/seat_clock_game.h): come_on_turn, commit_move, commit_pass (the pass ends at the next landing on
+# the other board + 1, or at its cap), landed (wakes a sitting seat on the other board at now + 1) and elapsed_ms.
+# test_self_play_mirror_matches_seat_clock_game pins those lines of the C++ source.
+class _SelfPlay:
+    def __init__(self, on_turn: dict):
+        self.start, self.sitting, self.wake = {}, {}, {}
+        for seat in on_turn.values():
+            self.come_on_turn(seat, 0)
+
+    def come_on_turn(self, seat, now):
+        self.start[seat], self.sitting[seat], self.wake[seat] = now, False, None
+
+    def commit_pass(self, seat, now, cap_ms):
+        self.wake[seat] = now + cap_ms  # no landing planned on the other board: until the cap
+        self.start[seat], self.sitting[seat] = self.wake[seat], True
+
+    def landed(self, seat, now, next_seat):
+        other = "B" if seat[0] == "A" else "A"
+        for waiting in self.start:
+            if waiting[0] == other and self.sitting[waiting] and self.wake[waiting] > now + 1:
+                self.wake[waiting] = self.start[waiting] = now + 1
+        self.start.pop(seat, None), self.sitting.pop(seat, None), self.wake.pop(seat, None)
+        self.come_on_turn(next_seat, now)
+
+    def elapsed(self, seat, now):
+        return max(0, now - self.start[seat])
+
+
+def _d4_obs(now, to_move, last, c=None):
+    return Observation(now_ms=now, seat="A_white", fens={"A": START, "B": START},
+                       clocks_ms=c or clocks(60_000, 60_000, 60_000, 60_000), to_move=to_move, legal_moves=[],
+                       last_move_ms=last)
+
+
+def test_seat_elapsed_is_self_plays_time_since_the_decision_began():
+    paces = {s: 600 for s in ("A_white", "A_black", "B_white", "B_black")}
+    # T2's B_white has had board B since 1000 and thinks; board A lands at 1300 (T1's A_white moved, A_black on turn)
+    # without touching it. Self-play: its decision began at 1000 and a landing elsewhere does not restart it.
+    sp = _SelfPlay({"A": "A_white", "B": "B_white"})
+    sp.landed("B_black", 1_000, "B_white")
+    sp.landed("A_white", 1_300, "A_black")
+    obs = _d4_obs(1_500, {"A": "A_black", "B": "B_white"}, {"A": 1_300, "B": 1_000})
+    elapsed, sitting = seat_decisions(obs, "T1", paces, 400)
+    assert elapsed["B_white"] == sp.elapsed("B_white", 1_500) == 500 and sitting["B_white"] == 0
+    assert elapsed["A_black"] == sp.elapsed("A_black", 1_500) == 200 and sitting["A_black"] == 0
+    assert seat_elapsed_ms(obs, "T1", paces, 400) == elapsed and seat_sitting(obs, "T1", paces, 400) == sitting
+
+
+def test_a_sitting_opponent_sends_elapsed_0_as_in_self_play():
+    paces = {s: 600 for s in ("A_white", "A_black", "B_white", "B_black")}
+    # T2's B_white got board B at 1000, passed, and is still waiting at 3000 (nothing landed on A since 500).
+    sp = _SelfPlay({"A": "A_black", "B": "B_white"})
+    sp.landed("B_black", 1_000, "B_white")
+    sp.commit_pass("B_white", 1_100, 8 * 600)
+    obs = _d4_obs(3_000, {"A": "A_white", "B": "B_white"}, {"A": 500, "B": 1_000})
+    elapsed, sitting = seat_decisions(obs, "T1", paces, 400)
+    assert sitting["B_white"] == int(sp.sitting["B_white"]) == 1
+    assert elapsed["B_white"] == sp.elapsed("B_white", 3_000) == 0  # before D4: now - last landing = 2000
+    assert seat_on_turn_ms(obs)["B_white"] == 2_000
+    # Our own seat on turn (A_white, T1): never sitting; its board's time since its last landing (wide planes only).
+    assert sitting["A_white"] == 0 and elapsed["A_white"] == 2_500
+
+
+def test_a_landing_that_wakes_a_sitting_opponent_restarts_its_decision():
+    paces = {s: 600 for s in ("A_white", "A_black", "B_white", "B_black")}
+    # B_white (T2) has board B since 1000 and sits; at 2500 a move lands on A (T2's A_black moved, A_white on turn),
+    # which ends its pass 1 ms later: self-play restarts its decision at 2501 and it is no longer sitting.
+    sp = _SelfPlay({"A": "A_black", "B": "B_white"})
+    sp.landed("B_black", 1_000, "B_white")
+    sp.commit_pass("B_white", 1_100, 8 * 600)
+    sp.landed("A_black", 2_500, "A_white")
+    sp.sitting["B_white"] = False  # it re-decides at its wake and, here, thinks about a move
+    obs = _d4_obs(2_800, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
+    elapsed, sitting = seat_decisions(obs, "T1", paces, 400)
+    assert elapsed["B_white"] == sp.elapsed("B_white", 2_800) == 299 and sitting["B_white"] == 0
+    # Still not moving 1.5 x min(pace 600, budget 400) = 600 ms after the wake: sitting again, elapsed 0.
+    later = _d4_obs(3_200, {"A": "A_white", "B": "B_white"}, {"A": 2_500, "B": 1_000})
+    assert seat_decisions(later, "T1", paces, 400)[0]["B_white"] == 0
+    assert seat_decisions(later, "T1", paces, 400)[1]["B_white"] == 1
+    # A landing on A before it went past its threshold did not wake a pass: the decision still began at 1000.
+    early = _d4_obs(1_500, {"A": "A_white", "B": "B_white"}, {"A": 1_400, "B": 1_000})
+    assert seat_decisions(early, "T1", paces, 400) == ({"A_white": 100, "A_black": 0, "B_white": 500, "B_black": 0},
+                                                       {s: 0 for s in paces})
+
+
+def test_self_play_mirror_matches_seat_clock_game():
+    """The lines of SeatClockGame that _SelfPlay (and so seat_decisions) mirror. A change there changes the meaning
+    the network trains on, and the arena has to follow."""
+    import os
+
+    path = os.path.join(WAVE2_ENGINE_DIR, "src", "tools", "seat_clock_game.h")
+    if not os.path.isfile(path):
+        pytest.skip("wave2-hivemind is not checked out")
+    src = open(path).read()
+    pins = {
+        "come_on_turn": ("decisionStartMs_[seat] = nowMs_;", "sitting_[seat] = false;"),
+        "commit_pass": ("decisionStartMs_[seat] = eventAt_[seat];", "sitting_[seat] = true;",
+                        "wait = std::max<int64_t>(eventAt_[other] - nowMs_, 0) + 1;"),
+        "landed": ("eventAt_[waiting] = nowMs_ + 1;", "decisionStartMs_[waiting] = eventAt_[waiting];"),
+        "elapsed_ms": ("std::max<int64_t>(0, nowMs_ - decisionStartMs_[seat])",),
+        "search_clock": ("if (TimeState::team_of_seat(seat) != team) {",
+                         "config.seatElapsedMs[seat] = elapsed_ms(seat);", "config.seatSitting[seat] = sitting_[seat];"),
+    }
+    for where, lines in pins.items():
+        for line in lines:
+            assert line in src, f"seat_clock_game.h {where}: {line!r} is gone; recheck seat_decisions (D4)"
 
 
 def _w2_obs(seat, c, fens, to_move, legal, now=0, last=None):
