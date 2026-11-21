@@ -40,7 +40,16 @@ SP1_BINARY = os.path.join(up.WAVE2_ENGINE_DIR, "build-sp1", "hivemind.bin")
 # "cont": the headline flags plus the wave 2c continuity preset (spec v5: TeamTreeReuse, JointPlans, PlanCarry). In
 # ``reuse`` a hit is then the engine's ``Team tree reuse: N visits recovered`` line; in ``scaling`` every search
 # starts from ucinewgame, so only JointPlans acts there (fixes 1 and 3 need a previous search of the same game).
-MODES = {"on": {}, "off": {"durative_tree": False, "sit_gate": True}, "cont": {"continuity": True}}
+# Since the durative diagnosis fixes (D1-D7), the preset also sets own_pace_below_root (D1) and
+# blockable_check_not_mate (D5). "cont_d3" adds wait_node_acting_eval (D3, not in the preset), "cont_fp200" the preset
+# with JointPlanFreePermille 200 (default 500), "cont_nod1" the preset without D1, "cont_tol1000" / "cont_tol3000" the preset with fix 1's clock tolerance
+# at 1000 / 3000 ms (default 250), for the reuse hit-rate gate.
+MODES = {"on": {}, "off": {"durative_tree": False, "sit_gate": True}, "cont": {"continuity": True},
+         "cont_d3": {"continuity": True, "wait_node_acting_eval": True},
+         "cont_fp200": {"continuity": True, "joint_plan_free_permille": 200},
+         "cont_nod1": {"continuity": True, "own_pace_below_root": False},
+         "cont_tol1000": {"continuity": True, "team_tree_reuse_tolerance_ms": 1000},
+         "cont_tol3000": {"continuity": True, "team_tree_reuse_tolerance_ms": 3000}}
 
 
 # ---------------------------------------------------------------------------------------------- 1. reuse
@@ -59,7 +68,10 @@ def _install_search_log(path: str) -> None:
         visits = reuse[0] if reuse else (team or 0)
         row = {"binary": self.binary, "arm": "wave2" if self.binary == up.WAVE2_BINARY else "upstream",
                "engine_flags": {k: self.extra_options.get(k) for k in ("DurativeTree", "SitGate", "TeamTreeReuse",
-                                                                      "JointPlans", "PlanCarry")},
+                                                                      "JointPlans", "PlanCarry", "OwnPaceBelowRoot",
+                                                                      "BlockableCheckNotMate", "WaitNodeActingEval",
+                                                                      "JointPlanFreePermille",
+                                                                      "TeamTreeReuseToleranceMs")},
                "fen_a": fen_a, "fen_b": fen_b, **{k: v for k, v in kw.items() if k != "options"},
                "seat_options": kw.get("options") or {}, "move_a": res.move_a, "move_b": res.move_b,
                "q": res.q, "nodes_searched": res.nodes, "reused_visits": visits,
@@ -256,10 +268,11 @@ def scaling_tables(positions_path: str, results_path: str) -> list[str]:
         return joint(ra) == joint(rb), (sum(per) / len(per)) if per else 1.0
 
     # Wave 2 modes present in the results, in table order (cont: the wave 2c continuity preset).
-    modes = [m for m in ("on", "off", "cont") if any(k[1] == m for k in res)]
+    modes = [m for m in MODES if any(k[1] == m for k in res)]
     LABEL = {"on": "durative on", "off": "durative off", "cont": "continuity"}
+    LABEL.update({m: m for m in MODES if m not in LABEL})
     lines = []
-    for ref_mode in ("off", "on", "cont", "it13"):
+    for ref_mode in tuple(MODES) + ("it13",):
         ref_budgets = sorted({k[2] for k in res if k[1] == ref_mode})
         if not ref_budgets:
             continue
