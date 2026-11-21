@@ -6,7 +6,8 @@
 # twin-s-clock it13 continued by upstream's own RL loop (hivemind rl-loop --wave2) on four real seat clocks, the
 # durative tree, flag loss and no hard sit gate, into runs/wave2/<RUN>. Steps, each leaving <RUN>/.done_<step>:
 #   engines   the wave 2 match engine (build-ninja, from cluster/build.sh) must exist; the one-worker self-play engine
-#             (build-sp1, -DHIVEMIND_SEARCH_WORKERS=1, TensorRT) is built here when missing. Both must list the wave 2
+#             (build-sp1, -DHIVEMIND_SEARCH_WORKERS=1, TensorRT) is built here by cluster/build_sp1.sh when missing or
+#             built from another wave2-hivemind commit (build-sp1/.talisman_commit). Both must list the wave 2
 #             options in --help (ALLOW_STOCK=1 plays stock v3 games instead: a plumbing check, not wave 2)
 #   env       the wave2-hivemind Python env (uv sync, or venv + pip without uv)
 #   init      python -m hivemind.wave2 init: it13 ONNX and training checkpoint, SHA-256 checked, as this RUN's lineage
@@ -47,14 +48,17 @@
 # WAVE2_EXTRA (further rl-loop wave 2 flags, e.g. "--instant-transfer true"), LR (1e-4, heads), TRUNK_LR (5e-5),
 # PROMOTE_ABOVE (0.5: a tie keeps the generator), MATCH_GAMES (400, colour-swapped pairs), MATCH_MS (100),
 # NO_GATE (0; 1 = no matches, smoke only), LINEAGE (twin-s-clock-w2, twin-s-clock-w2w with WIDE=1), ALLOW_STOCK (0),
-# W2 (third_party/wave2-hivemind), WIDE (0), AB (0), ARRIVALS_WEIGHT (0.05).
+# W2 (third_party/wave2-hivemind), WIDE (0), AB (0), ARRIVALS_WEIGHT (0.05), RUNS_DIR (runs/wave2: the parent of
+# <RUN>; the wave 2c round uses runs/wave2c/<ROUND>, the full run runs/full), MAX_ITER (empty; the last iteration the
+# lineage may reach: a chained job that finds it reached exits without training, cluster/launch_full_run.sh).
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 [ -n "${SLURM_JOB_ID:-}" ] && source cluster/env.sh
 
-RUN="${RUN:?set RUN, the loop folder under runs/wave2/}"
+RUN="${RUN:?set RUN, the loop folder under RUNS_DIR (runs/wave2)}"
 REPO="$PWD"
-BASE="$REPO/runs/wave2/$RUN"
+RUNS_DIR="${RUNS_DIR:-runs/wave2}"
+BASE="$REPO/$RUNS_DIR/$RUN"
 ROOT="$BASE"
 AB="${AB:-0}"
 WIDE_SET="${WIDE:-}"
@@ -81,7 +85,7 @@ MATCH_MS="${MATCH_MS:-100}"
 NO_GATE="${NO_GATE:-0}"
 LINEAGE_SET="${LINEAGE:-}"
 ALLOW_STOCK="${ALLOW_STOCK:-0}"
-JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
+MAX_ITER="${MAX_ITER:-}"
 
 die() { echo "wave2_iterate: $*" >&2; exit 1; }
 done_step() { echo "${2:-}" > "$ROOT/.done_$1"; }
@@ -92,6 +96,7 @@ case "$AB" in 0|1) ;; *) die "AB is 0 or 1" ;; esac
 [ -d "$W2/.git" ] || die "$W2 missing: run cluster/build.sh (it clones branch talisman/wave2 and builds it)"
 mkdir -p "$ROOT"
 MATCH_ENGINE="${MATCH_ENGINE:-$W2/engine/build-ninja/hivemind}"
+SP_ENGINE_SET="${SP_ENGINE:-}"
 SP_ENGINE="${SP_ENGINE:-$W2/engine/build-sp1/hivemind}"
 PY="$W2/.venv/bin/python"
 echo "commit $(git rev-parse HEAD)  wave2 $(git -C "$W2" rev-parse HEAD) ($(git -C "$W2" rev-parse --abbrev-ref HEAD))  pin $(cat cluster/wave2_engine.ref 2>/dev/null || echo none)"
@@ -104,21 +109,10 @@ echo "wave 2b: AB $AB  WIDE ${WIDE_SET:-unset}  arrivals weight $ARRIVALS_WEIGHT
 # ------------------------------------------------------------------ engines
 if ! is_done engines; then
   [ -x "$MATCH_ENGINE" ] || die "match engine $MATCH_ENGINE missing: run cluster/build.sh (WAVE2=1, the default)"
-  # The A/B arms start together on two GPUs: one builds build-sp1 while the other waits here, instead of testing a
-  # half-linked binary (ab1_w1 15877463-65 died on that). The lock is released when this shell exits.
-  exec 9>"$W2/engine/.build-sp1.lock"
-  flock 9
-  if [ ! -x "$SP_ENGINE" ]; then
-    echo "== building the one-worker self-play engine ($JOBS jobs)"
-    if [ -n "${SLURM_JOB_ID:-}" ]; then
-      BACKEND=(-DHIVEMIND_BACKEND=tensorrt -DTensorRT_DIR="$TensorRT_DIR" -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_TOOLKIT_ROOT_DIR"
-               -DHIVEMIND_NATIVE_ARCH=OFF)
-    else
-      BACKEND=(-DHIVEMIND_BACKEND=onnxruntime -DONNXRuntime_ROOT="${ONNXRuntime_ROOT:-/opt/homebrew/opt/onnxruntime}")
-    fi
-    (cd "$W2/engine" && cmake --preset ninja-release -B build-sp1 -DHIVEMIND_SEARCH_WORKERS=1 \
-       -DHIVEMIND_USE_CCACHE=OFF "${BACKEND[@]}" && cmake --build build-sp1 --target hivemind -j "$JOBS") \
-      || die "self-play engine build failed"
+  # build-sp1 at the checkout's commit (missing or stale: cluster/build_sp1.sh, which also holds the A/B arms' lock).
+  # An SP_ENGINE override is taken as given.
+  if [ -z "${SP_ENGINE_SET:-}" ]; then
+    bash cluster/build_sp1.sh "$W2" || die "self-play engine build failed"
   fi
   for e in "$SP_ENGINE" "$MATCH_ENGINE"; do
     # Not `--help | grep -q`: grep exits at the first match, the engine gets SIGPIPE and pipefail fails the test.
@@ -159,6 +153,10 @@ fi
 finished() { find "$ROOT/runs" -path '*/rl-it*/stages/iteration.done' 2>/dev/null | wc -l | tr -d ' '; }
 FIRST=$(( $(finished) + 1 ))
 LAST=$(( FIRST + ${1:-$ITERS} - 1 ))
+if [ -n "$MAX_ITER" ] && [ "$LAST" -gt "$MAX_ITER" ]; then LAST=$MAX_ITER; fi
+if [ "$FIRST" -gt "$LAST" ]; then
+  echo "== $ROOT has $(finished) iterations, MAX_ITER $MAX_ITER: nothing left to run"
+else
 if ! is_done "loop_$LAST"; then
   echo; echo "== rl-loop it$FIRST..it$LAST"; date
   ARGS=(--wave2 --no-upload --keep-selfplay --pause-for "" --last "$LAST" --runs "$ROOT/runs"
@@ -175,6 +173,7 @@ if ! is_done "loop_$LAST"; then
   # shellcheck disable=SC2086  # WAVE2_EXTRA is split on purpose
   (cd "$W2" && "$PY" -m hivemind rl-loop "${ARGS[@]}" $WAVE2_EXTRA) || die "rl-loop failed (see $ROOT/runs/rl-loop.log)"
   done_step "loop_$LAST"
+fi
 fi
 
 # ------------------------------------------------------------------ results
