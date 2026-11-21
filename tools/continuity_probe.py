@@ -37,7 +37,10 @@ REUSE_RE = re.compile(r"info string Tree reuse: (\d+) visits recovered")
 # and board signature, clocks ignored) and the most visits among those, i.e. what a clock-tolerant reuse could adopt.
 PROBE_RE = re.compile(r"info string ReuseProbe candidates (\d+) sigmatch (\d+) sigvisits (\d+) hashhit (\d+)")
 SP1_BINARY = os.path.join(up.WAVE2_ENGINE_DIR, "build-sp1", "hivemind.bin")
-MODES = {"on": {}, "off": {"durative_tree": False, "sit_gate": True}}
+# "cont": the headline flags plus the wave 2c continuity preset (spec v5: TeamTreeReuse, JointPlans, PlanCarry). In
+# ``reuse`` a hit is then the engine's ``Team tree reuse: N visits recovered`` line; in ``scaling`` every search
+# starts from ucinewgame, so only JointPlans acts there (fixes 1 and 3 need a previous search of the same game).
+MODES = {"on": {}, "off": {"durative_tree": False, "sit_gate": True}, "cont": {"continuity": True}}
 
 
 # ---------------------------------------------------------------------------------------------- 1. reuse
@@ -51,12 +54,19 @@ def _install_search_log(path: str) -> None:
         res = orig(self, fen_a, fen_b, **kw)
         reuse = [int(m.group(1)) for l in res.lines if (m := REUSE_RE.search(l))]
         probe = [tuple(map(int, m.groups())) for l in res.lines if (m := PROBE_RE.search(l))]
+        # Wave 2c fix 1 prints its own line instead of "Tree reuse:" (parse_continuity fills these; None = no line).
+        team = getattr(res, "reused_visits", None)
+        visits = reuse[0] if reuse else (team or 0)
         row = {"binary": self.binary, "arm": "wave2" if self.binary == up.WAVE2_BINARY else "upstream",
-               "engine_flags": {k: self.extra_options.get(k) for k in ("DurativeTree", "SitGate")},
+               "engine_flags": {k: self.extra_options.get(k) for k in ("DurativeTree", "SitGate", "TeamTreeReuse",
+                                                                      "JointPlans", "PlanCarry")},
                "fen_a": fen_a, "fen_b": fen_b, **{k: v for k, v in kw.items() if k != "options"},
                "seat_options": kw.get("options") or {}, "move_a": res.move_a, "move_b": res.move_b,
-               "q": res.q, "nodes_searched": res.nodes, "reused_visits": reuse[0] if reuse else 0,
-               "reused": bool(reuse), "probe": list(probe[0]) if probe else None, "wall_ms": res.wall_ms, "t": time.time()}
+               "q": res.q, "nodes_searched": res.nodes, "reused_visits": visits,
+               "reused": visits > 0, "team_tree_line": team is not None,
+               "reuse_refusal": getattr(res, "reuse_refusal", None),
+               "plan_carried": getattr(res, "plan_carried", 0),
+               "probe": list(probe[0]) if probe else None, "wall_ms": res.wall_ms, "t": time.time()}
         out.write(json.dumps(row) + "\n")
         out.flush()
         return res
@@ -96,7 +106,26 @@ def reuse_table(dirs: list[str]) -> list[str]:
                         f"{sum(r['reused_visits'] for r in xs) / len(xs):.1f} | "
                         f"{(sum(r['reused_visits'] for r in hits) / len(hits)) if hits else 0:.1f} | "
                         f"{sum(r['nodes_searched'] for r in xs) / len(xs):.0f} |")
-    probe_rows = ["", "Probe build only: the same board (clocks ignored) among the retained candidates, i.e. the "
+    # Wave 2c runs (TeamTreeReuse / PlanCarry on): why a search adopted nothing, and how many carried halves applied.
+    cont_rows = ["", "Wave 2c telemetry (wave 2 arm, searches that printed a `Team tree reuse` line):", "",
+                 "| Run | Searches with the line | Adopted | Refused, by reason | Boards with a carried plan applied |",
+                 "|---|---|---|---|---|"]
+    any_cont = False
+    for d in dirs:
+        xs = [r for r in _read(os.path.join(d, "searches.jsonl")) if r["arm"] == "wave2" and r.get("team_tree_line")]
+        if not xs:
+            continue
+        any_cont = True
+        reasons: dict[str, int] = {}
+        for r in xs:
+            if r.get("reuse_refusal"):
+                reasons[r["reuse_refusal"]] = reasons.get(r["reuse_refusal"], 0) + 1
+        hits = sum(1 for r in xs if r["reused"])
+        cont_rows.append(f"| {os.path.basename(d)} | {len(xs)} | {hits} ({hits / len(xs):.1%}) | "
+                         + ", ".join(f"{k} {v}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1]))
+                         + f" | {sum(r.get('plan_carried', 0) for r in xs)} |")
+    rows += cont_rows if any_cont else []
+    probe_rows =["", "Probe build only: the same board (clocks ignored) among the retained candidates, i.e. the "
                   "ceiling of a clock-tolerant reuse.", "",
                   "| Run | Arm | Searches with probe line | Mean candidates indexed | Board found (clocks ignored) | "
                   "Mean visits of that subtree (all searches) | (when found) | Mean nodes searched |",
@@ -226,8 +255,11 @@ def scaling_tables(positions_path: str, results_path: str) -> list[str]:
         per = [ra[f"move_{b}"] == rb[f"move_{b}"] for b in both]
         return joint(ra) == joint(rb), (sum(per) / len(per)) if per else 1.0
 
+    # Wave 2 modes present in the results, in table order (cont: the wave 2c continuity preset).
+    modes = [m for m in ("on", "off", "cont") if any(k[1] == m for k in res)]
+    LABEL = {"on": "durative on", "off": "durative off", "cont": "continuity"}
     lines = []
-    for ref_mode in ("off", "on", "it13"):
+    for ref_mode in ("off", "on", "cont", "it13"):
         ref_budgets = sorted({k[2] for k in res if k[1] == ref_mode})
         if not ref_budgets:
             continue
@@ -235,12 +267,12 @@ def scaling_tables(positions_path: str, results_path: str) -> list[str]:
         if not all((i, ref_mode, deep, 0) in res for i in pos):
             continue
         lines += ["", f"Reference: {'upstream it13' if ref_mode == 'it13' else 'durative ' + ref_mode} at {deep} nodes (joint action / mean per on-turn board).", "",
-                  "| Nodes | durative on: joint | on: per board | durative off: joint | off: per board | n |",
-                  "|---|---|---|---|---|---|"]
+                  "| Nodes | " + " | ".join(f"{LABEL[m]}: joint | {m}: per board" for m in modes) + " | n |",
+                  "|---|" + "---|---|" * len(modes) + "---|"]
         for n in budgets:
             cells = []
             cnt = 0
-            for mode in ("on", "off"):
+            for mode in modes:
                 js, bs = [], []
                 for i, p in pos.items():
                     r, ref = res.get((i, mode, n, 0)), res[(i, ref_mode, deep, 0)]
@@ -255,35 +287,37 @@ def scaling_tables(positions_path: str, results_path: str) -> list[str]:
             lines.append(f"| {n} | " + " | ".join(cells) + f" | {cnt} |")
     # on vs off at the same budget
     lines += ["", "On vs off at the same budget (joint action equal), and passes chosen:", "",
-              "| Nodes | on = off | on: root passes on an on-turn board | off: root passes |", "|---|---|---|---|"]
+              "| Nodes | on = off | " + " | ".join(f"{m}: root passes on an on-turn board" for m in modes) + " |",
+              "|---|---|" + "---|" * len(modes)]
     for n in budgets:
         same = [joint(res[(i, "on", n, 0)]) == joint(res[(i, "off", n, 0)]) for i in pos
                 if (i, "on", n, 0) in res and (i, "off", n, 0) in res]
         passes = {}
-        for mode in ("on", "off"):
+        for mode in modes:
             c = 0
             for i, p in pos.items():
                 r = res.get((i, mode, n, 0))
                 if r and any(r[f"move_{b}"] is None for b in team_boards(p)):
                     c += 1
             passes[mode] = c
-        lines.append(f"| {n} | {sum(same)}/{len(same)} | {passes['on']} | {passes['off']} |")
+        lines.append(f"| {n} | {sum(same)}/{len(same)} | " + " | ".join(str(passes[m]) for m in modes) + " |")
     # repeat noise
     reps = [(k, r) for k, r in res.items() if k[3] == 1]
     if reps:
         lines += ["", "Repeat (same search run again, noise floor):", "", "| Mode | Nodes | same joint action |",
                   "|---|---|---|"]
-        for mode in ("on", "off"):
+        for mode in modes:
             for n in budgets:
                 xs = [joint(r) == joint(res[(k[0], k[1], k[2], 0)]) for k, r in reps
                       if k[1] == mode and k[2] == n and (k[0], k[1], k[2], 0) in res]
                 if xs:
                     lines.append(f"| {mode} | {n} | {sum(xs)}/{len(xs)} |")
     # speed
-    lines += ["", "Wall time per searched node (ms), build-sp1:", "", "| Nodes | on | off |", "|---|---|---|"]
+    lines += ["", "Wall time per searched node (ms), build-sp1:", "", "| Nodes | " + " | ".join(modes) + " |",
+              "|---|" + "---|" * len(modes)]
     for n in budgets:
         cells = []
-        for mode in ("on", "off"):
+        for mode in modes:
             xs = [r for k, r in res.items() if k[1] == mode and k[2] == n and k[3] == 0]
             cells.append(f"{sum(r['wall_ms'] for r in xs) / max(1, sum(r['nodes_searched'] for r in xs)):.3f}"
                          if xs else "-")
