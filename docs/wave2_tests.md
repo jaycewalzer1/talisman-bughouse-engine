@@ -219,7 +219,7 @@ nonzero). Unit tests: `arena/tests/test_upstream.py` (`test_wave2_continuity_*`,
 `test_wave2_controller_*continuity*`, `test_continuity_telemetry_*`, `test_sim_records_continuity_*`,
 `test_wave2_durative_diagnosis_*`).
 
-### The rows (`bash cluster/launch_checks.sh wave2c`, 11 jobs)
+### The rows (`bash cluster/launch_checks.sh wave2c`, 12 jobs)
 
 Common settings as section 4 (pool `wave2` contender, `clock_k 110`, `serial`, `charge "searched"`, `MEASURE=1` at
 800 nodes per binary and flag set, so fix 2's node cost is charged as measured; `bughouse` openings; rules v3), all
@@ -240,6 +240,7 @@ Every row with fix 1 on (`c_all_120`, `c_all_nod1_120`, `c_reuse_120`, `c_same_1
 | `c_mateblock_120` | upstream-it13 | `{"blockable_check_not_mate": true}` | 600 | D5 alone: a drop-blockable check is never mate | within the noise of `c_ref_120` (the case is rare); a loss would mean the engine's mate calls were helping it, against the rules |
 | `c_nodur_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true}` | 600 | the durative-off, gate-on reference, rerun on the new binary in the same round | near the PACE `nodur` (0.436) |
 | `c_same_120` | wave2c-self | `{"continuity": true}` (+ tolerance 1000, both arms) | 800 | control: continuity against itself | **0.50**, inside about +-0.025 (1600 games) |
+| `h_best_120` | upstream-it13 | `{"durative_tree": false, "sit_gate": true, "hybrid": true}` | 600 | spec v6, the hybrid (H3, `HybridMode gate`, every knob at its default: event lands all, margin 20, prior floor 150): nodur's v3 tree and gate choose the moves, the root may also sit when behind to wait for the other board's thinking seat | above `c_nodur_120` is the hope; locally it tied nodur (0.502 [0.438, 0.562], 273 games, 0.35 kept sits a game), so near `c_nodur_120` is the likely reading. No `h_alt_120`: no runner-up was picked (prior 300 / margin 0 scored 0.456 vs nodur; event lands "sit" was only position-scored) |
 | `c_ref_120` | upstream-it13 | `{}` | 600 | the durative-on reference on the new binary **and the new arena inputs**: every fix-alone row is read against it | near `ref_120` (0.227) if D4 changed nothing. Required, not optional: with every fix off the new binary matches the one `ref_120` ran (0.4 `wave2_parity.sh`, 0.6 `wave2_game_parity.sh`), but D4 changed `SeatElapsedMs`/`SeatSitting` for every wave 2 arm with no flag, so `ref_120` ran on the old arena inputs (a sitting opponent landed at `max(1, pace - elapsed)`, often 1 ms). A difference between `c_ref_120` and `ref_120` is the D4 effect, not any fix |
 
 How to read them:
@@ -260,19 +261,22 @@ SBATCH_DEPENDENCY=afterok:<build job> bash cluster/launch_checks.sh wave2c
 bash cluster/results.sh
 ```
 
-Cost: one 8 h job per row, 11 rows: 88 GPU-hours. At the 2026-11-19 round's pace (about 270-300 games per 8 h row
+Cost: one 8 h job per row, 12 rows: 96 GPU-hours. At the 2026-11-19 round's pace (about 270-300 games per 8 h row
 at 120 s) no row reaches its 1200 (1600) games in one job; a resubmission with the same `NAME` continues it. `c_all_120` and `c_same_120` need a binary that advertises all five `continuity`
 switches (D1 and D5 included); on one without them they refuse to start.
 
 ## 8. Wave 2c readiness round (GO / NO-GO for the full run)
 
-Added 2026-11-21. One PACE round whose results decide the full training run (10 iterations x 50,000 games, about
+Added 2026-11-21; the hybrid (spec v6) added 2026-11-22, which moved `cluster/wave2_engine.ref` to wave2-hivemind
+`e5f3aae` (the wave 2d engine): push that commit to the fork (`talisman/wave2`) before the round's build, or the build
+cannot fetch it. One PACE round whose results decide the full training run (10 iterations x 50,000 games, about
 1,700 GPU-hours at R = 300; budget about 10,000) and its settings: which engine config to train, narrow or wide.
 Operating steps and the job table: `cluster/README.md`, "Wave 2c readiness round".
 
 ```sh
 bash cluster/launch_wave2c.sh                 # everything, after a pull; prints job ids
-bash cluster/status_wave2c.sh                 # progress, plus the 2026-11-19 round and ab2
+bash cluster/launch_long_test.sh              # the long test (hybrid, nodur, control; ~1300 games a row)
+bash cluster/status_wave2c.sh                 # progress, the long test merged, plus the 2026-11-19 round and ab2
 .venv/bin/python cluster/decide_full_run.py   # GO / NO-GO, reasons, the full run's command
 ```
 
@@ -282,10 +286,11 @@ bash cluster/status_wave2c.sh                 # progress, plus the 2026-11-19 ro
 |---|---|---|
 | build (`cluster/build.sh`) | do all engines build on TensorRT at the pin and pass their tests and parity? | `build_w2c_<job>.log` ends "build ok"; `runs/wave2c/<ROUND>/build.ok` exists |
 | (a) GPU check | does the pinned engine run on the GPU the way the Mac checks say: `build-sp1` at the pin (`cluster/build_sp1.sh`; before this round a stale `build-sp1` from an older pin was kept), both engines advertise the wave 2c options, it13 **and the wide network** match ONNX Runtime on TensorRT (the wide path was never compiled before), stock parity, and self-play runs on TensorRT for both candidates and both widths | `gpu_check.tsv`, one PASS / FAIL / SKIP per check. `stock_binary` (bit-for-bit stock v3.0.3) needs an ONNX Runtime C++ install and is SKIP without one. `cluster/check_clock_engine.py` is not in it: it checks our fork's clock network's think_gain head, which it13 and the wide net do not have (the build runs it on the clock network) |
-| (b) 11 rows | section 7: which continuity config plays best against it13 at equal clock; is the harness fair | `c_same_120` first, then each candidate against `c_nodur_120` |
-| (c) bench | self-play rate R (games per GPU-hour) of `nodur` and `cont`, narrow and wide, on the exact rl-loop segment command (`cluster/wave2_selfplay_bench.py`, 6 games at once, 800 nodes) | `bench/<config>_<width>/bench.json`: `games_per_gpu_hour_steady` (pipeline full, used by decide) and end to end (with the TensorRT engine build and the tail) |
-| (d) smokes | does one training iteration run end to end with each config, narrow and wide: self-play (2 segments of 100 games), validation, label check, training, gate vs the generator and vs it13 (60 games each) | `smoke_<config>/<width>/results.tsv` has `rl-it1` with a `vs_it13` score. The scores are 60 games: plumbing, not strength |
+| (b) 12 rows | section 7: which continuity config, or the hybrid (`h_best_120`), plays best against it13 at equal clock; is the harness fair | `c_same_120` first, then each candidate against `c_nodur_120` |
+| (c) bench | self-play rate R (games per GPU-hour) of `nodur`, `cont` and `hybrid`, narrow and wide, on the exact rl-loop segment command (`cluster/wave2_selfplay_bench.py`, 6 games at once, 800 nodes) | `bench/<config>_<width>/bench.json`: `games_per_gpu_hour_steady` (pipeline full, used by decide) and end to end (with the TensorRT engine build and the tail) |
+| (d) smokes | does one training iteration run end to end with each config (`nodur`, `cont`, `hybrid`), narrow and wide: self-play (2 segments of 100 games), validation, label check, training, gate vs the generator and vs it13 (60 games each) | `smoke_<config>/<width>/results.tsv` has `rl-it1` with a `vs_it13` score. The scores are 60 games: plumbing, not strength |
 | (e) watchdog | stop spending if the build or GPU check fails | `watchdog.log` |
+| long test (`cluster/launch_long_test.sh`, launched separately) | the hybrid, nodur and a same-engine control (hybrid vs hybrid) against it13 at 120 s with about 1300 games a row instead of about 300: is the hybrid better than nodur by more than the one-row noise can show? | `long/<row>/part<k>`, merged by status and decide; see below |
 
 ### Decision rules (`cluster/decide_full_run.py`)
 
@@ -295,17 +300,20 @@ NO-GO on any blocker:
 |---|---|
 | B1 | `build.ok` missing |
 | B2 | `gpu_check.json` missing or not `"overall": "PASS"` |
-| B3 | any of the four smoke arms (`nodur`, `cont` x narrow, wide) without `rl-it1/stages/iteration.done` and a `vs_it13` score |
-| B4 | `c_same_120` outside [0.46, 0.54] |
-| B5 | a row missing, under 250 games, errors in over 5% of its games, or any `w2c_*` job still queued |
-| B6 | no complete bench for the chosen config's benched stand-in (`nodur` or `cont`) at the chosen width |
+| B3 | any of the six smoke arms (`nodur`, `cont`, `hybrid` x narrow, wide) without `rl-it1/stages/iteration.done` and a `vs_it13` score |
+| B4 | `c_same_120` outside [0.46, 0.54], or the long test's merged `l_same_120` (when it has 250+ games) outside it |
+| B5 | a row missing, under 250 games, errors in over 5% of its games (a merged long row too), or any `w2c_*` job (long-test parts included) still queued |
+| B6 | no complete bench for the chosen config's benched stand-in (`nodur`, `cont` or `hybrid`) at the chosen width |
 | B7 | estimate over 10,000 GPU-hours |
 
-Config: candidates `c_all_120` (`cont`), `c_all_nod1_120` (`cont_nod1`) and the best-scoring single-switch row, each
-against `c_nodur_120` of this round. A candidate qualifies if its 95% range lies wholly above `c_nodur_120`'s, or it
+Config: candidates `c_all_120` (`cont`), `c_all_nod1_120` (`cont_nod1`), the best-scoring single-switch row and
+`h_best_120` (`hybrid`, `--durative-tree false --sit-gate true --hybrid`), each against `c_nodur_120` of this round.
+A merged long-test row with at least 250 games is read instead of the round row it stands in for (`l_hybrid_120` for
+`h_best_120`, `l_nodur_120` for `c_nodur_120`, `l_same_120` checked as a second control), so with the long test
+finished the hybrid is judged on about 1300 games against nodur's 1300 from the same round and binary. A candidate qualifies if its 95% range lies wholly above `c_nodur_120`'s, or it
 scores at least 0.05 more with at least 500 games in both rows. The highest-scoring qualifier is chosen, else `nodur`
 (`--durative-tree false --sit-gate true`, the ab2 settings). A choice other than `nodur` or `cont` was not benched or
-smoke-trained: it borrows `cont`'s rate and smoke, and the output says so.
+smoke-trained: it borrows `cont`'s rate and smoke, and the output says so. `hybrid` has its own bench and smokes.
 
 Width: from `runs/wave2/ab2/results_ab.tsv` (the A/B launched 2026-11-19 with the `nodur` settings; each iteration's
 gate is 400 games, about +-0.05). Wide when at least 2 iterations have both arms gated, the wide mean is at least
@@ -322,11 +330,31 @@ one reads as `nodur`. Resubmitting the rows into the same folders (`W2C_PREFIX=w
 cluster/launch_checks.sh wave2c`, about 88 GPU-hours) gives them the 500+ games the 0.05 rule needs. The full run is
 one GPU at a time (rl-loop's `--distributed` refuses wave 2 options), so 1,700 GPU-hours is about 71 days of wall clock.
 
-Cost of the round: at most 118 GPU-hours by the time limits (build 4, GPU check 4, bench 2 x 3, smokes 2 x 8, rows
-11 x 8), about 100 expected.
+Cost of the round: at most 137 GPU-hours by the time limits (build 4, GPU check 4, bench 3 x 3, smokes 3 x 8, rows
+12 x 8), about 115 expected.
+
+### The long test (`cluster/launch_long_test.sh`)
+
+Added 2026-11-22. Three rows, the round's common settings, against `upstream-it13` at 120 s (except the control):
+`l_hybrid_120` (`h_best_120`'s options), `l_nodur_120` (`c_nodur_120`'s), `l_same_120` (the hybrid against the pool's
+`wave2-self` with the hybrid on: must read 0.50). Each row is `PARTS` (5) parallel 8 h `eval.sbatch` jobs into
+`runs/wave2c/<ROUND>/long/<row>/part<k>`, seed 1000 + k (the same in every row, so the hybrid and nodur play the
+same opening schedule), job names `w2c_<row>_p<k>`. A part folder is made at submission and never reused; a second
+launch adds parts after the last. The parts wait for the round's `w2c_build` (or `BUILD=<id>`), or start at once when
+the round's `build.ok` exists. The merge (`cluster/decide_full_run.py` `merged_row_stats`, also in
+`status_wave2c.sh`) pools every part's games and bootstraps over openings, one opening played in several parts being
+one cluster. Cost: 3 x 5 x 8 = 120 GPU-hours at most; about 1250-1500 games a row, a 95% range of about +-0.03, so
+the 0.05 rule (500 games each) can fire and disjoint ranges need a gap of about 0.06.
+
+Reading limit: the hybrid tied nodur locally (0.502 over 273 games, close to inert at 0.35 kept sits a game). A gap
+under about 0.04 will not separate them even here; NO "hybrid" from decide then means "not shown better", not
+"worse".
 
 Checked locally (2026-11-21, Mac, no GPU): `bash -n` on every cluster script; `arena/tests/test_decide_full_run.py`
 (decide on synthetic rounds: GO, every blocker, nodur / cont / cont_nod1 / single switch / wide chosen; dry runs of
 `launch_wave2c.sh` and `launch_full_run.sh` with a fake `sbatch` and `squeue` on PATH checking every submission's
-dependency); `cluster/wave2_selfplay_bench.py` end to end on the Mac's ONNX Runtime `build-sp1`. Not checkable here:
+dependency; 2026-11-22: the hybrid chosen or not, its smoke and row blockers, merged long rows preferred both ways, a
+long row under 250 games ignored, the long control, long errors and queued parts as blockers, `merged_row_stats`, and
+a dry run of `launch_long_test.sh`: dependency on a queued build, `BUILD=`, none after `build.ok`, refusal without
+either, part folders and seeds never reused); `cluster/wave2_selfplay_bench.py` end to end on the Mac's ONNX Runtime `build-sp1`. Not checkable here:
 TensorRT, the GPU check itself, R, the smokes on PACE.
