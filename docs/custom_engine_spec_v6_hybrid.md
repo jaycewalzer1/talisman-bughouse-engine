@@ -556,3 +556,123 @@ v3 node), their subtrees follow v4 rules (flag and sit-off terminals reachable),
 * `HybridEventLands all` vs `sit`: `all` keeps the root comparison fair but changes nodur's move choice on triggered
   searches; the harness (4.1 triggered subset) decides.
 * Whether T6 should use the arena's sit-off time (5 s) explicitly.
+
+## Measurements (2026-11-21/22, H3 as built)
+
+**Model and weights in every number here:** twin-s-clock it13 (HF `aminwoo/bughouse-twin-s-clock@edaa246`,
+`engine/models/twin-s-clock-fp32.onnx`, ONNX Runtime with the Core ML EP), for wave 2 and stock it13 alike. Wave 2:
+`third_party/wave2-hivemind` `talisman/wave2` at `e5f3aae` (H3 as built; local, not pushed, not the pin),
+`build-ninja`, 4 search workers. Reference and it13 rows: stock upstream it13 `build-ninja`. Machine: the 36 GB M4
+Max, shared with other jobs (load 35-100 during most of the run). Harness: `tools/strength_harness.py`
+(`docs/strength_harness.md`), the same 300 positions (seed 0, from the PACE `nodur`, `ref_120`, `same_120` games) and
+the same it13 @ 32k labels as the baselines there. Raw data: `runs/strength/scores.jsonl`,
+`runs/strength/report_hybrid.md`, `runs/strength/match_hybrid_vs_nodur/`, `runs/strength/match_p300m0_vs_nodur/`
+(git-ignored). The harness now keeps the engine's `Hybrid:` lines per row and reports the trigger, kept sits and the
+triggered subset (commits `5e4d7ba`, `8d1f790`).
+
+Variants: `hybrid` = H3 defaults (`HybridEventLands all`, margin 20, prior floor 150); `hybrid_sit` = event lands
+below the sit only; `hybrid_none` = the first draft (sit-back allowed); `hybrid_m0` / `hybrid_m50` = margin 0 / 50;
+`hybrid_p50` / `hybrid_p300` = prior floor 50 / 300; `hybrid_p300m0` = prior 300 and margin 0 (the most permissive).
+All with `DurativeTree false`, `SitGate true`. H1 and H2 are not built.
+
+### 4.1 / 4.2 Positions
+
+All positions (n 300; joint / board agreement with it13 @ 32k):
+
+| Config | 1k joint | 4k joint | 16k joint | 16k board |
+|---|---|---|---|---|
+| nodur | 61% [56, 67] | 76% [71, 81] | 87% [83, 91] | 91% [87, 94] |
+| hybrid | 60% [54, 66] | 75% [71, 80] | 88% [84, 91] | 90% [87, 94] |
+| hybrid_sit | 60% [54, 65] | 76% [71, 81] | 86% [82, 90] | 89% [85, 93] |
+| hybrid_none | - | 77% [72, 81] | - | - |
+| hybrid_m0 | 60% [54, 66] | 75% [70, 80] | - | - |
+| hybrid_m50 | - | 76% [71, 81] | - | - |
+| hybrid_p50 | - | 75% [70, 80] | - | - |
+| hybrid_p300 | 60% [54, 66] | 75% [71, 80] | - | - |
+| hybrid_p300m0 | 59% [53, 65] | 75% [70, 80] | - | - |
+
+Root q, Brier and log-loss are nodur's to the third decimal for every variant (0.054-0.062; 0.118-0.122; 0.374-0.387).
+
+The trigger and the triggered subset (the same 30 positions fire for every variant: the trigger reads only the
+clocks; agreement with it13 @ 32k beside nodur on the same 30 ids and budget):
+
+| Config | Nodes | Triggered | Kept sits | Joint agree, triggered | nodur, same ids | Act-vs-sit agree, triggered | nodur | Differs from nodur: triggered / rest |
+|---|---|---|---|---|---|---|---|---|
+| hybrid | 1000 | 30 (10%) | 1 | 67% [50, 83] | 70% [53, 87] | 97% | 100% | 2/30 / 17/270 |
+| hybrid | 4000 | 30 | 2 | 77% [60, 90] | 83% [70, 97] | 93% | 100% | 2/30 / 12/270 |
+| hybrid | 16000 | 30 | 2 | 90% [80, 100] | 97% [90, 100] | 93% | 100% | 2/30 / 8/270 |
+| hybrid_sit | 1000 / 4000 / 16000 | 30 | 2 / 2 / 2 | 67% / 77% / 83% | 70% / 83% / 97% | 93% | 100% | 3/30, 4/30, 4/30 |
+| hybrid_none | 4000 | 30 | 0 | 80% | 83% | 100% | 100% | 1/30 / 12/270 |
+| hybrid_m0 | 1000 / 4000 | 30 | 2 / 3 | 60% / 73% | 70% / 83% | 93% / 90% | 100% | 5/30, 3/30 |
+| hybrid_m50 | 4000 | 30 | 1 | 80% | 83% | 97% | 100% | 1/30 |
+| hybrid_p50 | 4000 | 30 | 1 | 80% | 83% | 97% | 100% | 1/30 |
+| hybrid_p300 | 1000 / 4000 | 30 | 4 / 3 | 53% / 77% | 70% / 83% | 87% / 90% | 100% | 7/30, 4/30 |
+| hybrid_p300m0 | 1000 / 4000 | 30 | 5 / 5 | 57% / 77% | 70% / 83% | 83% / 83% | 100% | 9/30, 7/30 |
+
+Noise floor: nodur at 4k rerun (`--rep 1`) differs from itself on 1/30 triggered and 11/270 other positions.
+Sit rate when behind on clock (sit-or-act subset, n 35): nodur 0-3%, hybrid 3-6%, the permissive variants 6-9%,
+it13 @ 32k 0%.
+
+Reading:
+* **The trigger is not the bottleneck; the value is.** It fires on 10% of positions (30 of 300, the most common
+  failure being `both boards` and `gate allows`). On the 30, the v3 tree keeps a sit 0-5 times: on most triggered
+  searches the root's q-weighted pick never chooses the sit ("no sit chosen"), because after the event lands the
+  opponent's Y move is a free tempo in the network's eyes. `q_sit < q_act` on 19 of the 22 triggered rows logged with
+  q at 1k (hybrid_sit).
+* **Kept sits cost agreement, not gain it.** Every variant agrees with it13 @ 32k less than nodur on the triggered
+  subset (e.g. 16k: 90% / 83% against 97%), and act-vs-sit agreement drops from 100% to 83-97%. The reference cannot
+  sit when behind (v3 rules), so a kept sit always counts as a disagreement; this measures distance from v3, not
+  strength. The prior floor's lost visits show at 1k (p300: 53% against 70%) and fade by 4k.
+* **One kept sit is a conditional proof that a better move existed** (position 167, every variant): the sit is
+  solved WIN through the event (`proven (assumes event)`) at about 120 nodes, which solves the root and stops the
+  search, while the act `P@f4` had q 0.987 against the sit's 0.968. A fix that refused a proven sit whenever
+  `q_act > q_sit` was tried and reverted: a solved child's q is not its proof value (in test 2.2 the correct proven
+  sit has q_sit -0.45 against q_act -0.42), so the rule broke tests 2.1 and 2.2. Not fixed; a correct fix compares
+  against the act's proof status or lets the search continue past a conditionally solved root. (The binary with
+  the tried fix was live from 22:46:01 to 22:48:43; a few match games started in that window used it.)
+* By 4.2's own rule (defaults by act-vs-sit agreement while the sit-when-behind rate stays above nodur's), margin
+  20 and prior 150 stay: margin 50 / prior 50 agree as well but keep only the one proven sit (inert); margin 0 /
+  prior 300 keep more sits and agree less. `HybridEventLands all` and `sit` are indistinguishable on positions;
+  `none` is inert as predicted (0 kept sits).
+
+### 5.1 Local matches (30 s base, vs nodur)
+
+`match <config> nodur` (row `wave2-self` with nodur's flags), rules v3, bughouse openings, colour-swapped pairs,
+ms/node pinned 0.206 for both sides (same binary), 2-3 workers in 25-min slices.
+
+| Contender | Games | Score | 95% CI | W / D / L | Pentanomial | Triggers / kept sits / missed per game |
+|---|---|---|---|---|---|---|
+| hybrid (defaults) | 273 | **0.502** | [0.438, 0.562] | 136 / 2 / 135 | [39, 0, 57, 2, 38] | 11.2 / 0.35 / 0.15 |
+| hybrid_p300m0 | 149 | **0.456** | [0.339, 0.532] | 68 / 0 / 81 | [24, 0, 33, 0, 17] | 9.9 / 0.99 / 0.30 |
+
+On the 149 schedule slots both played (same seed, same openings): hybrid 0.497, p300m0 0.456; 93 of 149 results the
+same.
+
+Kept sits in the games (from the event logs): defaults 95 kept, the event landed first 53 times (waits 106-360 ms),
+missed (the event seat had not moved by the wake) 42, and in 14 of the 95 the event seat was already sitting when we
+sat (the arena cannot see a sit that began a few ms earlier). p300m0: 147 kept, 103 landed, 44 missed, 19 already
+sitting. When we are behind, the opponent is ahead and nodur's gate lets it sit: T3's bet that a thinking seat lands
+fails about 30-45% of the time in these matches. Games in which the contender kept at least one hybrid sit scored
+0.386 (83 games; p300m0 0.372, 78 games) against 0.553 (190; p300m0 0.549, 71) without; the hybrid only fires when
+behind on clock, so this split is confounded and says nothing causal by itself.
+
+Wall: 103 min for the defaults (4 slices), 52 min for p300m0 (2 slices, beside the defaults and the scoring), plus
+about 80 min of harness scoring alongside; about 3 h in all.
+
+### Verdict and the PACE rows
+
+* **No variant beats nodur.** The defaults are a tie with nodur (0.502 [0.438, 0.562], 273 games) and close to
+  inert (0.35 kept sits per game, ~45% of them missed events); the most permissive variant keeps three times as many
+  sits and scores lower (0.456 [0.339, 0.532], 149 games; the CI still includes 0.5). On positions every variant moves
+  away from it13 @ 32k exactly where it sits. Test 5.1's success bar (score above 0.5 with the CI's lower end above
+  0.47) is not met.
+* **Pick for the PACE rows (least bad): `hybrid` with the H3 defaults** (`{"durative_tree": false, "sit_gate": true,
+  "hybrid": true}`, i.e. `HybridMode gate`, `HybridEventLands all`, margin 20, prior floor 150). It is the only
+  variant not below nodur locally, and at 120 s the per-node charge PACE puts on wave 2 (spec section 5.2) applies to
+  it exactly as to nodur, so `c_hybrid_120` against `c_nodur_120` isolates the hybrid. Expect it to read as nodur
+  within noise; a PACE row is still the only test at 20k nodes per search.
+* Not run: 5.1 against it13, 5.2 (`--ms-per-node 0.256,0.205`), test 3.3, `hybrid_sit` and the margin / prior
+  variants in matches.
+* What would make the hybrid act: a value signal that rates waiting above the free tempo (the network's sit plane
+  is v3's, trained on lead > 0 sits only), or H1's durative probe. The 30-45% missed-event rate also caps any gain
+  from the timing side until the arena can tell a thinking opponent from a sitting one sooner.
