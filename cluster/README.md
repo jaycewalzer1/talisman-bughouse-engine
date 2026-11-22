@@ -136,7 +136,7 @@ bash cluster/status_wave2c.sh                 # queue, build, GPU check, rows, l
 .venv/bin/python cluster/decide_full_run.py   # GO / NO-GO with reasons, and the full run's command on GO
 ```
 
-The round needs the wave 2d (hybrid) engine: `cluster/wave2_engine.ref` pins wave2-hivemind `e5f3aae`, so that
+The round needs the wave 2d (hybrid) engine: `cluster/wave2_engine.ref` pins wave2-hivemind `4b45129` (e5f3aae plus the 2026-11-22 hybrid review fixes), so that
 commit must be on the fork first (`git -C third_party/wave2-hivemind push fork talisman/wave2`), and custom-engine
 pushed, before `launch_wave2c.sh` runs on PACE.
 
