@@ -66,6 +66,11 @@ CONFIGS = {
     "nodur": {"kind": "wave2", "flags": {"durative_tree": False, "sit_gate": True}},
     "durative_on": {"kind": "wave2", "flags": {}},
     "continuity": {"kind": "wave2", "flags": {"continuity": True}},
+    # spec v6, the hybrid (H3): nodur plus the event-gated root sit; hybrid_none is its inert first draft (the
+    # opponent may sit back at depth 1), the ablation of HybridEventLands
+    "hybrid": {"kind": "wave2", "flags": {"durative_tree": False, "sit_gate": True, "hybrid": True}},
+    "hybrid_none": {"kind": "wave2", "flags": {"durative_tree": False, "sit_gate": True, "hybrid": True,
+                                               "hybrid_event_lands": "none"}},
     "it13": {"kind": "upstream"},
 }
 
