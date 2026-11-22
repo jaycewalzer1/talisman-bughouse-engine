@@ -210,6 +210,30 @@ RUN=full1 CONFIG=nodur WIDE=0 CHAIN=127 GAMES_PER_ITER=50000 bash cluster/launch
 same settings), submits CHAIN chained 16 h `wave2_iterate.sbatch` jobs (`-J full_<RUN>`, `--dependency=singleton`,
 one iteration per job, `MAX_ITER` 10 so leftover jobs exit at once) and `cluster/full_run_watchdog.sh` (cancels the
 chain on a failed job or a gate under 0.40 vs it13). `CONFIG` sets `WAVE2_EXTRA` from `cluster/wave2c_configs.py`.
-The estimate is 10 x (50,000 + 500) / R + 10 x 1.3 GPU-hours (about 1,700 at R = 300). The chain uses one GPU at a
-time: rl-loop's `--distributed` self-play refuses wave 2 options, so wall clock is about the GPU-hour total (1,700
-GPU-hours is about 71 days). Splitting self-play over GPUs is not built.
+The estimate is 10 x (50,000 + 500) / R + 10 x 1.3 GPU-hours (about 1,700 at R = 300). Without workers the chain
+uses one GPU at a time, so wall clock is about the GPU-hour total.
+
+### Concurrent self-play, budgets and the final match
+
+`WORKERS=K` spreads each iteration's self-play over K more GPUs on the same lineage (rl-loop `--shared-selfplay` in
+`third_party/wave2-hivemind`): the main `full_<RUN>` job claims self-play segments through files on the shared
+filesystem (`rl-itN/stages/segNN.claim`, heartbeat every minute, taken over after 15 minutes without one), and at the
+start of each iteration's self-play its hook (`cluster/selfplay_workers.sh`) tops up K `sp_<RUN>` worker jobs that
+claim and play the other segments, then exit. The main job plays validation while they finish, then trains and gates
+alone, so no worker holds a GPU through training. `GPU_HOURS=N` caps the run: the watchdog sums the GPU-hours of
+`full_<RUN>` and `sp_<RUN>` and at N writes `STOP_WORKERS`, touches `rl-loop.stop` (the main job exits before its
+next stage) and cancels pending jobs. A worker killed mid-segment loses nothing: its claim goes stale and the segment
+resumes from its checkpoint in whoever takes it.
+
+```bash
+.venv/bin/python cluster/gpu_budget.py           # balance, measured $/GPU-h, GPU-h left, a plan for half of it
+RUN=par1 CONFIG=hybrid WIDE=0 WORKERS=7 GAMES_PER_ITER=20000 ITERS=6 CHAIN=4 GPU_HOURS=900 bash cluster/launch_full_run.sh
+.venv/bin/python cluster/training_curve.py runs/full/par1   # gate win rate per 100 games per iteration (dev panel)
+ENGINES=my_engines.json NAME=final1 bash cluster/launch_final_match.sh   # 3-engine round robin, 200 games a pair
+.venv/bin/python cluster/final_match_status.py runs/final_match/final1
+```
+
+`gpu_budget.py` measures the account's dollar rate per GPU-hour from its own snapshots (`runs/budget/snapshots.tsv`,
+one per call; it needs 20 GPU-hours between the first and last) and until then assumes PACE's 2022 RTX 6000 rate,
+saying so. It keeps 30 GPU-hours back for the final match. `launch_final_match.sh` takes a JSON list of three engines
+(`cluster/final_match_engines.example.json`) and copies each model into the match folder at launch.

@@ -51,6 +51,14 @@
 # W2 (third_party/wave2-hivemind), WIDE (0), AB (0), ARRIVALS_WEIGHT (0.05), RUNS_DIR (runs/wave2: the parent of
 # <RUN>; the wave 2c round uses runs/wave2c/<ROUND>, the full run runs/full), MAX_ITER (empty; the last iteration the
 # lineage may reach: a chained job that finds it reached exits without training, cluster/launch_full_run.sh).
+#
+# Concurrent self-play (one lineage, many GPUs; third_party/wave2-hivemind rl-loop --shared-selfplay):
+#   WORKERS=K  the main job claims its self-play segments on the shared filesystem and, at the start of each
+#              iteration's self-play, tops up K worker jobs (-J sp_<RUN>, cluster/selfplay_workers.sh) that play the
+#              other segments of that iteration and exit when none is left. The main job plays validation while they
+#              finish, then trains and gates alone. Use a SEGMENT_GAMES of 250-500, so a segment is under an hour.
+#   WORKER=1   this job is such a worker (selfplay_workers.sh submits it with the main job's settings): it needs the
+#              main job's engines, env and init steps done and runs rl-loop --selfplay-worker. Not with AB=1.
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 [ -n "${SLURM_JOB_ID:-}" ] && source cluster/env.sh
@@ -86,12 +94,17 @@ NO_GATE="${NO_GATE:-0}"
 LINEAGE_SET="${LINEAGE:-}"
 ALLOW_STOCK="${ALLOW_STOCK:-0}"
 MAX_ITER="${MAX_ITER:-}"
+WORKERS="${WORKERS:-0}"
+WORKER="${WORKER:-0}"
 
 die() { echo "wave2_iterate: $*" >&2; exit 1; }
 done_step() { echo "${2:-}" > "$ROOT/.done_$1"; }
 is_done() { [ -f "$ROOT/.done_$1" ]; }
 case "$WIDE" in 0|1) ;; *) die "WIDE is 0 or 1" ;; esac
 case "$AB" in 0|1) ;; *) die "AB is 0 or 1" ;; esac
+case "$WORKER" in 0|1) ;; *) die "WORKER is 0 or 1" ;; esac
+case "$WORKERS" in ''|*[!0-9]*) die "WORKERS is a number" ;; esac
+if [ "$AB" = 1 ] && { [ "$WORKER" = 1 ] || [ "$WORKERS" -gt 0 ]; }; then die "WORKERS/WORKER do not combine with AB=1"; fi
 
 [ -d "$W2/.git" ] || die "$W2 missing: run cluster/build.sh (it clones branch talisman/wave2 and builds it)"
 mkdir -p "$ROOT"
@@ -107,6 +120,10 @@ echo "wave 2: base mix ${BASE_MIX:-preset}  extra ${WAVE2_EXTRA:-none}  allow st
 echo "wave 2b: AB $AB  WIDE ${WIDE_SET:-unset}  arrivals weight $ARRIVALS_WEIGHT"
 
 # ------------------------------------------------------------------ engines
+if [ "$WORKER" = 1 ]; then
+  # A worker never builds: the main job's engines, env and init must be done (it submits the workers after them).
+  for step in engines env init; do is_done "$step" || die "worker: $ROOT/.done_$step missing (the main job sets it up)"; done
+fi
 if ! is_done engines; then
   [ -x "$MATCH_ENGINE" ] || die "match engine $MATCH_ENGINE missing: run cluster/build.sh (WAVE2=1, the default)"
   # build-sp1 at the checkout's commit (missing or stale: cluster/build_sp1.sh, which also holds the A/B arms' lock).
@@ -150,16 +167,8 @@ if ! is_done init; then
 fi
 
 # ------------------------------------------------------------------ loop
-finished() { find "$ROOT/runs" -path '*/rl-it*/stages/iteration.done' 2>/dev/null | wc -l | tr -d ' '; }
-FIRST=$(( $(finished) + 1 ))
-LAST=$(( FIRST + ${1:-$ITERS} - 1 ))
-if [ -n "$MAX_ITER" ] && [ "$LAST" -gt "$MAX_ITER" ]; then LAST=$MAX_ITER; fi
-if [ "$FIRST" -gt "$LAST" ]; then
-  echo "== $ROOT has $(finished) iterations, MAX_ITER $MAX_ITER: nothing left to run"
-else
-if ! is_done "loop_$LAST"; then
-  echo; echo "== rl-loop it$FIRST..it$LAST"; date
-  ARGS=(--wave2 --no-upload --keep-selfplay --pause-for "" --last "$LAST" --runs "$ROOT/runs"
+loop_args() {  # the rl-loop arguments shared by the main job and its workers
+  ARGS=(--wave2 --no-upload --keep-selfplay --pause-for "" --runs "$ROOT/runs"
         --games "$GAMES_PER_ITER" --segment-games "$SEGMENT_GAMES" --val-games "$VAL_GAMES"
         --parallel-games "$PARALLEL_GAMES" --window "$WINDOW" --new-passes "$NEW_PASSES"
         --replay-passes "$REPLAY_PASSES" --batch-size "$BATCH_SIZE" --lr "$LR" --trunk-lr "$TRUNK_LR"
@@ -170,6 +179,34 @@ if ! is_done "loop_$LAST"; then
   [ "$NO_GATE" = 1 ] && ARGS+=(--no-gate)
   [ "$ALLOW_STOCK" = 1 ] && ARGS+=(--allow-stock-engine)
   [ "$ARM_WIDE" = 1 ] && ARGS+=(--wide --arrivals-weight "$ARRIVALS_WEIGHT")
+  return 0
+}
+if [ "$WORKER" = 1 ]; then
+  echo; echo "== self-play worker for $ROOT"; date
+  loop_args
+  # shellcheck disable=SC2086  # WAVE2_EXTRA is split on purpose
+  (cd "$W2" && "$PY" -m hivemind rl-loop "${ARGS[@]}" --selfplay-worker $WAVE2_EXTRA) \
+    || die "worker rl-loop failed (see $ROOT/runs/rl-loop.log)"
+  return 0
+fi
+finished() { find "$ROOT/runs" -path '*/rl-it*/stages/iteration.done' 2>/dev/null | wc -l | tr -d ' '; }
+FIRST=$(( $(finished) + 1 ))
+LAST=$(( FIRST + ${1:-$ITERS} - 1 ))
+if [ -n "$MAX_ITER" ] && [ "$LAST" -gt "$MAX_ITER" ]; then LAST=$MAX_ITER; fi
+if [ "$FIRST" -gt "$LAST" ]; then
+  echo "== $ROOT has $(finished) iterations, MAX_ITER $MAX_ITER: nothing left to run"
+else
+if ! is_done "loop_$LAST"; then
+  echo; echo "== rl-loop it$FIRST..it$LAST"; date
+  loop_args
+  ARGS+=(--last "$LAST")
+  if [ "$WORKERS" -gt 0 ]; then
+    # The hook runs in rl-loop's environment: export what selfplay_workers.sh passes on to the workers.
+    export RUN RUNS_DIR WIDE AB=0 GAMES_PER_ITER SEGMENT_GAMES VAL_GAMES PARALLEL_GAMES WINDOW NEW_PASSES \
+      REPLAY_PASSES BATCH_SIZE BASE_MIX WAVE2_EXTRA LR TRUNK_LR PROMOTE_ABOVE MATCH_GAMES MATCH_MS NO_GATE \
+      ALLOW_STOCK W2 WORKERS LINEAGE ARRIVALS_WEIGHT SP_ENGINE MATCH_ENGINE
+    ARGS+=(--shared-selfplay --selfplay-hook "bash $REPO/cluster/selfplay_workers.sh")
+  fi
   # shellcheck disable=SC2086  # WAVE2_EXTRA is split on purpose
   (cd "$W2" && "$PY" -m hivemind rl-loop "${ARGS[@]}" $WAVE2_EXTRA) || die "rl-loop failed (see $ROOT/runs/rl-loop.log)"
   done_step "loop_$LAST"
@@ -227,6 +264,7 @@ else
   arm_setup "$WIDE"
   run_arm "$ITERS"
 fi
+if [ "$WORKER" = 1 ]; then echo "worker done"; exit 0; fi
 
 if [ "$AB" = 1 ]; then
   "$PY" - "$BASE" <<'EOF'

@@ -48,3 +48,9 @@
 .dt-page .nn-stage .dt-bars svg { width: auto; max-width: 100%; min-width: 0; }
 .dt-grid { stroke: var(--line); }
 .dt-xlabel { fill: var(--text); font-size: 13.5px; font-weight: 500; text-anchor: middle; font-family: var(--font); }
+.dt-train .nn-try { margin: 0 0 8px; }
+.dt-empty { color: var(--dim); margin: 12px 4px; }
+.dt-its { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
+.dt-it { background: var(--bg); border: 1px solid var(--line); border-left: 5px solid; border-radius: 6px; padding: 8px 10px; line-height: 1.45; }
+.dt-it ul { margin: 4px 0 0; padding-left: 1.1em; color: var(--dim); }
+.dt-settings { color: var(--dim); margin: 10px 4px 0; overflow-wrap: anywhere; }

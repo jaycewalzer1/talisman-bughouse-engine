@@ -4,6 +4,7 @@
 // docs/durative_diagnosis.md, docs/custom_engine_spec_v5_continuity.md, docs/custom_engine_spec_v6_hybrid.md.
 
 import { type ReactNode, useEffect, useState } from 'react'
+import TrainingCurve from './TrainingCurve'
 
 type Mode = 'v3' | 'durative' | 'hybrid'
 type Lane = 0 | 1 | 2 | 3
@@ -34,7 +35,7 @@ const PICTURES: Record<Mode, Level[]> = {
   ],
 }
 
-interface Step { label: string; title: string; mode: Mode | 'chart' | 'progress'; body: ReactNode; refs: string[] }
+interface Step { label: string; title: string; mode: Mode | 'chart' | 'progress' | 'training'; body: ReactNode; refs: string[] }
 
 const STEPS: Step[] = [
   {
@@ -168,6 +169,21 @@ const STEPS: Step[] = [
         games.</p>
     </>,
     refs: ['runs/cluster_check_final.txt:44 (it04 vs it13)', 'talisman-ab2 runs/wave2/ab2/*/results.tsv', 'runs/wave2c/r4 long + rows'],
+  },
+  {
+    label: 'Training', title: 'Training, iteration by iteration', mode: 'training',
+    body: <>
+      <p>Each iteration plays self-play games with the current <b>generator</b>, trains a candidate on them (plus a
+        replay window of earlier iterations), then plays two gate matches at 100 ms per move: against the generator
+        (promotion needs more than 0.5) and against it13, the fixed yardstick.</p>
+      <p>The chart cuts each gate into blocks of 100 games in play order. Each colour is one iteration. Filled dots are
+        against it13 and hollow dots against the iteration's generator. The bar is the whole gate's score and the
+        band its 95% range. Training is converging up if the bars step up from colour to colour against it13.</p>
+      <p>A single 100-game block is noisy (±0.10), so read the bars and bands, not single dots. The cards under the
+        chart say what changed in each iteration: a new generator after a promotion, how much was replayed, and
+        flag-loss drift in self-play.</p>
+    </>,
+    refs: ['cluster/training_curve.py', 'runs/full/<RUN>/runs/rl-itN/arms/match_*/games.tsv'],
   },
 ]
 
@@ -390,6 +406,7 @@ export default function DurativeTree() {
 
       <div className="nn-layout">
         <div>
+          {step.mode === 'training' && <div className="nn-stage"><TrainingCurve /></div>}
           {step.mode === 'progress' && (
             <div className="nn-stage dt-charts">
               <Trend title="Arena strength vs upstream it13 · 120 s, equal clocks · bar = 95% range" points={ARENA_HISTORY.map(p => {

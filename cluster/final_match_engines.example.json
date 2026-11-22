@@ -1,0 +1,9 @@
+[
+  {"name": "hybrid-trained", "kind": "wave2",
+   "options": {"durative_tree": false, "sit_gate": true, "hybrid": true},
+   "model": "/storage/project/ps-bughouse-0/jwalzer3/talisman-bughouse-engine/runs/full/hybrid1/models/twin-s-clock-w2.onnx"},
+  {"name": "hybrid-it13", "kind": "wave2",
+   "options": {"durative_tree": false, "sit_gate": true, "hybrid": true},
+   "model": null},
+  {"name": "upstream-it13", "kind": "upstream", "options": {}, "model": null}
+]

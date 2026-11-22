@@ -21,6 +21,14 @@ if [ -x "$SP/hivemind" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$want" ]; then
   echo "build-sp1 up to date at $want"
   exit 0
 fi
+# Built from another commit with the same engine/ tree (a Python-only change, e.g. rl-loop): the binary is the same,
+# so restamp instead of relinking a binary a running run may be using.
+built=$(cat "$STAMP" 2>/dev/null || true)
+if [ -x "$SP/hivemind" ] && [ -n "$built" ] && git -C "$W2" diff --quiet "$built" "$want" -- engine 2>/dev/null; then
+  echo "build-sp1 built at $built has the same engine/ as $want: restamped, no rebuild"
+  echo "$want" > "$STAMP"
+  exit 0
+fi
 echo "== building the one-worker self-play engine at $want ($JOBS jobs; was $(cat "$STAMP" 2>/dev/null || echo 'unstamped or missing'))"
 if [ -n "${SLURM_JOB_ID:-}" ]; then
   BACKEND=(-DHIVEMIND_BACKEND=tensorrt -DTensorRT_DIR="$TensorRT_DIR" -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_TOOLKIT_ROOT_DIR"

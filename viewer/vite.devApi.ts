@@ -14,6 +14,23 @@ const PACE_REPO = '/storage/project/ps-bughouse-0/jwalzer3/talisman-bughouse-eng
 const PACE_CMD = `cd ${PACE_REPO} && date && squeue -u $USER -h -o "%j %T %M" && echo == STATUS && bash cluster/status_wave2c.sh 2>&1`
 let paceCache: { at: number; ok: boolean; text: string } | null = null
 
+// GET /api/training -> { at, ok, text } where text is cluster/training_curve.py's JSON for every full run and the ab2
+// arms (the talisman-ab2 clone), for durative.html's Training step. Same ssh rules as /api/pace.
+const TRAINING_CMD = `cd ${PACE_REPO} && .venv/bin/python cluster/training_curve.py $(ls -d runs/full/*/ 2>/dev/null) ` +
+  `../talisman-ab2/runs/wave2/ab2/narrow ../talisman-ab2/runs/wave2/ab2/wide`
+let trainingCache: { at: number; ok: boolean; text: string } | null = null
+
+function readTraining(): Promise<{ at: number; ok: boolean; text: string }> {
+  if (trainingCache && Date.now() - trainingCache.at < 120_000) return Promise.resolve(trainingCache)
+  return new Promise(done => {
+    execFile('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pace', TRAINING_CMD],
+      { timeout: 120_000, maxBuffer: 32 << 20 }, (err, stdout, stderr) => {
+        trainingCache = { at: Date.now(), ok: !err, text: err ? `${stderr || err.message}` : stdout }
+        done(trainingCache)
+      })
+  })
+}
+
 function readPace(): Promise<{ at: number; ok: boolean; text: string }> {
   if (paceCache && Date.now() - paceCache.at < 60_000) return Promise.resolve(paceCache)
   return new Promise(done => {
@@ -48,6 +65,12 @@ export function runsApi(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/pace', (_req, res) => {
         readPace().then(r => {
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(r))
+        })
+      })
+      server.middlewares.use('/api/training', (_req, res) => {
+        readTraining().then(r => {
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify(r))
         })
