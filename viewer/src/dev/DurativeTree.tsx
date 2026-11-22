@@ -34,7 +34,7 @@ const PICTURES: Record<Mode, Level[]> = {
   ],
 }
 
-interface Step { label: string; title: string; mode: Mode | 'chart'; body: ReactNode; refs: string[] }
+interface Step { label: string; title: string; mode: Mode | 'chart' | 'progress'; body: ReactNode; refs: string[] }
 
 const STEPS: Step[] = [
   {
@@ -152,7 +152,73 @@ const STEPS: Step[] = [
     body: null,
     refs: ['bash cluster/status_wave2c.sh', '.venv/bin/python cluster/decide_full_run.py'],
   },
+  {
+    label: 'Progress', title: 'Is it getting better?', mode: 'progress',
+    body: <>
+      <p><b>Engine design: yes, clearly.</b> At equal 120 s clocks against upstream it13, we went from it04 at 0.165
+        to the hybrid at 0.513 over ~1,270 games. Most of that jump (0.165 → ~0.45) came from building on it13's
+        network instead of it04's. Our own work since then adds the step from nodur 0.449 to hybrid 0.513. The two
+        ranges don't overlap, so that ~+45 Elo is real. The durative tree never left the 0.19–0.27 band.</p>
+      <p><b>Beating it13: not yet.</b> 0.513 [0.492, 0.545] is even with it13. The range includes 0.5.</p>
+      <p><b>Training: no measurable gain yet.</b> Each self-play → retrain iteration is gated by 400 games at
+        100 ms. Every gate so far is within ±0.05 of 0.5. The wide net's 0.534 after two iterations is the best
+        result, but its range still crosses 0.5 and it lost to its own generator (0.478). Two iterations of 10k games
+        is tiny next to the planned 10 × 50k. The 60-game smoke gates (hybrid 0.60) are too small to read.</p>
+      <p>Narrow it2's gate is re-running now (ab2_w0). Before the timeout it stood at 0.5075 against it1 over 133
+        games.</p>
+    </>,
+    refs: ['runs/cluster_check_final.txt:44 (it04 vs it13)', 'talisman-ab2 runs/wave2/ab2/*/results.tsv', 'runs/wave2c/r4 long + rows'],
+  },
 ]
+
+// Score vs upstream it13 with a normal-approximation 95% range (conservative: treats every game as win/loss).
+const ci = (p: number, n: number) => { const h = 1.96 * Math.sqrt(p * (1 - p) / n); return { lo: +(p - h).toFixed(3), hi: +(p + h).toFixed(3) } }
+interface Point { label: string; sub: string; score: number; lo: number; hi: number; games: number; kind: string }
+const ARENA_HISTORY: Point[] = [
+  { label: 'it04 (start)', sub: '11-18', score: .165, lo: .141, hi: .191, games: 1185, kind: 'k-same' },
+  { label: 'durative tree', sub: '11-19', score: .227, lo: .180, hi: .285, games: 300, kind: 'k-dur' },
+  { label: 'nodur', sub: '11-19', score: .436, lo: .361, hi: .491, games: 266, kind: 'k-nodur' },
+  { label: 'durative + v5 fixes', sub: '11-22', score: .252, lo: .206, hi: .294, games: 296, kind: 'k-dur' },
+  { label: 'nodur (long)', sub: '11-22', score: .449, lo: .420, hi: .475, games: 1158, kind: 'k-nodur' },
+  { label: 'hybrid (long)', sub: '11-22', score: .513, lo: .492, hi: .545, games: 1274, kind: 'k-hybrid' },
+]
+const TRAINING: Point[] = [
+  { label: 'it13 (it0)', sub: 'start', score: .5, lo: .5, hi: .5, games: 0, kind: 'k-same' },
+  { label: 'narrow it1', sub: '10k games', score: .5075, ...ci(.5075, 400), games: 400, kind: 'k-nodur' },
+  { label: 'wide it1', sub: '10k games', score: .5188, ...ci(.5188, 400), games: 400, kind: 'k-nodur' },
+  { label: 'wide it2', sub: '+10k games', score: .5337, ...ci(.5337, 400), games: 400, kind: 'k-nodur' },
+  { label: 'hybrid smoke', sub: '200 games', score: .6, ...ci(.6, 60), games: 60, kind: 'k-hybrid' },
+]
+
+function Trend({ title, points, yMin, yMax }: { title: string; points: Point[]; yMin: number; yMax: number }) {
+  const W = 900, Hh = 300, L = 60, R = 20, Tp = 20, B = 62
+  const x = (i: number) => L + (i + .5) * (W - L - R) / points.length
+  const y = (v: number) => Tp + (1 - (v - yMin) / (yMax - yMin)) * (Hh - Tp - B)
+  const ticks = [] as number[]
+  for (let v = yMin; v <= yMax + 1e-9; v += .1) ticks.push(+v.toFixed(2))
+  return (
+    <figure className="dt-bars">
+      <figcaption>{title}</figcaption>
+      <svg viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="xMinYMin meet" style={{ height: '34vh' }} role="img" aria-label={title}>
+        {ticks.map(v => (
+          <g key={v}>
+            <line className={v === .5 ? 'dt-half' : 'dt-grid'} x1={L} x2={W - R} y1={y(v)} y2={y(v)} />
+            <text className="dt-tick" x={L - 22} y={y(v) + 4}>{v.toFixed(1)}</text>
+          </g>
+        ))}
+        {points.map((p, i) => (
+          <g key={p.label} className={p.kind}>
+            {p.hi > p.lo && <line className="dt-ci" x1={x(i)} x2={x(i)} y1={y(p.lo)} y2={y(p.hi)} />}
+            <circle className="dt-pt" cx={x(i)} cy={y(p.score)} r={7} />
+            <text className="dt-row-val" x={x(i) + 12} y={y(p.score) + 4}>{p.score.toFixed(3)}</text>
+            <text className="dt-xlabel" x={x(i)} y={Hh - B + 22}>{p.label}</text>
+            <text className="dt-tick" x={x(i)} y={Hh - B + 40}>{p.sub}{p.games ? ` · ${p.games} g` : ''}</text>
+          </g>
+        ))}
+      </svg>
+    </figure>
+  )
+}
 
 // Snapshot read 2026-11-22 12:17 EST, shown until /api/pace answers.
 const SNAPSHOT: Pace = {
@@ -273,7 +339,10 @@ function Bars({ title, rows, highlight }: { title: string; rows: Row[]; highligh
 const kind = (r: Row) => /hybrid|h_best/.test(r.name) ? 'k-hybrid' : /nodur/.test(r.name) ? 'k-nodur' : /same/.test(r.name) ? 'k-same' : 'k-dur'
 
 export default function DurativeTree() {
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(() => {
+    const want = new URLSearchParams(location.search).get('step')
+    return Math.max(0, STEPS.findIndex(s => s.label.toLowerCase() === want))
+  })
   const [pace, setPace] = useState<Pace>(SNAPSHOT)
   const [loading, setLoading] = useState(false)
   const step = STEPS[index]
@@ -321,7 +390,23 @@ export default function DurativeTree() {
 
       <div className="nn-layout">
         <div>
-          {step.mode !== 'chart' && (
+          {step.mode === 'progress' && (
+            <div className="nn-stage dt-charts">
+              <Trend title="Arena strength vs upstream it13 · 120 s, equal clocks · bar = 95% range" points={ARENA_HISTORY.map(p => {
+                const live = pace.long.find(r => (p.label === 'hybrid (long)' && r.name === 'l_hybrid_120') || (p.label === 'nodur (long)' && r.name === 'l_nodur_120'))
+                return live ? { ...p, score: live.score, lo: live.lo, hi: live.hi, games: live.games } : p
+              })} yMin={0.1} yMax={0.6} />
+              <Trend title="Training iterations (nodur config) · gate vs it13 at 100 ms, 400 games · smoke = 60 games" points={TRAINING} yMin={0.4} yMax={0.8} />
+              <div className="nn-legend">
+                <span><i className="dt-key k-hybrid" /> hybrid</span>
+                <span><i className="dt-key k-nodur" /> durative off + gate</span>
+                <span><i className="dt-key k-dur" /> durative on</span>
+                <span><i className="dt-key k-same" /> baseline</span>
+                <span>dashed = 0.5, even with it13</span>
+              </div>
+            </div>
+          )}
+          {(step.mode === 'v3' || step.mode === 'durative' || step.mode === 'hybrid') && (
             <div className="nn-stage">
               <Timeline mode={step.mode} />
               <div className="nn-legend">
