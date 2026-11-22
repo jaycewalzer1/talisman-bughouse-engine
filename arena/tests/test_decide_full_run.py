@@ -373,7 +373,7 @@ def fake_slurm(tmp_path):
         os.chmod(bin_dir / f, 0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_DIR": str(tmp_path), "NO_PULL": "1",
            "USER": os.environ.get("USER", "me")}
-    for k in ("SBATCH_DEPENDENCY", "ROUND", "RUN", "CONFIG", "WAVE2_EXTRA", "OUT", "NAME"):
+    for k in ("SBATCH_DEPENDENCY", "ROUND", "RUN", "CONFIG", "WAVE2_EXTRA", "OUT", "NAME", "ALLOW_BUSY", "BUILD"):
         env.pop(k, None)
     return tmp_path, env
 

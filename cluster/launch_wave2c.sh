@@ -42,6 +42,7 @@ if [ -n "$busy" ] && [ "${ALLOW_BUSY:-0}" != 1 ]; then
   echo "spec v5 parity 0.4/0.6)." >&2
   exit 1
 fi
+unset ALLOW_BUSY  # sbatch exports the environment: the build's own launch tests must not see it
 if [ -d "$W2/.git" ] && [ "$(git -C "$W2" rev-parse HEAD)" != "$pin" ]; then
   if [ -n "$(git -C "$W2" status --porcelain --untracked-files=no)" ]; then
     echo "$W2 has uncommitted changes and is not at the pin $pin: commit or move them first" >&2
