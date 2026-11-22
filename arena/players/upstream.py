@@ -101,15 +101,35 @@ WAVE2_CONTINUITY_FLAGS = {"team_tree_reuse": ("TeamTreeReuse", False), "joint_pl
                           "wait_node_acting_eval": ("WaitNodeActingEval", False),
                           "blockable_check_not_mate": ("BlockableCheckNotMate", False)}
 WAVE2_FLAGS.update(WAVE2_CONTINUITY_FLAGS)
+# Spec v6, the hybrid (docs/custom_engine_spec_v6_hybrid.md): HybridMode off and its knobs at the engine's defaults.
+# Like the wave 2c flags they are sent only when not default, so a row without them sends what it sent before; a
+# row that sets one checks at start-up that the binary advertises it. The mode acts only on the v3 tree: a row
+# with the hybrid sets durative_tree false (and sit_gate true, nodur's gate; wave2_flag_options refuses the mode
+# with DurativeTree true).
+WAVE2_HYBRID_FLAGS = {"hybrid_mode": ("HybridMode", "off"), "hybrid_event_lands": ("HybridEventLands", "all"),
+                      "hybrid_max_wait_ms": ("HybridMaxWaitMs", 1000),
+                      "hybrid_min_clock_ms": ("HybridMinClockMs", 3000),
+                      "hybrid_margin_permille": ("HybridMarginPermille", 20),
+                      "hybrid_pass_prior_permille": ("HybridPassPriorPermille", 150)}
+WAVE2_FLAGS.update(WAVE2_HYBRID_FLAGS)
+# Combo flags and their values (the engine's combo options; probe and priced are specified, not built).
+WAVE2_COMBO_VALUES = {"HybridMode": ("off", "gate"), "HybridEventLands": ("all", "sit", "none")}
 # Integer flags and their ranges (the engine's spin limits); every other flag is a check (true/false).
 WAVE2_INT_RANGES = {"PassCapK": (1, 64), "TeamTreeReuseToleranceMs": (0, 5000), "JointPlanFreePermille": (0, 1000),
-                    "PlanCarryPermille": (0, 1000)}
+                    "PlanCarryPermille": (0, 1000), "HybridMaxWaitMs": (0, 10000), "HybridMinClockMs": (0, 600000),
+                    "HybridMarginPermille": (0, 1000), "HybridPassPriorPermille": (0, 1000)}
+HYBRID_UCI_OPTIONS = frozenset({*(uci for uci, _ in WAVE2_HYBRID_FLAGS.values()), "Hybrid"})
 # Player-option presets, expanded in Python (no preset option is sent, so option order never matters): "continuity"
 # true/false sets the switches it names that the row does not set itself: the three wave 2c fixes and the two
 # correctness fixes of the durative diagnosis (D1, D5); the knobs and wait_node_acting_eval (D3, no shown gain) are
 # untouched.
 WAVE2_PRESETS = {"continuity": ("team_tree_reuse", "joint_plans", "plan_carry", "own_pace_below_root",
-                                "blockable_check_not_mate")}
+                                "blockable_check_not_mate"),
+                 # spec v6: "hybrid" true/false sets hybrid_mode gate/off (WAVE2_PRESET_VALUES), unless the row
+                 # sets hybrid_mode itself
+                 "hybrid": ("hybrid_mode",)}
+# What a preset's true/false sets its switches to when they are not checks.
+WAVE2_PRESET_VALUES = {"hybrid": {True: "gate", False: "off"}}
 # Switches whose engine state carries from one search to the next (the team tree, the carried plans). With one on,
 # the process keeps its tree between searches (no ucinewgame per search) and the controller sends one ucinewgame at
 # its first search instead. JointPlans works inside one search and does not imply it (spec v5, review change 11).
@@ -286,6 +306,10 @@ class UpstreamHivemindProcess(HivemindProcess):
         if missing:  # a pre-2c binary would ignore them and the row would measure nothing (spec v5)
             self.close()
             raise RuntimeError(f"{self.binary} does not advertise {missing}: build the wave 2c engine")
+        missing = sorted(k for k in self.extra_options if k in HYBRID_UCI_OPTIONS and k not in advertised)
+        if missing:  # a pre-2d binary would ignore them: the row would be nodur under another name (spec v6)
+            self.close()
+            raise RuntimeError(f"{self.binary} does not advertise {missing}: build the wave 2d (hybrid) engine")
         self._opts = {}
         for k, v in {"Ponder": "false", "BackgroundSearch": "false", "TimeModel": "clock",
                      **self.extra_options}.items():
@@ -341,7 +365,7 @@ class UpstreamHivemindProcess(HivemindProcess):
         return parse_policy(lines)
 
     def _parse(self, lines: list[str], best: str, wall_ms: int) -> SearchResult:
-        return parse_continuity(lines, HivemindProcess._parse(lines, best, wall_ms))
+        return parse_hybrid(lines, parse_continuity(lines, HivemindProcess._parse(lines, best, wall_ms)))
 
     def search(self, *a, **k):  # our fork's dialect (TimeAdvantage, clocks suffix) does not apply
         raise NotImplementedError("UpstreamHivemindProcess speaks upstream's UCI: use search_clock()")
@@ -371,6 +395,31 @@ def parse_continuity(lines: list[str], res: SearchResult) -> SearchResult:
             rest = line[len(PLAN_CARRY_PREFIX):]
             if " weight " in f" {rest} " and "dropped" not in rest:
                 res.plan_carried += 1
+    return res
+
+
+HYBRID_PREFIX = "info string Hybrid: "
+_HYBRID_SIT_RE = re.compile(r"^sit boards (A|B|AB|-) event (\S+)/(\S+) mode (\S+)(?: \(([^)]*)\))?")
+_HYBRID_CHOSE_RE = re.compile(r"^chose (sit A|sit B|act) .*? \(([^()]*)")
+
+
+def parse_hybrid(lines: list[str], res: SearchResult) -> SearchResult:
+    """Fill ``res.hybrid`` from the wave 2 engine's spec v6 info strings: ``Hybrid: sit boards <A|B|-> event
+    <msA>/<msB> mode <mode> [(<reason>)]`` (the trigger, once per search) and ``Hybrid: chose <sit A|sit B|act>
+    q_sit <q> q_act <q> visits <n>/<n> (<reason>[ (assumes event)])`` (only when it fired). Engines that
+    print neither leave None."""
+    for line in lines:
+        if not line.startswith(HYBRID_PREFIX):
+            continue
+        rest = line[len(HYBRID_PREFIX):].strip()
+        m, c = _HYBRID_SIT_RE.match(rest), _HYBRID_CHOSE_RE.match(rest)
+        if m:
+            board = None if m.group(1) == "-" else m.group(1)
+            event = m.group(2) if board == "A" else m.group(3) if board == "B" else "-"
+            res.hybrid = {"sit_board": board, "event_ms": int(event) if event.isdigit() else None,
+                          "mode": m.group(4), "reason": m.group(5), "chose": None, "choice_reason": None}
+        elif c and res.hybrid is not None:
+            res.hybrid["chose"], res.hybrid["choice_reason"] = c.group(1), c.group(2).strip()
     return res
 
 
@@ -567,7 +616,7 @@ def expand_wave2_presets(overrides: dict) -> dict:
             raise ValueError(f"{preset} must be true or false, got {v!r}")
         for key in keys:
             if out.get(key) is None:
-                out[key] = v
+                out[key] = WAVE2_PRESET_VALUES.get(preset, {}).get(v, v)
     return out
 
 
@@ -594,10 +643,19 @@ def wave2_flag_options(**overrides) -> dict:
         if n is None or not lo <= n <= hi:
             raise ValueError(f"{name} must be in {lo}..{hi}, got {k!r}")
         out[uci] = n
+    for uci, values in WAVE2_COMBO_VALUES.items():
+        if out[uci] not in values:
+            name = next(key for key, (u, _) in WAVE2_FLAGS.items() if u == uci)
+            raise ValueError(f"{name} must be one of {values}, got {out[uci]!r}")
     for uci in out:
-        if uci not in WAVE2_INT_RANGES and not isinstance(out[uci], bool):
+        if uci not in WAVE2_INT_RANGES and uci not in WAVE2_COMBO_VALUES and not isinstance(out[uci], bool):
             raise ValueError(f"{uci} must be true or false, got {out[uci]!r}")
-    for uci, default in WAVE2_CONTINUITY_FLAGS.values():
+    if out["HybridMode"] != "off" and out["DurativeTree"] is True:
+        # The hybrid adds a root sit to the v3 tree; the engine would only say it is inert.
+        raise ValueError("hybrid_mode needs durative_tree false (the hybrid acts on the v3 tree only)")
+    if out["HybridMode"] == "off" and any(out[u] != d for u, d in list(WAVE2_HYBRID_FLAGS.values())[1:]):
+        raise ValueError("a hybrid knob needs hybrid_mode gate")
+    for uci, default in (*WAVE2_CONTINUITY_FLAGS.values(), *WAVE2_HYBRID_FLAGS.values()):
         if out[uci] == default and type(out[uci]) is type(default):
             del out[uci]
     return out
@@ -814,12 +872,28 @@ class Wave2TeamController(UpstreamTeamController):
         self.reused_visits = 0  # visits those searches recovered
         self.reuse_refusals: dict[str, int] = {}  # "none (<reason>)" lines by reason
         self.plan_carries = 0  # boards whose carried plan biased a root
+        # Spec v6 (the hybrid): searches whose trigger fired, hybrid sits kept, and hybrid sits whose event did not
+        # land by the wake. ``_hybrid_wait``: the last kept sit (our seat, the event board, that board's last
+        # landing then); ``_missed``: event seats marked sitting until their board lands ({seat: that landing}).
+        self.hybrid_triggers = 0
+        self.hybrid_sits = 0
+        self.hybrid_missed = 0
+        self._hybrid_wait: tuple[str, str, int] | None = None
+        self._missed: dict[str, int] = {}
 
     def time_options(self, obs: Observation, budget_ms: int) -> dict:
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
         paces = {s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}
         self.landings.observe(obs.fens, obs.now_ms, obs.last_move_ms)
         elapsed, sitting = seat_decisions(obs, self.team, paces, budget_ms, clock_k=self.clock_k)
+        # Spec v6: an event seat a hybrid sit waited for in vain is sitting until its board lands (then T3 fails
+        # and the gate makes us move), whatever seat_decisions infers.
+        for seat, landed in list(self._missed.items()):
+            board = BOARD_OF[seat]
+            if obs.last_move_ms is None or int(obs.last_move_ms[board]) != landed or obs.to_move.get(board) != seat:
+                del self._missed[seat]
+            else:
+                sitting[seat], elapsed[seat] = 1, 0
         opts["options"] = {
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
@@ -834,11 +908,15 @@ class Wave2TeamController(UpstreamTeamController):
         return opts
 
     def decide(self, seat: str, obs: Observation) -> Decision:
+        missed = self._check_hybrid_wake(seat, obs)
         before = self.searches
         dec = super().decide(seat, obs)
+        if missed:
+            dec = _dc_replace(dec, hybrid_missed=1)
         if self.searches == before or self._cache is None:  # served from the last search: nothing new to count
             return dec
         res = self._cache[1]
+        dec = self._hybrid_decision(seat, obs, res, dec)
         if res.reused_visits:
             self.reuse_hits += 1
             self.reused_visits += res.reused_visits
@@ -853,6 +931,48 @@ class Wave2TeamController(UpstreamTeamController):
         budget = int(opts["root_move_ms"])
         return max(DEFAULT_MOVE_MS, min(self.pass_cap_k * budget, int(SIT_INFER_FACTOR * budget) + 1))
 
+    def _check_hybrid_wake(self, seat: str, obs: Observation) -> bool:
+        """Spec v6, arena wake: at our seat's first decision after a kept hybrid sit, whether the event seat's
+        board has landed since. If not (the opponent sat instead of moving), mark that seat sitting until its
+        board lands and count a missed event."""
+        wait = self._hybrid_wait
+        if wait is None or wait[0] != seat:
+            return False
+        self._hybrid_wait = None
+        _, board, landed = wait
+        if obs.last_move_ms is None or int(obs.last_move_ms[board]) != landed:
+            return False
+        event_seat = obs.to_move.get(board)
+        if event_seat is None or TEAM_OF.get(event_seat) == self.team:
+            return False
+        self._missed[event_seat] = landed
+        self.hybrid_missed += 1
+        return True
+
+    def _hybrid_decision(self, seat: str, obs: Observation, res: SearchResult, dec: Decision) -> Decision:
+        """Spec v6: count the search's trigger and kept sit, and cap a kept hybrid sit's wait at the expected
+        event time + 100 ms (a landing still wakes it sooner); remember it for _check_hybrid_wake."""
+        h = res.hybrid
+        if not h or h.get("sit_board") is None:
+            return dec
+        self.hybrid_triggers += 1
+        dec = _dc_replace(dec, hybrid_trigger=1)
+        if dec.kind != "wait" or not str(h.get("chose") or "").startswith("sit"):
+            return dec
+        self.hybrid_sits += 1
+        board = h["sit_board"]
+        event_board = "B" if board == "A" else "A"
+        wait = int(dec.wait_ms) - int(dec.think_ms)
+        if h.get("event_ms") is not None:
+            wait = min(wait, int(h["event_ms"]) + HYBRID_WAKE_SLACK_MS)
+        landed = int(obs.last_move_ms[event_board]) if obs.last_move_ms is not None else -1
+        self._hybrid_wait = (seat, event_board, landed)
+        return _dc_replace(dec, wait_ms=int(dec.think_ms) + max(1, wait), hybrid_sit=1,
+                           stall_reason="hybrid_sit")
+
+
+# Spec v6: a hybrid sit waits at most its expected event time plus this (spec v6, "Wake and missed events").
+HYBRID_WAKE_SLACK_MS = 100
 
 # Wave 2 controller options beyond CONTROLLER_KW (Wave2TeamController: our own action cost in the tree).
 WAVE2_CONTROLLER_KW = ("root_min_ms", "root_lag_ms")
@@ -862,9 +982,10 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
     """{seat: Player} for one team played by the wave 2 engine (``kind="wave2"``, always one team brain). Options as
     ``upstream_team`` (``binary``/``model`` default to ``WAVE2_BINARY``/``WAVE2_MODEL``) plus the flags of
     ``WAVE2_FLAGS`` (``durative_tree``, ``sit_gate``, ``flag_loss``, ``instant_transfer``, ``mate_race_by_landing``,
-    ``pass_cap_k``, wave 2c's ``team_tree_reuse``, ``joint_plans``, ``plan_carry`` with their knobs, and the
-    durative diagnosis' ``own_pace_below_root``, ``wait_node_acting_eval``, ``blockable_check_not_mate``) and the
-    preset ``continuity`` (``WAVE2_PRESETS``); ``engine_options`` are sent after the flags, so they win.
+    ``pass_cap_k``, wave 2c's ``team_tree_reuse``, ``joint_plans``, ``plan_carry`` with their knobs, the
+    durative diagnosis' ``own_pace_below_root``, ``wait_node_acting_eval``, ``blockable_check_not_mate``, and spec
+    v6's ``hybrid_mode`` with its knobs) and the presets ``continuity`` and ``hybrid`` (``WAVE2_PRESETS``; a hybrid
+    row also sets ``durative_tree: false``); ``engine_options`` are sent after the flags, so they win.
     ``team_tree_reuse`` or ``plan_carry`` on implies ``reuse_tree`` plus one ``ucinewgame`` at the first search."""
     flags = wave2_flag_options(**{k: kw.get(k) for k in (*WAVE2_FLAGS, *WAVE2_PRESETS)})
     options = {**flags, **(kw.get("engine_options") or {})}
@@ -899,4 +1020,5 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "seat_decisions", "seat_on_turn_ms",
            "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
            "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "CONTINUITY_PRESET_OPTION",
-           "expand_wave2_presets", "wave2_carries_state", "parse_continuity"]
+           "expand_wave2_presets", "wave2_carries_state", "parse_continuity", "parse_hybrid", "WAVE2_HYBRID_FLAGS",
+           "HYBRID_UCI_OPTIONS", "HYBRID_WAKE_SLACK_MS"]

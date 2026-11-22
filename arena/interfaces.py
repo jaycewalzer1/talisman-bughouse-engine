@@ -136,6 +136,12 @@ class Decision:
     # only when nonzero, so other players' event files are unchanged.
     reused_visits: int = 0
     plan_carried: int = 0
+    # Spec v6 (the hybrid) telemetry on the decision whose search or wake produced it: the search's trigger fired
+    # (hybrid_trigger), it kept a hybrid sit (hybrid_sit), the event a hybrid sit waited for did not land by the
+    # wake (hybrid_missed). The simulator records a "hybrid" event only when one is nonzero.
+    hybrid_trigger: int = 0
+    hybrid_sit: int = 0
+    hybrid_missed: int = 0
 
 
 class Player(Protocol):

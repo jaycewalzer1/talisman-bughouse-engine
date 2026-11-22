@@ -410,6 +410,9 @@ class Simulator:
 
         self._gen[seat] += 1
         g = self._gen[seat]
+        hybrid = {k: int(getattr(dec, k, 0) or 0) for k in ("hybrid_trigger", "hybrid_sit", "hybrid_missed")}
+        if any(hybrid.values()):  # spec v6: only hybrid players produce it, so other event files are unchanged
+            self._emit("hybrid", seat=seat, **{k[len("hybrid_"):]: v for k, v in hybrid.items() if v})
         if dec.kind == "move":
             cost = self._own_machine_ms(seat, wall_ms if self.charge_wall_time else max(0, int(dec.think_ms)))
             cost = max(cost, self.min_move_ms)

@@ -53,6 +53,11 @@ The arena (`arena/`) emits one JSON object per event. The same stream feeds:
 // a player deliberately waits instead of moving (bughouse "sitting"), or stops waiting
 { "type": "stall", "seq": 11, "ts": 2100, "seat": "A_white", "active": true, "reason": "need_piece" }
 
+// spec v6 (the hybrid), only from players that report it, right before the decision it belongs to is acted on:
+// its search's trigger fired (trigger), it kept a hybrid sit (sit), and/or the event a hybrid sit of this seat
+// waited for did not land by the wake (missed); only the nonzero keys are present
+{ "type": "hybrid", "seq": 12, "ts": 2100, "seat": "A_white", "trigger": 1, "sit": 1 }
+
 // last event of every game
 { "type": "game_end", "seq": 120, "ts": 54000, "result": "T1", "reason": "checkmate",
   "board": "B", "loserSeat": "B_white" }

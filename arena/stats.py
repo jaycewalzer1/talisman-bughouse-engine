@@ -159,6 +159,16 @@ def summarize_game(events: Iterable[dict]) -> dict:
                 c["reuse_hits"] += 1
                 c["reused_visits"] += int(e["reused_visits"])
             c["plan_carries"] += int(e.get("plan_carried") or 0)
+    # Spec v6 (the hybrid): per team, searches whose trigger fired, hybrid sits kept, and hybrid sits whose event
+    # did not land by the wake ("hybrid" events; all 0 for players that send none). A match with no kept sits is
+    # "inert", not "equal to nodur".
+    hybrid = {t: {"triggers": 0, "sits": 0, "missed": 0} for t in TEAMS}
+    for e in events:
+        if e.get("type") == "hybrid" and e.get("seat") in TEAM_OF:
+            h = hybrid[TEAM_OF[e["seat"]]]
+            h["triggers"] += int(e.get("trigger") or 0)
+            h["sits"] += int(e.get("sit") or 0)
+            h["missed"] += int(e.get("missed") or 0)
     cm = _clock_metrics(events, start, end)
     loser_seat = end.get("loserSeat") if end else None
     reason = end.get("reason") if end else "aborted"
@@ -180,6 +190,7 @@ def summarize_game(events: Iterable[dict]) -> dict:
         "flag_other_check": cm["flag_other_check"],
         "capped_decisions": capped,
         "continuity": continuity,
+        "hybrid": hybrid,
     }
 
 
@@ -213,6 +224,9 @@ def contender_row(summary: dict) -> dict:
         co = (summary.get("continuity") or {}).get(team, {})  # absent in older summaries: reads as 0
         for k in ("searches", "reuse_hits", "reused_visits", "plan_carries"):
             row[f"{prefix}_{k}"] = co.get(k, 0)
+        hy = (summary.get("hybrid") or {}).get(team, {})  # absent in older summaries: reads as 0
+        for k in ("triggers", "sits", "missed"):
+            row[f"{prefix}_hybrid_{k}"] = hy.get(k, 0)
         row[f"{prefix}_think_ms"] = t["think_ms"]
         row[f"{prefix}_nodes"] = t["nodes"]
         row[f"{prefix}_messages"] = t["messages"]
@@ -296,6 +310,13 @@ METRICS: dict[str, Statistic] = {
     "contender_reused_visits_per_hit": ratio_of("c_reused_visits", "c_reuse_hits"),
     "contender_plan_carries_per_search": ratio_of("c_plan_carries", "c_searches"),
     "baseline_plan_carries_per_search": ratio_of("b_plan_carries", "b_searches"),
+    # spec v6 (the hybrid): kept hybrid sits, fired triggers and missed events per game (0 for other players)
+    "contender_hybrid_sits_per_game": mean_of("c_hybrid_sits"),
+    "baseline_hybrid_sits_per_game": mean_of("b_hybrid_sits"),
+    "contender_hybrid_triggers_per_game": mean_of("c_hybrid_triggers"),
+    "baseline_hybrid_triggers_per_game": mean_of("b_hybrid_triggers"),
+    "contender_hybrid_missed_per_game": mean_of("c_hybrid_missed"),
+    "baseline_hybrid_missed_per_game": mean_of("b_hybrid_missed"),
     "contender_messages_per_game": mean_of("c_messages"),
     "baseline_messages_per_game": mean_of("b_messages"),
     "draw_rate": mean_of("draw"),

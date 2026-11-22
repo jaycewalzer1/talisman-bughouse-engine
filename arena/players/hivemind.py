@@ -140,6 +140,11 @@ class SearchResult:
     reused_visits: int | None = None
     reuse_refusal: str | None = None
     plan_carried: int = 0
+    # Spec v6 (the hybrid; the wave 2 engine's ``info string Hybrid: ...``, parsed by
+    # arena.players.upstream.parse_hybrid): None when the engine printed no such line, else a dict with
+    # ``sit_board`` ("A"/"B", None: the trigger did not fire), ``event_ms``, ``reason`` (why the trigger did not
+    # fire), ``chose`` ("sit A"/"sit B"/"act", None: no choice line) and ``choice_reason``.
+    hybrid: dict | None = None
 
     def move_for(self, board: str) -> str | None:
         return self.move_a if board == "A" else self.move_b
