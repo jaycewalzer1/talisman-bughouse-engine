@@ -64,6 +64,7 @@ fi
 OUT="$W2C_RUNS/$ROUND"
 if [ -e "$OUT" ]; then echo "$OUT exists: rounds are never reused, pick another ROUND" >&2; exit 1; fi
 mkdir -p "$OUT"
+echo "$pin" > "$OUT/engine.ref"   # the engine this round's build checks out (launch_long_test.sh holds its parts to it)
 echo "$ROUND" > "$W2C_RUNS/LATEST"
 echo "round: $OUT"
 

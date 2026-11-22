@@ -30,6 +30,7 @@
 #   OPENINGS      opening set (default eval; bughouse, bughouse_canon, chess_controls, bare, train, all)
 #   RULES         arena rules profile: v3 (spec v3 D4, partners flagging together) or v2 (the default)
 #   WARM_KINDS    extra engines to warm before the row, e.g. "upstream wave2" (TensorRT engine files)
+#   ENGINE_REF    refuse to start unless third_party/wave2-hivemind is at this commit (the long test sets its round's pin)
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 source cluster/env.sh
@@ -69,6 +70,14 @@ fi
 echo "commit $(git rev-parse HEAD)  eval $OUT  $WHO  nodes ${NODES:-200}"
 if [ -d third_party/wave2-hivemind/.git ]; then
   echo "wave2 engine $(git -C third_party/wave2-hivemind rev-parse HEAD)  pin $(cat cluster/wave2_engine.ref 2>/dev/null || echo none)"
+fi
+# ENGINE_REF (cluster/launch_long_test.sh sets it): the wave2 engine commit this row must play; any other is refused.
+if [ -n "${ENGINE_REF:-}" ]; then
+  have=$(git -C third_party/wave2-hivemind rev-parse HEAD 2>/dev/null || echo none)
+  if [ "$have" != "$ENGINE_REF" ]; then
+    echo "wave2 engine is at $have, not ENGINE_REF $ENGINE_REF: this row would play another engine; refused" >&2
+    exit 1
+  fi
 fi
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
 echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
