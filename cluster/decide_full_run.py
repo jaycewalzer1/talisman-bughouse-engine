@@ -15,7 +15,9 @@ Blockers (any one is NO-GO):
   B2 gpu        gpu_check.json missing or "overall" not PASS (each failed check is named)
   B3 smoke      a smoke lineage did not finish an iteration (self-play -> train -> gate): smoke_nodur, smoke_cont and
                 smoke_hybrid, each narrow and wide, need runs/rl-it1/stages/iteration.done and a vs_it13 gate score in results.tsv
-  B4 control    c_same_120 score outside [0.46, 0.54], or the long test's merged l_same_120 when it has games
+  B4 control    c_same_120 score outside [0.46, 0.54], or the long test's merged l_same_120 when it has games (any
+                number: under 250 it is not read in place of c_same_120, but its score is still checked), or long rows
+                read in place of round rows while l_same_120 has no games
   B5 rows       a row of the round (12: cluster/wave2c_configs.py ROWS) missing, under 250 games, with errors in more than
                 5% of its games (a merged long row too), or a w2c_* job (rows, long test parts) still in the queue
   B6 rate       no self-play rate R (bench.json with every game played) for the chosen config and width
@@ -179,7 +181,7 @@ def queued_round_jobs() -> list[str]:
                              capture_output=True, text=True, timeout=60).stdout
     except (OSError, subprocess.TimeoutExpired):
         return []
-    return sorted({n for n in out.split() if n.startswith("w2c_") and n != "w2c_watchdog"})
+    return sorted({n for n in out.split() if n.startswith("w2c_") and not n.startswith("w2c_watchdog")})
 
 
 # ---------------------------------------------------------------------- rules
@@ -330,10 +332,17 @@ def decide(round_dir: str, ab_dir: str, run: str | None = None, queue: list[str]
                        f"instead of {stands_for}")
     if not any(long_rows.values()):
         d.notes.append(f"long test: none under {round_dir}/long (cluster/launch_long_test.sh)")
-    # the controls: the round's c_same_120 and, when it has games, the long test's l_same_120; both must read 0.50
+    # the controls: the round's c_same_120 and, whenever it has games (under MIN_ROW_GAMES too), the long test's
+    # l_same_120; both must read 0.50. Long rows read without a long control of their own are a blocker.
     controls = [("c_same_120", rows.get("c_same_120"))]
-    if read.get("c_same_120") is not rows.get("c_same_120"):
-        controls.append((read["c_same_120"]["source"], read["c_same_120"]))
+    long_same = long_rows.get("l_same_120")
+    if long_same:
+        controls.append((f"l_same_120 (long test, {_parts(long_same)})", long_same))
+    long_read = [lrow for lrow, r in long_rows.items()
+                 if lrow != "l_same_120" and r and r["games"] >= MIN_ROW_GAMES]
+    if long_read and not long_same:
+        d.blockers.append(f"B4 control: {', '.join(long_read)} read from the long test, which has no l_same_120 games: "
+                          f"the long harness is not checked")
     for name, same in controls:
         if same and not SAME_RANGE[0] <= same["score"] <= SAME_RANGE[1]:
             d.blockers.append(f"B4 control: {name} {same['score']:.3f} over {same['games']} games is outside "
