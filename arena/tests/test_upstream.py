@@ -931,3 +931,190 @@ def test_wave2_raw_continuity_preset_refuses_a_binary_from_before_the_diagnosis_
                                                                        "BlockableCheckNotMate"])
     ctl, d1, d2 = _play_two_searches(binary, model, engine_options={"Continuity": "true"})
     assert d1.kind == "move" and "setoption name Continuity value true" in log.read_text().splitlines()
+
+
+# ---------------------------------------------------------------------------------------------- spec v6, the hybrid
+
+from arena.players.upstream import (  # noqa: E402
+    HYBRID_UCI_OPTIONS,
+    WAVE2_HYBRID_FLAGS,
+    parse_hybrid,
+)
+
+NODUR = {"durative_tree": False, "sit_gate": True}
+
+
+def test_wave2_hybrid_flags():
+    # Defaults: nothing new is sent, so every existing row sends what it sent before.
+    assert wave2_flag_options(hybrid_mode="off", hybrid_margin_permille=20) == WAVE2_BASE
+    assert wave2_flag_options(hybrid=False) == WAVE2_BASE
+    nodur = {**WAVE2_BASE, "DurativeTree": False, "SitGate": True}
+    assert wave2_flag_options(**NODUR) == nodur
+    # The preset expands to HybridMode gate (no Hybrid option is sent); an explicit mode wins over it.
+    assert wave2_flag_options(hybrid=True, **NODUR) == {**nodur, "HybridMode": "gate"}
+    assert expand_wave2_presets({"hybrid": True}) == {"hybrid_mode": "gate"}
+    assert wave2_flag_options(hybrid=True, hybrid_mode="off", **NODUR) == nodur
+    knobs = wave2_flag_options(hybrid=True, hybrid_event_lands="none", hybrid_max_wait_ms=500,
+                               hybrid_min_clock_ms=4000, hybrid_margin_permille=50,
+                               hybrid_pass_prior_permille=300, **NODUR)
+    assert knobs == {**nodur, "HybridMode": "gate", "HybridEventLands": "none", "HybridMaxWaitMs": 500,
+                     "HybridMinClockMs": 4000, "HybridMarginPermille": 50, "HybridPassPriorPermille": 300}
+    for bad in ({"hybrid": True},  # durative_tree defaults to true in the wave 2 arm
+                {"hybrid_mode": "probe", **NODUR}, {"hybrid_mode": True, **NODUR}, {"hybrid": "true", **NODUR},
+                {"hybrid_event_lands": "some", "hybrid": True, **NODUR},
+                {"hybrid_margin_permille": 50, **NODUR},  # a knob without the mode
+                {"hybrid": True, "hybrid_max_wait_ms": 10001, **NODUR},
+                {"hybrid": True, "hybrid_pass_prior_permille": True, **NODUR}):
+        with pytest.raises(ValueError):
+            wave2_flag_options(**bad)
+    assert set(WAVE2_HYBRID_FLAGS) <= set(WAVE2_FLAGS)
+    # A per-search switch: no engine state between searches.
+    assert not wave2_carries_state({"HybridMode": "gate"})
+    assert {"HybridMode", "Hybrid", "HybridMarginPermille"} <= HYBRID_UCI_OPTIONS
+
+
+def test_wave2_parses_hybrid_lines():
+    def res(lines):
+        return parse_hybrid(lines, SearchResult(None, None, 0.1, 20, None, 100, 3))
+
+    assert res(["info depth 1 score cp 10 nodes 5 pv (e2e4,pass)"]).hybrid is None
+    off = res(["info string Hybrid: sit boards - event -/- mode gate (gate allows)"]).hybrid
+    assert off["sit_board"] is None and off["reason"] == "gate allows" and off["chose"] is None
+    on = res(["info string HybridMode set to gate", "info string Hybrid: sit boards A event 120/- mode gate",
+              "info string Hybrid: chose sit A q_sit 0.31 q_act 0.2 visits 60/400 (margin)"]).hybrid
+    assert on == {"sit_board": "A", "event_ms": 120, "mode": "gate", "reason": None, "chose": "sit A",
+                  "choice_reason": "margin"}
+    proven = res(["info string Hybrid: sit boards B event -/80 mode gate",
+                  "info string Hybrid: chose sit B q_sit 0.5 q_act 0.2 visits 5/63 (proven (assumes event))"])
+    assert proven.hybrid["event_ms"] == 80 and proven.hybrid["choice_reason"] == "proven"
+    act = res(["info string Hybrid: sit boards A event 50/- mode gate",
+               "info string Hybrid: chose act q_sit -0.1 q_act 0.2 visits 30/400 (no sit chosen)"]).hybrid
+    assert act["chose"] == "act" and act["choice_reason"] == "no sit chosen"
+
+
+def _hybrid_result(move_a=None, move_b=None, sit_board="A", event_ms=200, chose="sit A"):
+    h = {"sit_board": sit_board, "event_ms": event_ms, "mode": "gate", "reason": None, "chose": chose,
+         "choice_reason": "margin"}
+    return SearchResult(move_a, move_b, 0.1, 20, None, 100, 3, hybrid=h)
+
+
+def test_wave2_hybrid_sit_wakes_at_the_event_and_marks_a_missed_event_sitting():
+    # Spec v6 test 3.4. T1 is on turn on A alone; B_white (T2) thinks on B. With clock_k 40 our budget is 1.5 s
+    # and B_white's sit threshold 2.25 s, so seat_decisions alone would not call it sitting at the wake.
+    plain = SearchResult("e2e4", None, 0.1, 20, None, 100, 3)
+    proc = ContinuityProcess([_hybrid_result(), plain, plain])
+    ctl = Wave2TeamController("T1", proc, nodes=100, ms_per_node=2.0, clock_k=40)
+    p = ctl.player("A_white")
+    c = clocks(60_000, 60_000, 60_000, 60_000)
+    turn = {"A": "A_white", "B": "B_white"}
+    fens = {"A": START, "B": START}
+    sit = p.decide(_w2_obs("A_white", c, fens, turn, ["e2e4"], now=0, last={"A": 0, "B": 0}))
+    default_sit = ctl.default_sit_ms(ctl.last_options)
+    assert default_sit > 300
+    assert sit.kind == "wait" and sit.stall_reason == "hybrid_sit" and sit.hybrid_sit == 1
+    assert sit.hybrid_trigger == 1 and sit.wait_ms - sit.think_ms == min(default_sit, 200 + 100)
+    assert ctl.hybrid_sits == 1 and ctl.hybrid_triggers == 1 and proc.calls[0]["options"]["SeatSitting"] == "0 0 0 0"
+    # The wake: B has not landed. A missed event, and B_white is sent as sitting from now on.
+    wake = sit.wait_ms
+    again = p.decide(_w2_obs("A_white", c, fens, turn, ["e2e4"], now=wake, last={"A": 0, "B": 0}))
+    assert again.kind == "move" and again.hybrid_missed == 1 and ctl.hybrid_missed == 1
+    assert proc.calls[1]["options"]["SeatSitting"] == "0 0 1 0"
+    assert proc.calls[1]["options"]["SeatElapsedMs"].split()[2] == "0"
+    # Still sitting at the next search while its board has not landed ...
+    p.decide(_w2_obs("A_white", c, {"A": _fen_after("e2e4 e7e5"), "B": START}, turn, ["g1f3"], now=wake + 900,
+                     last={"A": wake + 800, "B": 0}))
+    assert proc.calls[2]["options"]["SeatSitting"] == "0 0 1 0"
+    # ... and its board landing clears the mark.
+    proc.results.append(plain)
+    p.decide(_w2_obs("A_white", c, {"A": _fen_after("e2e4 e7e5"), "B": _fen_after("d2d4")},
+                     {"A": "A_white", "B": "B_black"}, ["g1f3"], now=wake + 1000, last={"A": wake + 800, "B": wake + 950}))
+    assert proc.calls[3]["options"]["SeatSitting"] == "0 0 0 0" and ctl._missed == {}
+
+
+def test_wave2_hybrid_event_that_lands_is_no_miss_and_a_refused_sit_counts_only_the_trigger():
+    plain = SearchResult("e2e4", None, 0.1, 20, None, 100, 3)
+    proc = ContinuityProcess([_hybrid_result(), plain, _hybrid_result("e2e4", None, chose="act")])
+    ctl = Wave2TeamController("T1", proc, nodes=100, ms_per_node=2.0, clock_k=40)
+    p = ctl.player("A_white")
+    c = clocks(60_000, 60_000, 60_000, 60_000)
+    sit = p.decide(_w2_obs("A_white", c, {"A": START, "B": START}, {"A": "A_white", "B": "B_white"}, ["e2e4"],
+                           now=0, last={"A": 0, "B": 0}))
+    # B_white lands at 250 and wakes us: no miss, no mark.
+    woke = p.decide(_w2_obs("A_white", c, {"A": START, "B": _fen_after("d2d4")}, {"A": "A_white", "B": "B_black"},
+                            ["e2e4"], now=251, last={"A": 0, "B": 250}))
+    assert sit.hybrid_sit == 1 and woke.hybrid_missed == 0 and ctl.hybrid_missed == 0 and ctl._missed == {}
+    acted = p.decide(_w2_obs("A_white", c, {"A": _fen_after("e2e4 e7e5"), "B": _fen_after("d2d4")},
+                             {"A": "A_white", "B": "B_black"}, ["g1f3"], now=900, last={"A": 800, "B": 250}))
+    assert acted.kind == "move" and acted.hybrid_trigger == 1 and acted.hybrid_sit == 0
+    assert ctl.hybrid_triggers == 2 and ctl.hybrid_sits == 1
+
+
+def test_hybrid_telemetry_reaches_the_summary_and_results():
+    from arena.interfaces import SEATS
+    from arena.stats import compute_stats, summarize_game
+
+    events = [{"type": "game_start", "seq": 0, "ts": 0, "game_id": "g", "setup": "s", "seats": {s: s for s in SEATS}},
+              {"type": "hybrid", "seq": 1, "ts": 0, "seat": "A_white", "trigger": 1, "sit": 1},
+              {"type": "hybrid", "seq": 2, "ts": 1, "seat": "A_white", "missed": 1, "trigger": 1},
+              {"type": "hybrid", "seq": 3, "ts": 2, "seat": "A_black", "trigger": 1},
+              {"type": "game_end", "seq": 4, "ts": 5, "result": "T1", "reason": "checkmate", "board": "A",
+               "loserSeat": "A_black"}]
+    s = summarize_game(events)
+    assert s["hybrid"]["T1"] == {"triggers": 2, "sits": 1, "missed": 1}
+    assert s["hybrid"]["T2"] == {"triggers": 1, "sits": 0, "missed": 0}
+    m = compute_stats([{**s, "contender_team": "T1", "opening_id": "o"}], n_boot=10)["metrics"]
+    assert m["contender_hybrid_sits_per_game"]["est"] == 1
+    assert m["contender_hybrid_missed_per_game"]["est"] == 1
+    assert m["baseline_hybrid_triggers_per_game"]["est"] == 1
+    old = {k: v for k, v in s.items() if k != "hybrid"}  # a summary from before the hybrid reads as 0
+    assert compute_stats([{**old, "contender_team": "T1", "opening_id": "o"}],
+                         n_boot=10)["metrics"]["contender_hybrid_sits_per_game"]["est"] == 0
+
+
+def test_sim_records_a_hybrid_event_only_for_decisions_that_carry_one():
+    from arena.interfaces import SEATS, Decision
+    from arena.sim import Simulator
+    from arena.state import BughouseState
+
+    class P:
+        kind = "stub"
+
+        def __init__(self, seat):
+            self.seat, self.name, self.n = seat, seat, 0
+
+        def decide(self, obs):
+            self.n += 1
+            if not obs.legal_moves:
+                return Decision(kind="wait", wait_ms=1000)
+            if self.seat == "A_white" and self.n == 1:
+                return Decision(kind="wait", think_ms=50, wait_ms=150, hybrid_trigger=1, hybrid_sit=1,
+                                stall_reason="hybrid_sit")
+            return Decision(kind="move", uci=sorted(obs.legal_moves)[0], think_ms=100, nodes=10)
+
+        def close(self):
+            pass
+
+    sim = Simulator(BughouseState(5_000, 0), {s: P(s) for s in SEATS}, game_id="g", setup="test", max_plies=8)
+    sim.run()
+    hybrid = [e for e in sim.events if e["type"] == "hybrid"]
+    assert len(hybrid) == 1 and hybrid[0]["seat"] == "A_white" and hybrid[0]["sit"] == 1 and "missed" not in hybrid[0]
+    assert any(e["type"] == "stall" and e.get("reason") == "hybrid_sit" for e in sim.events)
+
+
+def test_wave2_hybrid_rows_in_the_pool():
+    from arena.pool import Pool, arm_key, for_evaluation, make_schedule, unbuildable
+
+    pool = Pool.load("arena/pools/wave2.json")
+    row = for_evaluation(pool, opponent="upstream-it13", contender_kw={"hybrid": True, **NODUR})
+    assert unbuildable(make_schedule(row, 2, openings="bughouse", rules="v3")) == []
+    assert arm_key(row.contender).endswith("|durative_tree=False,sit_gate=True,hybrid_mode=gate")
+
+
+def test_wave2_hybrid_refuses_a_binary_without_the_options(tmp_path, monkeypatch):
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, [])  # a pre-2d engine
+    with pytest.raises(RuntimeError, match="HybridMode.*wave 2d"):
+        _play_two_searches(binary, model, hybrid=True, **NODUR)
+    log.write_text("")
+    binary, model, log = _fake_engine(tmp_path, monkeypatch, sorted(HYBRID_UCI_OPTIONS))
+    ctl, d1, d2 = _play_two_searches(binary, model, hybrid=True, **NODUR)
+    assert d1.kind == "move" and "setoption name HybridMode value gate" in log.read_text().splitlines()
