@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 import { runsApi } from './vite.devApi'
 
 // https://vite.dev/config/
-// Three pages: the spectator viewer (index.html), the dev panel (dev.html) and the scheduler network diagram
-// (network.html). runsApi serves the repo's runs/ directory to the dev panel while the dev server runs.
+// Four pages: the spectator viewer (index.html), the dev panel (dev.html), the scheduler network diagram
+// (network.html) and the durative tree explainer (durative.html). runsApi serves the repo's runs/ directory to the dev panel while the dev server runs.
 export default defineConfig({
   plugins: [react(), runsApi()],
   build: {
@@ -14,6 +14,7 @@ export default defineConfig({
         main: resolve(import.meta.dirname, 'index.html'),
         dev: resolve(import.meta.dirname, 'dev.html'),
         network: resolve(import.meta.dirname, 'network.html'),
+        durative: resolve(import.meta.dirname, 'durative.html'),
       },
     },
   },

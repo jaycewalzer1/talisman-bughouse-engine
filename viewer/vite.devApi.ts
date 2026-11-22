@@ -3,9 +3,27 @@
 //   GET /api/runs/<run>/<file>   -> that .json / .jsonl file
 // Only plain names inside runs/<run>/ are served; nothing outside runs/ is reachable.
 
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Plugin } from 'vite'
+
+// GET /api/pace -> { at, ok, text } from `bash cluster/status_wave2c.sh` and squeue on PACE, for durative.html.
+// Read-only. Uses the `pace` ssh alias with BatchMode, so it only works while the user's ControlMaster is up.
+const PACE_REPO = '/storage/project/ps-bughouse-0/jwalzer3/talisman-bughouse-engine'
+const PACE_CMD = `cd ${PACE_REPO} && date && squeue -u $USER -h -o "%j %T %M" && echo == STATUS && bash cluster/status_wave2c.sh 2>&1`
+let paceCache: { at: number; ok: boolean; text: string } | null = null
+
+function readPace(): Promise<{ at: number; ok: boolean; text: string }> {
+  if (paceCache && Date.now() - paceCache.at < 60_000) return Promise.resolve(paceCache)
+  return new Promise(done => {
+    execFile('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pace', PACE_CMD], { timeout: 90_000 },
+      (err, stdout, stderr) => {
+        paceCache = { at: Date.now(), ok: !err, text: err ? `${stderr || err.message}` : stdout }
+        done(paceCache)
+      })
+  })
+}
 
 const RUNS_DIR = path.resolve(import.meta.dirname, '..', 'runs')
 const SAFE = /^[\w.-]+$/
@@ -28,6 +46,12 @@ export function runsApi(): Plugin {
   return {
     name: 'runs-api',
     configureServer(server) {
+      server.middlewares.use('/api/pace', (_req, res) => {
+        readPace().then(r => {
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(r))
+        })
+      })
       server.middlewares.use('/api/runs', (req, res) => {
         const parts = decodeURIComponent((req.url ?? '/').split('?')[0]).split('/').filter(Boolean)
         if (parts.length === 0) {

@@ -1,0 +1,48 @@
+/* Durative tree page (durative.html). Builds on network.css's layout and the dev panel's colors. */
+
+.dt-page .nn-panel ul { margin: 0 0 10px; padding-left: 1.2em; }
+.dt-page .nn-panel li { margin-bottom: 3px; }
+.dt-page .nn-stage svg { min-width: 720px; }
+
+.dt-lane { stroke: var(--line-strong); stroke-width: 1; }
+.dt-lane-label { fill: var(--text); font-size: 14px; text-anchor: end; font-family: var(--font); }
+.dt-tick { fill: var(--dim); font-size: 12px; text-anchor: middle; font-family: var(--font); }
+.dt-caption { fill: var(--dim); font-size: 14px; text-anchor: end; font-family: var(--font); }
+.dt-dot { stroke: var(--text); stroke-width: 1.5; }
+.dt-dot.us { fill: var(--text); }
+.dt-dot.them { fill: var(--raised); }
+.dt-num { fill: var(--text); font-size: 12px; font-weight: 600; text-anchor: middle; font-family: var(--font); }
+.dt-num.us { fill: var(--bg); }
+.dt-joint { stroke: var(--text); stroke-width: 4; stroke-linecap: round; opacity: .35; }
+.dt-wait { fill: var(--selected); stroke: var(--dim); stroke-dasharray: 3 2; }
+.dt-tag { fill: var(--text); font-size: 12.5px; text-anchor: middle; font-style: italic; font-family: var(--font); }
+.dt-sit { fill: var(--selected); stroke: var(--dim); stroke-dasharray: 4 3; }
+.dt-flight { fill: none; stroke: var(--good); stroke-width: 2; }
+.dt-arrow { fill: var(--good); }
+
+.dt-key { display: inline-block; width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--text); background: var(--raised); }
+.dt-key.us { background: var(--text); }
+.dt-key.wait { border-radius: 2px; transform: rotate(45deg); background: var(--selected); border-style: dashed; border-color: var(--dim); }
+
+.dt-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.dt-bars { margin: 0; width: 100%; }
+.dt-bars figcaption { color: var(--dim); font-size: .92em; margin: 0 0 4px 4px; }
+
+.dt-half { stroke: var(--line-strong); stroke-dasharray: 4 3; }
+.dt-row-name { fill: var(--text); font-size: 13px; text-anchor: end; font-family: ui-monospace, Menlo, monospace; }
+.dt-row-val { fill: var(--dim); font-size: 12.5px; font-family: var(--font); }
+.dt-ci { stroke-width: 3; stroke-linecap: round; }
+.k-hybrid .dt-ci, .k-hybrid .dt-pt { stroke: var(--good); fill: var(--good); }
+.k-nodur .dt-ci, .k-nodur .dt-pt { stroke: var(--text); fill: var(--text); }
+.k-dur .dt-ci, .k-dur .dt-pt { stroke: var(--bad); fill: var(--bad); opacity: .8; }
+.k-same .dt-ci, .k-same .dt-pt { stroke: var(--line-strong); fill: var(--line-strong); }
+.dt-key.k-hybrid { background: var(--good); border-color: var(--good); }
+.dt-key.k-nodur { background: var(--text); }
+.dt-key.k-dur { background: var(--bad); border-color: var(--bad); }
+.dt-key.k-same { background: var(--line-strong); border-color: var(--line-strong); }
+
+.dt-live { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 4px 0; color: var(--dim); }
+.dt-err { margin: 8px 4px 0; padding: 8px 10px; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; color: var(--bad); white-space: pre-wrap; font-size: 12px; }
+.dt-page .nn-layout { grid-template-columns: minmax(0, 1fr) clamp(360px, 34vw, 680px); }
+.dt-page .nn-stage > svg { max-height: 46vh; }
+.dt-page .nn-stage .dt-bars svg { width: auto; max-width: 100%; min-width: 0; }
