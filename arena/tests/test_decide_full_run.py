@@ -205,8 +205,9 @@ def test_long_rows_are_preferred_over_the_round_rows(tmp_path):
     rd = make_round(str(tmp_path / "b"), {"h_best_120": 0.60, "c_nodur_120": 0.43})
     write_long(rd, "l_hybrid_120", [(300, 0.45)] * 5)
     write_long(rd, "l_nodur_120", [(300, 0.44)] * 5)
+    write_long(rd, "l_same_120", [(300, 0.50)] * 5)
     d = run_decide(str(tmp_path / "b"), rd)
-    assert d.go and d.config == "nodur"
+    assert d.go and d.config == "nodur", d.blockers
     # a long row under 250 games is not read: the round row decides
     rd = make_round(str(tmp_path / "c"), {"h_best_120": 0.60, "c_nodur_120": 0.43})
     write_long(rd, "l_hybrid_120", [(100, 0.40)])
@@ -226,6 +227,29 @@ def test_long_test_blockers_control_errors_and_queue(tmp_path):
     d = run_decide(str(tmp_path / "q"), make_round(str(tmp_path / "q")),
                    queue=["w2c_l_hybrid_120_p3", "w2c_l_same_120_p1"])
     assert not d.go and "2 of them long-test parts" in blockers(d, "B5")[0]
+
+
+def test_long_control_is_checked_at_any_game_count(tmp_path):
+    # long rows read in place of the round's, their control short (200 games) and off half: B4, not a note
+    rd = make_round(str(tmp_path / "a"), {"h_best_120": 0.44, "c_nodur_120": 0.44})
+    write_long(rd, "l_hybrid_120", [(300, 0.50)] * 5)
+    write_long(rd, "l_nodur_120", [(300, 0.43)] * 5)
+    write_long(rd, "l_same_120", [(100, 0.38), (100, 0.38)])
+    d = run_decide(str(tmp_path / "a"), rd)
+    assert not d.go and blockers(d, "B4") and "l_same_120 (long test, 2 parts)" in blockers(d, "B4")[0], d.blockers
+    # short but at half: no blocker, the round's control still checked too
+    rd = make_round(str(tmp_path / "b"), {"h_best_120": 0.44, "c_nodur_120": 0.44})
+    write_long(rd, "l_hybrid_120", [(300, 0.50)] * 5)
+    write_long(rd, "l_same_120", [(100, 0.50), (100, 0.50)])
+    d = run_decide(str(tmp_path / "b"), rd)
+    assert not blockers(d, "B4"), d.blockers
+    assert any(n.startswith("control ok: l_same_120") for n in d.notes)
+    assert any(n.startswith("control ok: c_same_120") for n in d.notes)
+    # long rows read with no long control at all: B4
+    rd = make_round(str(tmp_path / "c"), {"h_best_120": 0.44, "c_nodur_120": 0.44})
+    write_long(rd, "l_hybrid_120", [(300, 0.52)] * 5)
+    d = run_decide(str(tmp_path / "c"), rd)
+    assert not d.go and "no l_same_120 games" in blockers(d, "B4")[0]
 
 
 def test_wide_chosen_from_the_ab(tmp_path):
@@ -439,47 +463,124 @@ def test_launch_full_run_dry_run_chain(fake_slurm):
     assert p.returncode == 1 and "other settings" in p.stderr
 
 
+def _git_repo(path):
+    """A git repo with one commit; its HEAD."""
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+                    "--allow-empty", "-m", "x"], check=True)
+    return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+@pytest.mark.skipif(not os.path.isdir(os.path.join(REPO, "runs")), reason="needs the repo's runs/ folder")
 def test_launch_long_test_dry_run(fake_slurm):
     tmp, env = fake_slurm
     runs = tmp / "wave2c"
     (runs / "r1").mkdir(parents=True)
     (runs / "LATEST").write_text("r1\n")
-    env["W2C_RUNS"] = str(runs)
+    # W2C_RUNS under runs/ as on PACE (runs/wave2c), so the parts' NAME is the folder with runs/ stripped: eval.sbatch
+    # writes runs/<NAME>, which must be the folder decide_full_run reads (<round>/long/<row>/part<k>)
+    env["W2C_RUNS"] = "runs/" + os.path.relpath(runs, os.path.join(REPO, "runs"))
+    w2 = tmp / "w2"
+    pin = _git_repo(w2)
+    env["W2_DIR"] = str(w2)
+    (runs / "r1" / "engine.ref").write_text(pin + "\n")
     run = lambda **kw: subprocess.run(["bash", "cluster/launch_long_test.sh"], cwd=REPO, env={**env, **kw},
                                       capture_output=True, text=True)
+    evals = lambda c: [r for r in c if r["args"].endswith("cluster/eval.sbatch")]
     # no build queued, no BUILD and no build.ok: refused, nothing submitted
     p = run()
     assert p.returncode == 1 and "build.ok" in p.stderr and not (tmp / "calls.tsv").exists()
-    # the round's build in the queue: every part waits for it
-    (tmp / "queue").write_text("4242\n")
+    # the round's build (its jobs.tsv) in the queue: every part waits for it
+    (runs / "r1" / "jobs.tsv").write_text("build\t4242\ngpu\t4243\n")
+    (tmp / "queue").write_text("4242 w2c_build\n4250 w2c_c_same_120\n")
     p = run()
     assert p.returncode == 0, p.stderr
     c = calls(tmp)
-    assert len(c) == 3 * 5 and all(r["args"].endswith("cluster/eval.sbatch") for r in c)
-    assert all(r["dep"] == "afterok:4242" and "--parsable" in r["args"] for r in c)
-    assert sorted({r["NAME"].rsplit("/", 2)[-2] for r in c}) == sorted(LONG_ROWS)
+    assert len(evals(c)) == 3 * 5
+    assert all(r["dep"] == "afterok:4242" and "--parsable" in r["args"] for r in evals(c))
+    assert sorted({r["NAME"].rsplit("/", 2)[-2] for r in evals(c)}) == sorted(LONG_ROWS)
     for lrow in LONG_ROWS:
-        mine = [r for r in c if f"/long/{lrow}/" in r["NAME"]]
+        mine = [r for r in evals(c) if f"/long/{lrow}/" in r["NAME"]]
         assert [r["NAME"].rsplit("/", 1)[1] for r in mine] == [f"part{k}" for k in range(1, 6)]
         assert [r["job"] for r in mine] == [f"w2c_{lrow}_p{k}" for k in range(1, 6)]
-        assert all(r["NAME"].startswith(str(runs / "r1" / "long")) for r in mine)
+        for k, r in enumerate(mine, 1):
+            assert not r["NAME"].startswith("runs/"), r["NAME"]
+            written = os.path.realpath(os.path.join(REPO, "runs", r["NAME"]))
+            assert written == os.path.realpath(runs / "r1" / "long" / lrow / f"part{k}")
+            assert os.path.isdir(written)
+    # the long test's own watchdog: afterany on the build, long parts only
+    wd = [r for r in c if r["args"].endswith("cluster/wave2c_watchdog.sh")]
+    assert len(wd) == 1 and wd[0]["job"] == "w2c_watchdog_long" and wd[0]["dep"] == "afterany:4242"
     assert "GPU-hours: at most 120" in p.stdout
-    tsv = (runs / "r1" / "long" / "jobs.tsv").read_text().splitlines()
+    tsv = [l for l in (runs / "r1" / "long" / "jobs.tsv").read_text().splitlines() if not l.startswith("watchdog")]
     assert len(tsv) == 15 and "seed 1001" in tsv[0] and "seed 1005" in tsv[4]
+    # a build of another round in the queue moves the checkout: refused, nothing submitted
+    n = len(calls(tmp))
+    (tmp / "queue").write_text("4242 w2c_build\n5555 w2c_build\n")
+    p = run()
+    assert p.returncode == 1 and "5555" in p.stderr and len(calls(tmp)) == n
+    (tmp / "queue").write_text("5555 w2c_build\n")
+    (runs / "r1" / "build.ok").write_text("Sun Nov 22\n")
+    p = run()
+    assert p.returncode == 1 and "5555" in p.stderr and len(calls(tmp)) == n
+    (runs / "r1" / "build.ok").unlink()
     # a second launch never reuses a folder: parts 6-10 with new seeds; BUILD= works when the queue has none
     (tmp / "queue").write_text("")
     p = run(PARTS="5", BUILD="77")
     assert p.returncode == 0, p.stderr
-    c2 = calls(tmp)[15:]
+    c2 = evals(calls(tmp)[n:])
     assert {r["NAME"].rsplit("/", 1)[1] for r in c2} == {f"part{k}" for k in range(6, 11)}
     assert all(r["dep"] == "afterok:77" for r in c2)
     assert "seed 1010" in (runs / "r1" / "long" / "jobs.tsv").read_text()
-    # after the build passed (build.ok), no dependency at all
+    # after the build passed (build.ok), no dependency at all, while the checkout is at the round's pin
     (runs / "r1" / "build.ok").write_text("Sun Nov 22\n")
+    n = len(calls(tmp))
     p = run(PARTS="1")
     assert p.returncode == 0, p.stderr
-    c3 = calls(tmp)[30:]
-    assert len(c3) == 3 and all(r["dep"] is None for r in c3)
+    c3 = calls(tmp)[n:]
+    assert len(evals(c3)) == 3 and all(r["dep"] is None for r in c3)
+    assert any(r["job"] == "w2c_watchdog_long" for r in c3)
+    # ... and refused once the checkout moved off it (a later round's build, a manual rebuild)
+    subprocess.run(["git", "-C", str(w2), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+                    "--allow-empty", "-m", "y"], check=True)
+    n = len(calls(tmp))
+    p = run(PARTS="1")
+    assert p.returncode == 1 and pin in p.stderr and len(calls(tmp)) == n
+
+
+@pytest.mark.parametrize("long_only", [False, True])
+def test_watchdog_cancels_a_long_row_with_errors(fake_slurm, long_only):
+    """wave2c_watchdog.sh reads each long-test row merged over its parts and cancels all of a failing row's parts, in
+    the round's copy and in the long test's own (LONG=1, which ignores rows/)."""
+    tmp, env = fake_slurm
+    out = tmp / "wave2c" / "r1"
+    # l_hybrid_120: 12 errors in 160 games over two parts (7.5%, neither part alone has 100); l_nodur_120 clean
+    write_row(str(out / "long" / "l_hybrid_120" / "part1"), 80, 0.5, errors=6)
+    write_row(str(out / "long" / "l_hybrid_120" / "part2"), 80, 0.5, errors=6, opening_base=1000)
+    write_row(str(out / "long" / "l_nodur_120" / "part1"), 160, 0.5)
+    write_row(str(out / "rows" / "c_reuse_120"), 120, 0.5, errors=20)
+    (tmp / "queue").write_text("w2c_l_hybrid_120_p1\nw2c_l_hybrid_120_p2\nw2c_l_nodur_120_p1\nw2c_c_reuse_120\n"
+                               "w2c_watchdog\n")
+    (tmp / "bin" / "scancel").write_text("#!/bin/bash\necho \"$*\" >> \"$FAKE_DIR/scancel.log\"\n")
+    os.chmod(tmp / "bin" / "scancel", 0o755)
+    p = subprocess.run(["bash", "cluster/wave2c_watchdog.sh"], cwd=REPO, capture_output=True, text=True,
+                       env={**env, "OUT": str(out), "BUILD": "none", "GPU": "none", "LONG": "1" if long_only else "0",
+                            "POLL_S": "0", "LIFE_S": "0"})
+    assert p.returncode == 0, p.stderr
+    cancelled = sorted(l.split("-n ")[1] for l in (tmp / "scancel.log").read_text().splitlines())
+    expected = ["w2c_l_hybrid_120_p1", "w2c_l_hybrid_120_p2"] + ([] if long_only else ["w2c_c_reuse_120"])
+    assert cancelled == sorted(expected)
+    assert "long row l_hybrid_120 has errors over its parts: games errors = 172 12" in (out / "watchdog.log").read_text()
+    handover = calls(tmp)
+    assert len(handover) == 1 and ("w2c_watchdog_long" in handover[0]["args"]) == long_only
+
+
+def test_eval_refuses_a_checkout_off_engine_ref():
+    """eval.sbatch's ENGINE_REF guard (the long test's parts carry their round's pin)."""
+    text = open(os.path.join(REPO, "cluster", "eval.sbatch")).read()
+    assert 'if [ "$have" != "$ENGINE_REF" ]' in text and "refused" in text
+    assert "ENGINE_REF=\"$PIN\"" in open(os.path.join(REPO, "cluster", "launch_long_test.sh")).read()
 
 
 def test_launch_long_test_row_options():

@@ -301,7 +301,7 @@ NO-GO on any blocker:
 | B1 | `build.ok` missing |
 | B2 | `gpu_check.json` missing or not `"overall": "PASS"` |
 | B3 | any of the six smoke arms (`nodur`, `cont`, `hybrid` x narrow, wide) without `rl-it1/stages/iteration.done` and a `vs_it13` score |
-| B4 | `c_same_120` outside [0.46, 0.54], or the long test's merged `l_same_120` (when it has 250+ games) outside it |
+| B4 | `c_same_120` outside [0.46, 0.54], or the long test's merged `l_same_120` (whenever it has games, under 250 too) outside it, or long rows read in place of round rows while `l_same_120` has no games |
 | B5 | a row missing, under 250 games, errors in over 5% of its games (a merged long row too), or any `w2c_*` job (long-test parts included) still queued |
 | B6 | no complete bench for the chosen config's benched stand-in (`nodur`, `cont` or `hybrid`) at the chosen width |
 | B7 | estimate over 10,000 GPU-hours |
@@ -340,8 +340,11 @@ Added 2026-11-22. Three rows, the round's common settings, against `upstream-it1
 `wave2-self` with the hybrid on: must read 0.50). Each row is `PARTS` (5) parallel 8 h `eval.sbatch` jobs into
 `runs/wave2c/<ROUND>/long/<row>/part<k>`, seed 1000 + k (the same in every row, so the hybrid and nodur play the
 same opening schedule), job names `w2c_<row>_p<k>`. A part folder is made at submission and never reused; a second
-launch adds parts after the last. The parts wait for the round's `w2c_build` (or `BUILD=<id>`), or start at once when
-the round's `build.ok` exists. The merge (`cluster/decide_full_run.py` `merged_row_stats`, also in
+launch adds parts after the last. The parts wait for the round's own build (its `jobs.tsv`, or `BUILD=<id>`), or
+start at once when the round's `build.ok` exists and the wave2-hivemind checkout is at the round's pin
+(`<ROUND>/engine.ref`, else `cluster/wave2_engine.ref`); a queued build of another round is refused, and each part's
+`ENGINE_REF` makes `eval.sbatch` refuse a moved checkout. Its own watchdog (`w2c_watchdog_long`, `LONG=1`) cancels a
+long row with errors in over 5% of its merged games. The merge (`cluster/decide_full_run.py` `merged_row_stats`, also in
 `status_wave2c.sh`) pools every part's games and bootstraps over openings, one opening played in several parts being
 one cluster. Cost: 3 x 5 x 8 = 120 GPU-hours at most; about 1250-1500 games a row, a 95% range of about +-0.03, so
 the 0.05 rule (500 games each) can fire and disjoint ranges need a gap of about 0.06.
@@ -356,5 +359,8 @@ Checked locally (2026-11-21, Mac, no GPU): `bash -n` on every cluster script; `a
 dependency; 2026-11-22: the hybrid chosen or not, its smoke and row blockers, merged long rows preferred both ways, a
 long row under 250 games ignored, the long control, long errors and queued parts as blockers, `merged_row_stats`, and
 a dry run of `launch_long_test.sh`: dependency on a queued build, `BUILD=`, none after `build.ok`, refusal without
-either, part folders and seeds never reused); `cluster/wave2_selfplay_bench.py` end to end on the Mac's ONNX Runtime `build-sp1`. Not checkable here:
+either, part folders and seeds never reused; review fixes 2026-11-22: `W2C_RUNS` under `runs/` so the stripped NAME
+is checked to be the folder decide reads, another round's build refused, a checkout off the round's pin refused,
+the long watchdog submitted, `wave2c_watchdog.sh` cancelling a long row over its merged parts in both copies, and the
+long control checked under 250 games); `cluster/wave2_selfplay_bench.py` end to end on the Mac's ONNX Runtime `build-sp1`. Not checkable here:
 TensorRT, the GPU check itself, R, the smokes on PACE.

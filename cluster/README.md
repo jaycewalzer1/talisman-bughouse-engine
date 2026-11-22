@@ -152,14 +152,15 @@ an old one: eval resumes any partial games it finds.
 | `w2c_<row>` (b) | build ok | the 12 `launch_checks.sh wave2c` rows, one 8 h job each (`h_best_120` is the hybrid) | `rN/rows/<row>` | 12 x 8 |
 | `w2c_bench_nodur`, `_cont`, `_hybrid` (c) | gpu ok | self-play rate R on the rl-loop segment command, narrow then wide, 150 games each (`cluster/wave2c_bench.sbatch`) | `rN/bench/<config>_<width>/bench.json` | 3 x 3 |
 | `w2c_smoke_nodur`, `_cont`, `_hybrid` (d) | gpu ok | one `wave2_iterate.sbatch` iteration per config, narrow and wide (`AB=1`): 200 self-play games, train, gate (60 games) | `rN/smoke_<config>/{narrow,wide}` | 3 x 8 |
-| `w2c_watchdog` (e) | build ends | cancels every `w2c_*` job if the build or the GPU check fails, and a row with errors in over 5% of its games | `rN/watchdog.log` | CPU |
+| `w2c_watchdog` (e) | build ends | cancels every `w2c_*` job if the build or the GPU check fails, and a row with errors in over 5% of its games (a long-test row merged over its parts) | `rN/watchdog.log` | CPU |
 
 **Cost: at most 137 GPU-hours** by the time limits, about 115 expected (the rows use their whole 8 h, the rest
 end sooner). An 8 h row plays about 270-300 games at 120 s (the 2026-11-19 round), a 95% range of about +-0.055.
 
 Decision rules (`cluster/decide_full_run.py` docstring, `docs/wave2_tests.md` section 8): NO-GO on any of B1 build
 not passed, B2 GPU check not PASS, B3 a smoke arm (nodur, cont, hybrid x narrow, wide) without a finished, gated
-iteration, B4 `c_same_120` (or the long test's `l_same_120`) outside [0.46, 0.54], B5 a row missing, under 250 games,
+iteration, B4 `c_same_120` (or the long test's `l_same_120`, at any game count) outside [0.46, 0.54] or long rows read without any
+`l_same_120` games, B5 a row missing, under 250 games,
 over 5% errors or still queued (long-test parts included), B6 no self-play rate for the chosen config and width, B7
 the full run over 10,000 GPU-hours. Config: `cont` (`c_all_120`), `cont_nod1` (`c_all_nod1_120`), the best single
 switch or `hybrid` (`h_best_120`) only when it beats nodur with disjoint 95% ranges, or by 0.05 with 500 games in both
@@ -185,9 +186,15 @@ openings, rules v3), each split into `PARTS` (5) parallel 8 h `eval.sbatch` jobs
 
 Part k of every row goes to `runs/wave2c/<ROUND>/long/<row>/part<k>` with seed `SEED_BASE + k` (1000 + k), job name
 `w2c_<row>_p<k>`; the folder is made at submission and never reused (eval resumes partial folders), so launching
-again adds parts k+1... The parts wait for the round's `w2c_build` (or `BUILD=<job id>`); with no build queued and
-the round's `build.ok` present they start at once. Being `w2c_*` jobs, the watchdog cancels them with the round, and
-decide reads the round as still running while they are queued. `status_wave2c.sh` and `decide_full_run.py` merge each
+again adds parts k+1... The parts play the round's engine only: they wait for the round's own build (the `build`
+line of `rN/jobs.tsv`, or `BUILD=<job id>`); with it gone they start at once only when the round's `build.ok` exists
+and `third_party/wave2-hivemind` is at the round's pin (`rN/engine.ref`, written by `launch_wave2c.sh`; older rounds:
+`cluster/wave2_engine.ref`). A queued `w2c_build` of another round is refused (it moves the checkout), and every part
+carries `ENGINE_REF=<pin>`, which `eval.sbatch` checks before it plays. Being `w2c_*` jobs, the round's watchdog
+cancels them if the build or the GPU check fails; the long test also submits its own `w2c_watchdog_long`
+(`wave2c_watchdog.sh` with `LONG=1`), which cancels every part of a long row whose merged parts have errors in over 5%
+of at least 100 games, whether or not the round's watchdog is still alive. Decide reads the round as still running
+while parts are queued. `status_wave2c.sh` and `decide_full_run.py` merge each
 row's parts (`merged_row_stats`: all games, cluster bootstrap over openings). **Cost: 3 x 5 x 8 = 120 GPU-hours** at
 most; at 250-300 games an 8 h job that is about 1250-1500 games a row, a 95% range of about +-0.03.
 
