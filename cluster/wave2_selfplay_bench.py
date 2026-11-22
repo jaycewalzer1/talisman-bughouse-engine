@@ -74,6 +74,7 @@ def main(argv=None) -> int:
     ap.add_argument("--engine", type=Path, default=W2 / "engine" / "build-sp1" / "hivemind")
     ap.add_argument("--model", type=Path, default=None, help="default: engine/models/<it13 or wide>.onnx")
     args = ap.parse_args(argv)
+    args.out = args.out.resolve()  # the engine runs in W2/engine: every path it gets must be absolute
 
     from hivemind.cli import selfplay
 
