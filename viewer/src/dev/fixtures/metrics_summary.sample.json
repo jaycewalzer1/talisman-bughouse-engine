@@ -6,7 +6,7 @@
   {
    "run": "sample6",
    "root": "runs/full/sample6",
-   "settings": "SAMPLE ONLY. GAMES=10000 ITERS=10 GATE_GAMES=400 GATE_MS=100 REPLAY=0.1/iter",
+   "settings": "SAMPLE ONLY. GAMES=10000 ITERS=10 GATE_GAMES=400 GATE_MS=100 REPLAY=0.1/iter BALANCE=1 (from it4)",
    "iterations": [
     {
      "schema": 1,
@@ -1887,7 +1887,12 @@
       "gpu_hours": 24.64,
       "gpu_hours_cum": 95.0,
       "elo_per_gpu_hour": 0.622,
-      "wall_hours": 25.13
+      "wall_hours": 25.13,
+      "balance_overhead_gpu_hours": 0,
+      "selfplay_gpu_h_by_arm": {
+       "inc": 12.9
+      },
+      "balance_prior_gpu_hours": null
      },
      "selfplay": {
       "games": 10000,
@@ -2332,6 +2337,103 @@
      "unavailable": {
       "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
       "search.depth": "the engine logs no search depth in matches or self-play"
+     },
+     "balance": {
+      "mode": "frozen",
+      "reason": "no minitrain/score stage (prior.score_stage false): a challenger could never be judged",
+      "theta_star": {
+       "f": 0.0,
+       "k": null,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "theta_star_key": null,
+      "theta_star_next": {
+       "f": 0.0,
+       "k": null,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "challenger": null,
+      "challenger_key": null,
+      "challenger_kind": null,
+      "challenger_segment": null,
+      "twin_segment": null,
+      "revert_test": false,
+      "decided": true,
+      "decision": {
+       "action": "none",
+       "reason": "no minitrain/score stage (prior.score_stage false): a challenger could never be judged",
+       "Z": null,
+       "mean": null,
+       "se": null,
+       "n": null,
+       "delta_min": null,
+       "sigma_hat": null,
+       "tau_hat": null,
+       "tau_df": null
+      },
+      "d": null,
+      "sigma_n": null,
+      "d_interval95": null,
+      "minigate": null,
+      "review": null,
+      "cost_overrun": null,
+      "c_realised": null,
+      "cost": {
+       "c_inc": 1.0,
+       "c_chal": null
+      },
+      "games": {
+       "seg00": 2000,
+       "seg01": 2000,
+       "seg02": 2000,
+       "seg03": 2000,
+       "seg04": 2000
+      },
+      "overhead": {
+       "this_iter_gpu_h": 0,
+       "cum_gpu_h": 0,
+       "run_gpu_h": 66.4,
+       "frac": 0.0,
+       "planned_gpu_h": 0.0,
+       "cap": 0.1
+      },
+      "dropped": [],
+      "per_arm": {
+       "inc": {
+        "segments": 5,
+        "games": 10000,
+        "records": 1530000,
+        "gpu_hours": 12.9,
+        "games_per_gpu_h": 775.2,
+        "visits_per_s": 25039.0,
+        "deep_share": 0.0,
+        "masked_share": 0.0,
+        "sit_rate": 0.11,
+        "flag_rate": 0.05
+       }
+      },
+      "main_mix": {
+       "inc": 1.0,
+       "chal": 0.0
+      },
+      "probe": {
+       "version": 0,
+       "refresh": false
+      },
+      "evidence": [],
+      "tabu": {},
+      "history": [],
+      "prior": {
+       "status": "none",
+       "text": "holding theta0: no measured prior",
+       "flags": {},
+       "blockers": [],
+       "masked": []
+      }
      }
     },
     {
@@ -2446,7 +2548,12 @@
       "gpu_hours": 24.73,
       "gpu_hours_cum": 119.73,
       "elo_per_gpu_hour": -0.535,
-      "wall_hours": 25.22
+      "wall_hours": 25.22,
+      "balance_overhead_gpu_hours": 1.25,
+      "selfplay_gpu_h_by_arm": {
+       "inc": 10.3,
+       "chal": 2.6
+      }
      },
      "selfplay": {
       "games": 10000,
@@ -2901,6 +3008,151 @@
      "unavailable": {
       "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
       "search.depth": "the engine logs no search depth in matches or self-play"
+     },
+     "balance": {
+      "mode": "explore",
+      "reason": "compass step 2 direction f+",
+      "theta_star": {
+       "f": 0.0,
+       "k": null,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "theta_star_key": null,
+      "theta_star_next": {
+       "f": 0.0,
+       "k": null,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "challenger": {
+       "f": 0.125,
+       "k": 4,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "challenger_key": null,
+      "challenger_kind": "selfplay",
+      "challenger_segment": "seg04",
+      "twin_segment": "seg00",
+      "revert_test": false,
+      "decided": true,
+      "decision": {
+       "action": "continue",
+       "reason": "Z=1.62 n=1 mean=0.0031 delta_min=0.0032",
+       "Z": 1.62,
+       "mean": 0.0031,
+       "se": 0.0019,
+       "n": 1,
+       "delta_min": 0.0032,
+       "sigma_hat": 0.0021,
+       "tau_hat": 0.0014,
+       "tau_df": 5
+      },
+      "d": 0.0031,
+      "sigma_n": 0.0017,
+      "d_interval95": [
+       -0.000624,
+       0.006824
+      ],
+      "minigate": null,
+      "review": false,
+      "cost_overrun": false,
+      "c_realised": 1.41,
+      "cost": {
+       "c_inc": 1.0,
+       "c_chal": 1.3713
+      },
+      "games": {
+       "seg00": 2000,
+       "seg01": 2000,
+       "seg02": 2000,
+       "seg03": 2000,
+       "seg04": 1458
+      },
+      "overhead": {
+       "this_iter_gpu_h": 1.25,
+       "cum_gpu_h": 1.25,
+       "run_gpu_h": 84.1,
+       "frac": 0.0149,
+       "planned_gpu_h": 1.25,
+       "cap": 0.1
+      },
+      "dropped": [],
+      "per_arm": {
+       "inc": {
+        "segments": 4,
+        "games": 8000,
+        "records": 1224000,
+        "gpu_hours": 10.3,
+        "games_per_gpu_h": 776.7,
+        "visits_per_s": 25087.0,
+        "deep_share": 0.0,
+        "masked_share": 0.0,
+        "sit_rate": 0.11,
+        "flag_rate": 0.05
+       },
+       "chal": {
+        "segments": 1,
+        "games": 1458,
+        "records": 223074,
+        "gpu_hours": 2.6,
+        "games_per_gpu_h": 560.8,
+        "visits_per_s": 18113.0,
+        "deep_share": 0.125,
+        "masked_share": 0.0,
+        "sit_rate": 0.12,
+        "flag_rate": 0.052
+       }
+      },
+      "main_mix": {
+       "inc": 0.83,
+       "chal": 0.17
+      },
+      "probe": {
+       "version": 1,
+       "refresh": true
+      },
+      "evidence": [
+       {
+        "pair": "f=0,k=-,b=800,l=0,src=cap>f=0.125,k=4,b=800,l=0,src=cap",
+        "n": 1,
+        "mean": 0.0031,
+        "d": [
+         0.0031
+        ],
+        "iters": [
+         5
+        ]
+       }
+      ],
+      "tabu": {},
+      "history": [],
+      "prior": {
+       "status": "ready",
+       "text": "exploring allowed",
+       "flags": {
+        "score_stage": true,
+        "probe_bias_measured": true,
+        "search_q_blend": true,
+        "policy_positions": true,
+        "reanalyse_fidelity": false,
+        "fits_bench_k8": false
+       },
+       "blockers": [],
+       "masked": [
+        "k=8 (bench)",
+        "src=reanalyse (fidelity)"
+       ],
+       "sigma_hat": 0.0021,
+       "tau_hat": 0.0014,
+       "tau_df": 5,
+       "gpu_hours": 7.7,
+       "measured_at": "2026-11-23T08:10:00"
+      }
      }
     },
     {
@@ -2943,7 +3195,12 @@
       "gpu_hours": 9.1,
       "gpu_hours_cum": 128.83,
       "elo_per_gpu_hour": null,
-      "wall_hours": 9.28
+      "wall_hours": 9.28,
+      "balance_overhead_gpu_hours": 0.95,
+      "selfplay_gpu_h_by_arm": {
+       "inc": 10.3,
+       "chal": 2.6
+      }
      },
      "selfplay": {
       "games": 6000,
@@ -3012,6 +3269,153 @@
       "search.nps": "gate not played yet",
       "search.sit_gate_rate": "gate not played yet",
       "search.time_use": "gate not played yet"
+     },
+     "balance": {
+      "mode": "explore",
+      "reason": "compass step 2 direction f+",
+      "theta_star": {
+       "f": 0.0,
+       "k": null,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "theta_star_key": null,
+      "theta_star_next": {
+       "f": 0.125,
+       "k": 4,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "challenger": {
+       "f": 0.125,
+       "k": 4,
+       "b": 800,
+       "lambda": 0.0,
+       "src": "cap"
+      },
+      "challenger_key": null,
+      "challenger_kind": "selfplay",
+      "challenger_segment": "seg04",
+      "twin_segment": "seg00",
+      "revert_test": false,
+      "decided": true,
+      "decision": {
+       "action": "promote",
+       "reason": "Z=3.21 n=2 mean=0.0042 delta_min=0.0032",
+       "Z": 3.21,
+       "mean": 0.0042,
+       "se": 0.0013,
+       "n": 2,
+       "delta_min": 0.0032,
+       "sigma_hat": 0.002,
+       "tau_hat": 0.0013,
+       "tau_df": 6
+      },
+      "d": 0.0053,
+      "sigma_n": 0.0012,
+      "d_interval95": [
+       0.002752,
+       0.007848
+      ],
+      "minigate": null,
+      "review": false,
+      "cost_overrun": false,
+      "c_realised": 1.41,
+      "cost": {
+       "c_inc": 1.0,
+       "c_chal": 1.3713
+      },
+      "games": {
+       "seg00": 2000,
+       "seg01": 2000,
+       "seg02": 2000,
+       "seg03": 2000,
+       "seg04": 1458
+      },
+      "overhead": {
+       "this_iter_gpu_h": 0.95,
+       "cum_gpu_h": 2.2,
+       "run_gpu_h": 101.3,
+       "frac": 0.0217,
+       "planned_gpu_h": 1.25,
+       "cap": 0.1
+      },
+      "dropped": [],
+      "per_arm": {
+       "inc": {
+        "segments": 4,
+        "games": 8000,
+        "records": 1224000,
+        "gpu_hours": 10.3,
+        "games_per_gpu_h": 776.7,
+        "visits_per_s": 25087.0,
+        "deep_share": 0.0,
+        "masked_share": 0.0,
+        "sit_rate": 0.11,
+        "flag_rate": 0.05
+       },
+       "chal": {
+        "segments": 1,
+        "games": 1458,
+        "records": 223074,
+        "gpu_hours": 2.6,
+        "games_per_gpu_h": 560.8,
+        "visits_per_s": 18113.0,
+        "deep_share": 0.125,
+        "masked_share": 0.0,
+        "sit_rate": 0.12,
+        "flag_rate": 0.052
+       }
+      },
+      "main_mix": {
+       "inc": 0.83,
+       "chal": 0.17
+      },
+      "probe": {
+       "version": 1,
+       "refresh": false
+      },
+      "evidence": [
+       {
+        "pair": "f=0,k=-,b=800,l=0,src=cap>f=0.125,k=4,b=800,l=0,src=cap",
+        "n": 2,
+        "mean": 0.0042,
+        "d": [
+         0.0031,
+         0.0053
+        ],
+        "iters": [
+         5,
+         6
+        ]
+       }
+      ],
+      "tabu": {},
+      "history": [],
+      "prior": {
+       "status": "ready",
+       "text": "exploring allowed",
+       "flags": {
+        "score_stage": true,
+        "probe_bias_measured": true,
+        "search_q_blend": true,
+        "policy_positions": true,
+        "reanalyse_fidelity": false,
+        "fits_bench_k8": false
+       },
+       "blockers": [],
+       "masked": [
+        "k=8 (bench)",
+        "src=reanalyse (fidelity)"
+       ],
+       "sigma_hat": 0.0021,
+       "tau_hat": 0.0014,
+       "tau_df": 5,
+       "gpu_hours": 7.7,
+       "measured_at": "2026-11-23T08:10:00"
+      }
      }
     }
    ],

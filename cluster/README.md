@@ -304,3 +304,77 @@ for n in 1 2 3; do sbatch -J mon_hybrid1_it$n cluster/monitor_iteration.sbatch r
 FORCE=1 bash cluster/launch_anchor_match.sh runs/full/hybrid1 1    # anchors for an iteration the watchdog skipped
 bash cluster/launch_anchor_match.sh runs/full/hybrid1 1            # again once the parts end: merges summary.json
 ```
+
+## Search balance
+
+`cluster/search_balance.py` (spec and simulation: `docs/search_balance.md`) decides, iteration by iteration, how a
+run spends self-play GPU time: deep searches on a share f of decisions at k x 800 nodes (the playout cap), cheaper
+b-node searches on the rest, and a Q-vs-outcome value blend lambda in the trainer. Today's recipe is theta0 =
+(f 0, b 800, lambda 0). Each iteration it plans the segments (`balance/itN.plan.json`), one challenger segment plays
+a neighbouring recipe on the same GPU time as its twin seg00 (fewer games when it costs more per game), paired
+mini-trains on the two score the difference d on a probe, and `decide` promotes, continues or rejects
+(`balance/itN.json`). Validation self-play always stays stock. **Off by default**: without `BALANCE=1` no command,
+marker, log line or metrics field changes.
+
+**What it does with no prior.** Until `runs/full/<RUN>/balance/prior.json` exists *and* says the mini-train/score
+stage is built (`score_stage`), every plan is mode `frozen` at theta0: no challenger, no overhead, only the realised
+costs logged. The panel then shows "holding theta0: no measured prior". f > 0 arms stay masked until the probe bias
+was measured small (`probe_bias_measured`), lambda > 0 until the trainer has `--search-q-blend`, k = 8 until the
+bench saw it fit (`fits_bench`), reanalyse until its fidelity test passed.
+
+**Flags.** `wave2_iterate.sbatch BALANCE=1` adds `--search-balance --search-balance-controller
+<repo>/cluster/search_balance.py` (and `--search-balance-prior BALANCE_PRIOR` when set) to rl-loop for the main job
+and its workers; `BALANCE_ARGS` replaces those flags verbatim. With `BALANCE=1` every main job first brings
+`build-sp1` to the checkout's commit (`cluster/build_sp1.sh`, a no-op when current). If that build fails, the
+engine has no `--deep-fraction`, the controller file is missing or rl-loop has no `--search-balance`, the main job
+logs `WARNING search balance OFF` and runs today's recipe (as `BALANCE=0`) instead of failing, since a FAILED job
+makes the watchdog cancel the chain; a broken engine binary still fails it (a worker always dies on these). That rebuild is safe in a chain: `--dependency=singleton` means no other main job of the run is
+running, workers start after it, and nothing else uses `build-sp1` (monitor jobs are Python; gates and anchors play
+`build-ninja`, which is never rebuilt here). `launch_full_run.sh BALANCE=1` passes it on and records `balance 1` in
+`launch_settings.txt`; with it, the wave2-hivemind checkout may also fast-forward to a pin whose `engine/` differs
+(the rebuild above happens at the next job, never under a running one).
+
+**Turning it on for a running run** (hybrid1: the running job and the watchdog stay; the next job starts with it):
+
+```bash
+# after the engine + rl-loop change is pinned in cluster/wave2_engine.ref (byte-identical with the cap off)
+DRY_RUN=1 RESUME=1 REPLACE_PENDING=1 RUN=hybrid1 BALANCE=1 bash cluster/launch_full_run.sh   # prints scancel/sbatch
+RESUME=1 REPLACE_PENDING=1 RUN=hybrid1 BALANCE=1 bash cluster/launch_full_run.sh
+```
+
+`REPLACE_PENDING=1` submits the same number of jobs as there are PENDING `full_<RUN>` jobs (`CHAIN` defaults to
+it) with the new environment, and only after every sbatch succeeded cancels those PENDING jobs (by id, `scancel -t
+PENDING`); singleton keeps the new jobs behind them, so a failed sbatch or squeue never leaves the run without a
+chain, and `launch_settings.txt` is rewritten only after the cancel; the other settings come from `launch_settings.txt` and must
+match apart from `engine` and `balance` (the old line goes to `launch_settings.history`). No new watchdog unless
+`NEW_WATCHDOG=1`. Switch back the same way with `BALANCE=0`. Note that moving the checkout also gives the running
+job's later subprocesses (training, gates) the new Python, which must be identical with balance off.
+
+**The prior** (`cluster/balance_prior.sbatch`, one GPU job array on finished iterations of an existing run; it writes
+only `balance/prior.json`, `balance/prior_work/` and, if missing, the run's frozen `probe/`):
+
+```bash
+RUN_ROOT=runs/full/hybrid1 ITERS="1" bash cluster/balance_prior.sbatch plan     # pairs, GPU-h estimate, sbatch line
+RUN_ROOT=runs/full/hybrid1 ITERS="1" BUILD=1 sbatch --array=0-3 cluster/balance_prior.sbatch
+```
+
+Task 0 is the budget sweep (gamma per node count, `fits_bench`), task 1 the probe-bias measurement (a f=1/8,k=4
+segment on seg00's GPU time and seed, probe-mode self-play at k = 16 for a deep probe, mini-trains inc vs chal), tasks
+2.. one theta0-vs-theta0 replicate each on two disjoint finished segments (sigma_hat from seed pairs, tau_hat from the
+spread across replicates). The last task to finish scores every mini net with `probe_net.py eval` and writes
+`prior.json`. It plays on `engine/build-balance-sp1` (`BUILD=1` builds it), never `build-sp1`. **Cost: about
+4.7 + 0.75 R GPU-hours** (R replicates: 2 per iteration of 5 segments, at most `REPLICATES`, 10): ~6.2 GPU-h on hybrid1
+after it1, ~7.7 after it2. It is the user's call to submit. Its GPU-hours (`cost_gpu_h`) are added once to the cost
+of the first balance iteration in `run_metrics.py`.
+
+**Costs during the run.** Planned overhead per controlled iteration ~1.0-1.3 GPU-h (mini-trains 0.65, probe refresh
+0.55 every 2nd iteration, scoring 0.05, mini-gate 0.3 when it can decide), capped at 10% of the run's GPU-hours; the
+challenger segment itself is not overhead (its games train the main net). In frozen mode the overhead is 0.
+
+**Monitor and panel.** `run_metrics.py` merges `balance/itN.json` (and the plan) into `metrics/itN.json` as
+`"balance"`: incumbent and challenger, decision with Z, d and its 95% range, evidence, overhead (frac vs the 0.10 cap),
+per-arm games/GPU-h, visits/s, deep and masked shares, sit and flag rates, main mix, probe version and the prior's
+status. Cost gets `balance_overhead_gpu_hours` (inside the iteration's window, so already in `gpu_hours`),
+`selfplay_gpu_h_by_arm`, and on the first balance iteration `balance_prior_gpu_hours` / `gpu_hours_total` (what
+`gpu_hours_cum` and `elo_per_gpu_hour` use). The dev panel's Metrics step has a "Search balance" section. Status by
+hand: `.venv/bin/python cluster/search_balance.py status runs/full/<RUN>`.

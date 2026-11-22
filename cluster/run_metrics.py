@@ -3,7 +3,8 @@
 Every iteration runs/rl-itN of a run gets metrics/itN.json: the gate and anchor results (Elo vs the fixed it13 anchor
 is the target), GPU cost, self-play statistics, the training curve, search speed, the network probe
 (metrics/itN.probe.json from cluster/probe_net.py, merged when present), what changed since the previous iteration,
-and alerts. A KPI that cannot be measured from what is on disk is null and listed under "unavailable" with the reason.
+alerts and, on a run with the search-balance controller (cluster/search_balance.py, rl-loop --search-balance), its
+balance/itN.json merged as "balance". A KPI that cannot be measured from what is on disk is null and listed under "unavailable" with the reason.
     .venv/bin/python cluster/run_metrics.py runs/full/hybrid1               # write metrics/itN.json
     .venv/bin/python cluster/run_metrics.py runs/full/hybrid1 --summary     # + metrics/summary.json, JSON on stdout
     .venv/bin/python cluster/run_metrics.py runs/full/hybrid1 --alerts      # + append new alerts to alerts.tsv
@@ -29,6 +30,10 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from training_curve import blocks, games as game_scores, load  # noqa: E402  (same gate parsing as the panel's curve)
+try:  # the search-balance controller (stdlib only); its absence only drops the balance section's derived fields
+    import search_balance as sb  # noqa: E402
+except Exception:  # noqa: BLE001
+    sb = None
 
 SCHEMA = 1
 BLOCK = 100                # gate games per block, as training_curve.py
@@ -622,6 +627,120 @@ def settings(it_dir, n, root, log, record):
     return out
 
 
+# ---------------------------------------------------------------------------------------------------- search balance
+
+BALANCE_FILES = ("it{n}.plan.json", "it{n}.json", "it{n}/realised.json", "it{n}/overhead.json", "it{n}/score.json",
+                 "it{n}/minigate.json", "prior.json")
+THETA0 = {"f": 0.0, "k": None, "b": 800, "lambda": 0.0, "src": "cap"}
+
+
+def theta_key(t):
+    if not isinstance(t, dict):
+        return None
+    if sb:
+        return sb.key(t)
+    return f"f={t.get('f', 0):g},k={t.get('k') or '-'},b={t.get('b', 800)},l={t.get('lambda', 0):g},src={t.get('src', 'cap')}"
+
+
+def prior_status(prior):
+    """What the controller may do given balance/prior.json: 'none' (no file: it holds theta0), 'blocked' (a prior, but
+    the score stage is not built: still theta0) or 'ready' (exploration allowed; some arms may still be masked)."""
+    if prior is None:
+        return {"status": "none", "text": "holding theta0: no measured prior", "flags": {}, "blockers": [],
+                "masked": []}
+    flags = {k: bool(prior.get(k)) for k in ("score_stage", "probe_bias_measured", "search_q_blend",
+                                              "policy_positions", "reanalyse_fidelity")}
+    flags["fits_bench_k8"] = bool((prior.get("fits_bench") or {}).get("8"))
+    blockers = sb.exploration_blockers(prior) if sb else ([] if prior.get("score_stage") else ["no score stage"])
+    masked = [m for m, ok in (("f>0 (probe bias not measured)", flags["probe_bias_measured"]),
+                              ("lambda>0 (no --search-q-blend)", flags["search_q_blend"]),
+                              ("k=8 (bench)", flags["fits_bench_k8"]),
+                              ("src=reanalyse (fidelity)", flags["reanalyse_fidelity"])) if not ok]
+    text = ("holding theta0: prior present but " + "; ".join(blockers)) if blockers else "exploring allowed"
+    return {"status": "blocked" if blockers else "ready", "text": text, "flags": flags, "blockers": blockers,
+            "masked": masked, "sigma_hat": prior.get("sigma_hat"), "tau_hat": prior.get("tau_hat"),
+            "tau_df": prior.get("tau_df"), "gpu_hours": prior.get("cost_gpu_h"),
+            "measured_at": prior.get("measured_at")}
+
+
+def balance_section(root, n):
+    """The search-balance record of iteration n (docs/search_balance.md section 9), or None when the run has no
+    balance/itN.plan.json or itN.json (controller off): then the metrics record has no "balance" key at all."""
+    bdir = os.path.join(root, "balance")
+    plan = load(os.path.join(bdir, f"it{n}.plan.json"))
+    res = load(os.path.join(bdir, f"it{n}.json"))
+    if plan is None and res is None:
+        return None
+    plan, res = plan or {}, res or {}
+    prior = load(os.path.join(bdir, "prior.json"))
+    realised = (res.get("results") or {}).get("realised") or load(os.path.join(bdir, f"it{n}", "realised.json")) or {}
+    dec = res.get("decision") or {}
+    results = res.get("results") or {}
+    state = res.get("state") or plan.get("state_in") or {}
+    star = plan.get("theta_star") or res.get("theta_star_planned") or state.get("theta_star")
+    chal = plan.get("challenger") if plan else res.get("challenger")
+    mean, se = dec.get("mean"), dec.get("se")
+    interval = [rnd(mean - 1.96 * se), rnd(mean + 1.96 * se)] if mean is not None and se is not None else None
+    segs = plan.get("segments") or {}
+    arms = {}
+    for seg, r in realised.items():
+        arm = (segs.get(seg) or {}).get("theta", "inc")
+        a = arms.setdefault(arm, {"segments": 0, "games": 0, "gpu_s": 0.0, "visits": 0, "records": 0, "deep": 0,
+                                  "masked": 0, "_sit": [], "_flag": []})
+        a["segments"] += 1
+        for k in ("games", "records", "deep", "masked"):
+            a[k] += r.get(k) or 0
+        a["gpu_s"] += r.get("gpu_s") or 0.0
+        a["visits"] += r.get("visits") or ((r.get("deep_visits") or 0) + (r.get("fast_visits") or 0))
+        for k, dst in (("sit_rate", "_sit"), ("flag_rate", "_flag")):
+            if r.get(k) is not None:
+                a[dst].append(r[k])
+    per_arm = {}
+    for arm, a in arms.items():
+        g = a["gpu_s"]
+        per_arm[arm] = {"segments": a["segments"], "games": a["games"], "records": a["records"],
+                        "gpu_hours": rnd(g / 3600) if g else None,
+                        "games_per_gpu_h": rnd(a["games"] / (g / 3600)) if g else None,
+                        "visits_per_s": rnd(a["visits"] / g) if g and a["visits"] else None,
+                        "deep_share": rnd(a["deep"] / a["records"]) if a["records"] else None,
+                        "masked_share": rnd(a["masked"] / a["records"]) if a["records"] else None,
+                        "sit_rate": rnd(sum(a["_sit"]) / len(a["_sit"])) if a["_sit"] else None,
+                        "flag_rate": rnd(sum(a["_flag"]) / len(a["_flag"])) if a["_flag"] else None}
+    evidence = []
+    for pk, obs in sorted((state.get("evidence") or {}).items()):
+        ds = [o.get("d") for o in obs if o.get("d") is not None]
+        evidence.append({"pair": pk, "n": len(ds), "mean": rnd(sum(ds) / len(ds)) if ds else None,
+                         "d": [rnd(x) for x in ds], "iters": [o.get("iter") for o in obs]})
+    overhead = dict(state.get("overhead") or {})
+    status = prior_status(prior)
+    star_key = theta_key(star)
+    if status["status"] != "ready" and star_key and star_key != theta_key(THETA0):
+        status["text"] = status["text"].replace("holding theta0", f"holding {star_key}")
+    return {"mode": plan.get("mode") or res.get("mode"), "reason": plan.get("reason"),
+            "theta_star": star, "theta_star_key": star_key,
+            "theta_star_next": state.get("theta_star") if res else None,
+            "challenger": chal, "challenger_key": theta_key(chal), "challenger_kind": plan.get("challenger_kind"),
+            "challenger_segment": plan.get("challenger_segment"), "twin_segment": plan.get("twin_segment"),
+            "revert_test": plan.get("revert_test"),
+            "decided": bool(res),
+            "decision": {k: dec.get(k) for k in ("action", "reason", "Z", "mean", "se", "n", "delta_min", "sigma_hat",
+                                                 "tau_hat", "tau_df")} if dec else None,
+            "d": results.get("d"), "sigma_n": results.get("sigma_n"), "d_interval95": interval,
+            "minigate": results.get("minigate"), "review": results.get("review"),
+            "cost_overrun": results.get("cost_overrun"), "c_realised": results.get("c_realised"),
+            "cost": {"c_inc": (plan.get("cost") or {}).get("c_inc"), "c_chal": (plan.get("cost") or {}).get("c_chal")},
+            "games": {s: v.get("games") for s, v in segs.items()},
+            "overhead": {"this_iter_gpu_h": overhead.get("this_iter_gpu_h"), "cum_gpu_h": overhead.get("cum_gpu_h"),
+                         "run_gpu_h": overhead.get("run_gpu_h"), "frac": overhead.get("frac"),
+                         "planned_gpu_h": rnd(sum((plan.get("overhead_planned") or {}).values())) if plan else None,
+                         "cap": 0.10},
+            "dropped": plan.get("dropped"), "per_arm": per_arm, "main_mix": res.get("main_mix"),
+            "probe": {"version": (plan.get("probe") or {}).get("version"),
+                      "refresh": (plan.get("probe") or {}).get("refresh")},
+            "evidence": evidence, "tabu": state.get("tabu") or {}, "history": state.get("history") or [],
+            "prior": status}
+
+
 # ---------------------------------------------------------------------------------------------------- one iteration
 
 
@@ -678,6 +797,12 @@ def signature(it_dir, metrics_dir, n):
     if os.path.isfile(probe):
         st = os.stat(probe)
         sig.append(["probe", st.st_mtime_ns, st.st_size])
+    # Search balance: only files that exist, so a run without the controller keeps its old signature (and cache).
+    for rel in BALANCE_FILES:
+        p = os.path.join(root, "balance", rel.format(n=n))
+        if os.path.isfile(p):
+            st = os.stat(p)
+            sig.append([f"balance/{rel.format(n=n)}", st.st_mtime_ns, st.st_size])
     return sig
 
 
@@ -717,6 +842,12 @@ def iteration(root, n, log, metrics_dir, data_cache):
               "training": training(it_dir, n, log, unavailable),
               "search": match_search(it_dir, unavailable),
               "network": probe, "changes": {}, "alerts": [], "unavailable": unavailable}
+    bal = balance_section(root, n)
+    if bal is not None:
+        record["balance"] = bal
+        arms = bal["per_arm"]
+        record["cost"]["selfplay_gpu_h_by_arm"] = {a: v["gpu_hours"] for a, v in arms.items()} or None
+        record["cost"]["balance_overhead_gpu_hours"] = bal["overhead"]["this_iter_gpu_h"]
     record["_settings"] = settings(it_dir, n, root, log, record)
     return record
 
@@ -839,8 +970,17 @@ def collect(root, out_dir=None):
                 r["unavailable"]["cost.gpu_hours"] = reason or "the iteration has no lines in runs/rl-loop.log"
     # Cross-iteration fields, cheap, always recomputed.
     cum, prev_elo = 0.0, 0.0
+    # Search balance: its stages run inside the main job's iteration window, so their GPU-hours are already part of
+    # gpu_hours (balance_overhead_gpu_hours says how much). The prior job (cluster/balance_prior.sbatch) runs outside
+    # every window: its GPU-hours are added once, to the first iteration with a balance record (gpu_hours_total).
+    first_bal = next((r["iteration"] for r in records if "balance" in r), None)
     for i, r in enumerate(records):
         g = r["cost"]["gpu_hours"]
+        if "balance" in r:
+            extra = (r["balance"]["prior"].get("gpu_hours") or 0.0) if r["iteration"] == first_bal else 0.0
+            r["cost"]["balance_prior_gpu_hours"] = extra or None
+            g = None if g is None else round(g + extra, 4)
+            r["cost"]["gpu_hours_total"] = g
         cum = None if cum is None or g is None else cum + g
         r["cost"]["gpu_hours_cum"] = None if cum is None else round(cum, 4)
         el = r["outcome"]["elo_vs_it13"]

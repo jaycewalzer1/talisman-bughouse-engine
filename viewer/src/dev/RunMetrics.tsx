@@ -2,7 +2,7 @@
 // from cluster/probe_net.py merged in as "network"), so we can see what moves Elo. Elo vs fixed anchors is the
 // target; every other KPI is a diagnostic or an alarm. Data: /api/metrics (vite.devApi.ts). A KPI the collector
 // could not measure arrives as null with a reason under "unavailable"; it is drawn greyed with that reason, never
-// dropped.
+// dropped. Runs with the search-balance controller (cluster/search_balance.py) also carry "balance" per iteration.
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 
@@ -23,6 +23,26 @@ interface Probe {
   swings?: { fen: string; prev: number; now: number; actual: number; source?: string; category?: string }[]
   probe_set?: { positions: number }
 }
+interface Theta { f: number; k: number | null; b: number; lambda: number; src: string }
+interface ArmRealised {
+  segments: number; games: number; records: number; gpu_hours: number | null; games_per_gpu_h: number | null
+  visits_per_s: number | null; deep_share: number | null; masked_share: number | null; sit_rate: number | null; flag_rate: number | null
+}
+interface Balance {
+  mode: string | null; reason: string | null; theta_star: Theta | null; theta_star_next: Theta | null
+  challenger: Theta | null; challenger_kind: string | null; challenger_segment: string | null; twin_segment: string | null; revert_test: boolean | null; decided: boolean
+  decision: { action: string | null; reason: string | null; Z: number | null; mean: number | null; se: number | null; n: number | null; delta_min: number | null } | null
+  d: number | null; sigma_n: number | null; d_interval95: [number, number] | null
+  review: boolean | null; cost_overrun: boolean | null
+  cost: { c_inc: number | null; c_chal: number | null }
+  games: Record<string, number>
+  overhead: { this_iter_gpu_h: number | null; cum_gpu_h: number | null; run_gpu_h: number | null; frac: number | null; planned_gpu_h: number | null; cap: number }
+  per_arm: Record<string, ArmRealised>
+  main_mix: { inc: number; chal: number } | null
+  probe: { version: number | null; refresh: boolean | null }
+  evidence: { pair: string; n: number; mean: number | null; d: number[]; iters: number[] }[]
+  prior: { status: 'none' | 'blocked' | 'ready'; text: string; masked: string[]; sigma_hat?: number | null; tau_hat?: number | null; tau_df?: number | null; gpu_hours?: number | null }
+}
 interface Iter {
   run: string; iteration: number; done: boolean; generated_at: string
   outcome: { gate_generator: Match | null; gate_it13: Match | null; promoted: boolean | null; anchors: Record<string, Match>; elo_vs_it13: number | null }
@@ -34,6 +54,7 @@ interface Iter {
   changes: Record<string, [unknown, unknown]>
   alerts: Alert[]
   unavailable: Record<string, string>
+  balance?: Balance
 }
 interface Run { run: string; root: string; settings: string | null; iterations: Iter[]; alerts: Alert[] }
 interface Summary { schema: number; generated_at: string; runs: Run[]; sample?: string }
@@ -446,6 +467,100 @@ function Tile({ label, value, sub, na }: { label: string; value: ReactNode; sub:
 
 const show = (v: unknown) => v == null ? '–' : typeof v === 'object' ? JSON.stringify(v) : String(v)
 
+// ---------------------------------------------------------------- search balance
+
+const FRAC: Record<string, string> = { '0.0625': '1/16', '0.125': '1/8', '0.25': '1/4', '0.5': '1/2' }
+function thetaText(t: Theta | null | undefined): string {
+  if (!t) return '–'
+  const parts = [t.f > 0 ? `f ${FRAC[String(t.f)] ?? t.f} · k ${t.k}` : 'f 0 (stock)']
+  if (t.b !== 800) parts.push(`b ${t.b}`)
+  if (t.lambda > 0) parts.push(`λ ${t.lambda}`)
+  if (t.src !== 'cap') parts.push(t.src)
+  return parts.join(' · ')
+}
+const sci = (v: number | null | undefined) => v == null ? '–' : Math.abs(v) < 0.01 && v !== 0 ? v.toExponential(2) : v.toFixed(4)
+const opt = (v: number | null | undefined, f: (x: number) => string) => v == null ? '–' : f(v)
+
+function SearchBalance({ its }: { its: Iter[] }) {
+  const bal = its.filter(it => it.balance)
+  if (!bal.length) return <p className="dt-empty">Search balance is off for this run (no balance/itN.json; wave2_iterate.sbatch BALANCE=1 turns it on).</p>
+  const last = bal[bal.length - 1], b = last.balance!
+  const star = b.decided ? b.theta_star_next ?? b.theta_star : b.theta_star
+  const oh = b.overhead.frac
+  return (
+    <>
+      <section className="rm-tiles">
+        <Tile label="Incumbent recipe" value={thetaText(star)}
+          sub={<>after it{last.iteration} · mode {b.mode ?? '–'}{b.theta_star?.f === 0 && b.theta_star?.lambda === 0 && b.theta_star?.b === 800 ? ' · today\'s recipe (θ0)' : ''}</>} />
+        <Tile label="Challenger" na={!b.challenger} value={b.challenger ? thetaText(b.challenger) : 'none'}
+          sub={b.challenger ? <>{b.decision?.action ?? 'not decided yet'}{b.revert_test ? ' · revert test' : ''}{b.cost.c_chal != null ? ` · cost ×${b.cost.c_chal.toFixed(2)}` : ''}</> : (b.reason ?? '')} />
+        <Tile label="Overhead (cap 10%)" na={oh == null} value={oh != null ? pct(oh) : 'n/a'}
+          sub={<>{opt(b.overhead.cum_gpu_h, fix(1))} of {opt(b.overhead.run_gpu_h, fix(0))} GPU-h{oh != null && oh > b.overhead.cap ? ' · OVER CAP' : ''}</>} />
+        <Tile label="Prior" na={b.prior.status !== 'ready'} value={b.prior.status === 'none' ? 'none' : b.prior.status}
+          sub={<>{b.prior.text}{b.prior.status !== 'none' && b.prior.sigma_hat != null ? ` · σ̂ ${sci(b.prior.sigma_hat)} τ̂ ${sci(b.prior.tau_hat)} (${b.prior.tau_df ?? 0} df)` : ''}{b.prior.masked.length ? ` · masked: ${b.prior.masked.join(', ')}` : ''}</>} />
+      </section>
+      <div className="rm-scroll">
+        <table className="dp-table">
+          <thead><tr><th>it</th><th>mode</th><th>incumbent</th><th>challenger</th><th className="num">games inc/chal</th><th className="num">d</th><th>95% range</th><th className="num">Z</th><th>decision</th><th className="num">overhead</th><th>probe</th></tr></thead>
+          <tbody>
+            {bal.map(it => {
+              const x = it.balance!
+              return (
+                <tr key={it.iteration}>
+                  <td style={{ color: itColor(it.iteration) }}>it{it.iteration}</td>
+                  <td>{x.mode ?? '–'}{x.review ? ' · review' : ''}{x.cost_overrun ? ' · cost overrun' : ''}</td>
+                  <td>{thetaText(x.theta_star)}</td>
+                  <td>{x.challenger ? thetaText(x.challenger) : '–'}</td>
+                  <td className="num">{x.games[x.twin_segment ?? 'seg00'] ?? x.games.seg00 ?? '–'}/{x.challenger_segment ? x.games[x.challenger_segment] : '–'}</td>
+                  <td className="num">{sci(x.d)}</td>
+                  <td>{x.d_interval95 ? `[${sci(x.d_interval95[0])}, ${sci(x.d_interval95[1])}]` : '–'}</td>
+                  <td className="num">{opt(x.decision?.Z, fix(2))}</td>
+                  <td title={x.decision?.reason ?? x.reason ?? ''}>{x.decided ? x.decision?.action ?? '–' : 'pending'}</td>
+                  <td className="num">{opt(x.overhead.frac, pct)}</td>
+                  <td>v{x.probe.version ?? 0}{x.probe.refresh ? ' (new)' : ''}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="rm-cap">d is the incumbent's mini-net probe score minus the challenger's (both trained on the same GPU time of self-play):
+        above 0 favours the challenger. Promotion needs Z ≥ 3 over ≥ 2 iterations, d ≥ δmin and a measured between-data noise;
+        hover a decision for its reason.</p>
+      {Object.keys(b.per_arm).length > 0 && (
+        <div className="rm-scroll">
+          <table className="dp-table">
+            <thead><tr><th>arm (it{last.iteration})</th><th className="num">segments</th><th className="num">games</th><th className="num">games/GPU-h</th><th className="num">visits/s</th><th className="num">deep</th><th className="num">masked</th><th className="num">sit</th><th className="num">flag</th></tr></thead>
+            <tbody>
+              {Object.entries(b.per_arm).map(([arm, a]) => (
+                <tr key={arm}>
+                  <td>{arm === 'chal' ? 'challenger' : 'incumbent'}</td><td className="num">{a.segments}</td><td className="num">{a.games}</td>
+                  <td className="num">{opt(a.games_per_gpu_h, fix(0))}</td><td className="num">{opt(a.visits_per_s, kfmt)}</td>
+                  <td className="num">{opt(a.deep_share, pct)}</td><td className="num">{opt(a.masked_share, pct)}</td>
+                  <td className="num">{opt(a.sit_rate, pct)}</td><td className="num">{opt(a.flag_rate, pct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {b.evidence.length > 0 && (
+        <div className="rm-scroll">
+          <table className="dp-table">
+            <thead><tr><th>evidence (incumbent › challenger)</th><th className="num">n</th><th className="num">mean d</th><th>d per iteration</th></tr></thead>
+            <tbody>
+              {b.evidence.map(e => (
+                <tr key={e.pair}><td><code>{e.pair}</code></td><td className="num">{e.n}</td><td className="num">{sci(e.mean)}</td>
+                  <td>{e.d.map((d, i) => `it${e.iters[i]} ${sci(d)}`).join(', ')}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function RunMetrics() {
   const [reply, setReply] = useState<Reply | null>(null)
   const [data, setData] = useState<Summary | null>(null)
@@ -549,6 +664,9 @@ export default function RunMetrics() {
               <Positions it={pIt} />
             </>
           ) : <p className="rm-why">No probe yet: {lastIt ? whyNull(lastIt, 'network') : 'no iterations'}</p>}
+
+          <h3 className="rm-h">Search balance</h3>
+          <SearchBalance its={its} />
 
           <h3 className="rm-h">What changed, iteration by iteration</h3>
           <div className="dt-its">

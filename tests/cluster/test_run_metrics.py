@@ -84,6 +84,8 @@ def test_int_shared_record(tmp_path, monkeypatch):
     assert r["cost"]["gpu_hours"] is None and "sacct" in r["unavailable"]["cost.gpu_hours"]
     assert r["cost"]["wall_hours"] == pytest.approx((3 * 60 + 25) / 3600, abs=1e-3)  # 12:55:56 -> 12:59:21
     assert r["changes"] == {} and r["alerts"] == []
+    # No search balance on this run: no "balance" key and the cost section as before.
+    assert "balance" not in r and set(r["cost"]) == {"gpu_hours", "gpu_hours_cum", "elo_per_gpu_hour", "wall_hours"}
     # Every null KPI says why.
     assert r["search"]["depth"] is None and "search.depth" in r["unavailable"]
     assert r["training"]["grad_norm"] is None and "training.grad_norm" in r["unavailable"]
@@ -360,3 +362,121 @@ def test_concurrent_collectors(tmp_path, monkeypatch):
     with open(os.path.join(root, "alerts.tsv")) as f:
         assert len(f.read().splitlines()) == 5
     assert not [f for f in os.listdir(os.path.join(root, "metrics")) if f.endswith(".tmp")]
+
+
+# ---------------------------------------------------------------------------------------------------- search balance
+
+BALANCE = os.path.join(REPO, "cluster", "search_balance.py")
+THETA0 = {"f": 0.0, "k": None, "b": 800, "lambda": 0.0, "src": "cap"}
+F8K4 = {"f": 0.125, "k": 4, "b": 800, "lambda": 0.0, "src": "cap"}
+
+
+def controller(*args):
+    out = subprocess.run([sys.executable, BALANCE, *map(str, args)], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    return out.stdout
+
+
+def test_balance_without_prior_holds_theta0(tmp_path, monkeypatch):
+    """The controller's real files on the fixture copy: no prior.json, so the plan is frozen at theta0 and the record
+    says so; realised.json's per-segment numbers are summed per arm."""
+    no_sacct(monkeypatch, tmp_path)
+    root = copy_fixture(str(tmp_path / "bal"))
+    controller("plan", root, 1, "--segments", 4, "--segment-games", 2)
+    controller("realise", root, 1)
+    controller("decide", root, 1)
+    rm.collect(root)
+    r = read_json(os.path.join(root, "metrics", "it1.json"))
+    b = r["balance"]
+    assert b["mode"] == "frozen" and b["theta_star"] == THETA0 and b["challenger"] is None and b["decided"] is True
+    assert b["decision"]["action"] == "none" and b["d"] is None and b["d_interval95"] is None
+    assert b["prior"]["status"] == "none" and b["prior"]["text"] == "holding theta0: no measured prior"
+    assert b["games"] == {"seg00": 2, "seg01": 2, "seg02": 2, "seg03": 2}
+    inc = b["per_arm"]["inc"]
+    assert (inc["segments"], inc["games"], inc["records"]) == (4, 8, 1307) and inc["gpu_hours"] is None and b["challenger_segment"] is None
+    assert b["overhead"]["frac"] == 0.0 and b["overhead"]["cap"] == 0.1
+    assert r["cost"]["balance_overhead_gpu_hours"] == 0 and r["cost"]["selfplay_gpu_h_by_arm"] == {"inc": None}
+    # The other sections are untouched by the merge.
+    assert r["selfplay"]["games"] == 8 and r["outcome"]["gate_generator"]["games"] == 2
+
+
+def balance_files(root, n, prior=True):
+    """A hand-written iteration with a challenger (f=1/8, k=4 in seg03 twinned with seg00), its decision and realised
+    costs, and a prior that cost 6 GPU-hours."""
+    bdir = os.path.join(root, "balance")
+    os.makedirs(os.path.join(bdir, f"it{n}"), exist_ok=True)
+    segs = {f"seg{k:02d}": {"theta": "inc", "seed": 1000 * n + k, "games": 2, "engine_args": []} for k in range(3)}
+    segs["seg03"] = {"theta": "chal", "seed": 1000 * n, "games": 1, "twin": "seg00",
+                     "engine_args": ["--deep-fraction", "0.125", "--deep-multiplier", "4"]}
+    state = {"theta_star": THETA0, "evidence": {"x>y": [{"iter": n, "d": 0.004, "sigma_n": 0.002, "seeds": 2}]},
+             "overhead": {"cum_gpu_h": 0.9, "run_gpu_h": 18.0, "frac": 0.05, "this_iter_gpu_h": 0.9},
+             "tabu": {}, "history": [{"iter": n, "action": "continue", "challenger": "f=0.125"}]}
+    write_json(os.path.join(bdir, f"it{n}.plan.json"),
+               {"schema": 1, "iteration": n, "mode": "explore", "reason": "compass step 2 direction f+",
+                "theta_star": THETA0, "challenger": F8K4, "challenger_kind": "selfplay", "revert_test": False,
+                "segments": segs, "cost": {"c_inc": 1.0, "c_chal": 1.3713}, "probe": {"version": 1, "refresh": True},
+                "overhead_planned": {"minitrain": 0.65, "score": 0.05, "probe": 0.55}, "dropped": [],
+                "state_in": dict(state, evidence={}, overhead=dict(state["overhead"], cum_gpu_h=0.0))})
+    realised = {s: {"games": g["games"], "records": 300, "gpu_s": 1800.0, "visits": 240000, "sit_rate": 0.1,
+                    "flag_rate": 0.05} for s, g in segs.items()}
+    realised["seg03"].update(deep=40, masked=0, visits=330000)
+    write_json(os.path.join(bdir, f"it{n}.json"),
+               {"schema": 1, "iteration": n, "mode": "explore", "theta_star_planned": THETA0, "challenger": F8K4,
+                "results": {"d": 0.004, "sigma_n": 0.002, "realised": realised, "review": False},
+                "decision": {"action": "continue", "reason": "Z=1.4 n=1", "Z": 1.4, "mean": 0.004, "se": 0.002,
+                             "n": 1, "delta_min": 0.003},
+                "state": state, "main_mix": {"inc": 0.75, "chal": 0.25}})
+    if prior:
+        write_json(os.path.join(bdir, "prior.json"), {"sigma_hat": 0.002, "tau_hat": 0.001, "tau_df": 3,
+                                                      "score_stage": True, "cost_gpu_h": 6.0})
+
+
+def test_balance_challenger_cost_and_cache(tmp_path, monkeypatch):
+    root, bin_dir = make_run(tmp_path)
+    monkeypatch.setenv("PATH", bin_dir + os.pathsep + os.environ["PATH"])
+    first = {r["iteration"]: r for r in rm.collect(root)}
+    assert all("balance" not in r for r in first.values())
+    gpu = [first[n]["cost"]["gpu_hours"] for n in (1, 2, 3, 4)]
+    # The controller is switched on from it3 (the it1/it2 files stay as they were).
+    balance_files(root, 3)
+    recs = {r["iteration"]: r for r in rm.collect(root)}
+    assert "balance" not in recs[2] and "balance" not in recs[1]
+    b = recs[3]["balance"]
+    assert b["challenger_key"] == "f=0.125,k=4,b=800,l=0,src=cap" and b["decision"]["action"] == "continue"
+    assert b["d_interval95"] == pytest.approx([0.004 - 1.96 * 0.002, 0.004 + 1.96 * 0.002])
+    assert b["per_arm"]["chal"]["games"] == 1 and b["per_arm"]["inc"]["segments"] == 3
+    assert b["per_arm"]["chal"]["games_per_gpu_h"] == 2.0 and b["per_arm"]["inc"]["games_per_gpu_h"] == 4.0
+    assert b["per_arm"]["chal"]["deep_share"] == pytest.approx(40 / 300, abs=1e-6)
+    assert b["per_arm"]["chal"]["visits_per_s"] == pytest.approx(330000 / 1800)
+    assert b["overhead"]["frac"] == 0.05 and b["overhead"]["planned_gpu_h"] == 1.25
+    assert b["evidence"] == [{"pair": "x>y", "n": 1, "mean": 0.004, "d": [0.004], "iters": [3]}]
+    assert b["prior"]["status"] == "ready" and b["prior"]["masked"]  # f>0 still masked: bias not measured
+    assert b["main_mix"] == {"inc": 0.75, "chal": 0.25}
+    # Cost: in-window overhead is already in gpu_hours; the prior job's 6 GPU-h land once, on the first balance it.
+    c3, c4 = recs[3]["cost"], recs[4]["cost"]
+    assert c3["gpu_hours"] == pytest.approx(gpu[2]) and c3["balance_overhead_gpu_hours"] == 0.9
+    assert c3["balance_prior_gpu_hours"] == 6.0 and c3["gpu_hours_total"] == pytest.approx(gpu[2] + 6.0)
+    assert c3["selfplay_gpu_h_by_arm"] == {"inc": 1.5, "chal": 0.5}
+    assert c3["gpu_hours_cum"] == pytest.approx(sum(gpu[:3]) + 6.0, abs=1e-3)
+    assert c3["elo_per_gpu_hour"] == pytest.approx((rm.elo(SCORES[3]) - rm.elo(SCORES[2])) / (gpu[2] + 6.0), abs=1e-2)
+    assert "balance" not in recs[4] and c4["gpu_hours_cum"] == pytest.approx(sum(gpu) + 6.0, abs=1e-3)
+    assert read_json(os.path.join(root, "metrics", "it3.json"))["balance"]["mode"] == "explore"
+    # A balance file written later refreshes the cached finished iteration.
+    path = os.path.join(root, "balance", "it3.json")
+    rec = read_json(path)
+    rec["decision"]["action"] = "promote"
+    write_json(path, rec)
+    again = {r["iteration"]: r for r in rm.collect(root)}
+    assert again[3]["balance"]["decision"]["action"] == "promote"
+
+
+def test_balance_prior_blocked_and_other_incumbent(tmp_path, monkeypatch):
+    no_sacct(monkeypatch, tmp_path)
+    root = copy_fixture(str(tmp_path / "blk"))
+    balance_files(root, 1, prior=False)
+    write_json(os.path.join(root, "balance", "prior.json"), {"sigma_hat": 0.002})  # measured, no score stage
+    plan = read_json(os.path.join(root, "balance", "it1.plan.json"))
+    write_json(os.path.join(root, "balance", "it1.plan.json"), dict(plan, theta_star=F8K4, challenger=None))
+    rm.collect(root)
+    p = read_json(os.path.join(root, "metrics", "it1.json"))["balance"]["prior"]
+    assert p["status"] == "blocked" and p["text"].startswith("holding f=0.125,k=4,b=800,l=0,src=cap: prior present")

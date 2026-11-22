@@ -59,6 +59,21 @@
 #              finish, then trains and gates alone. Use a SEGMENT_GAMES of 250-500, so a segment is under an hour.
 #   WORKER=1   this job is such a worker (selfplay_workers.sh submits it with the main job's settings): it needs the
 #              main job's engines, env and init steps done and runs rl-loop --selfplay-worker. Not with AB=1.
+#
+# Search balance (docs/search_balance.md, cluster/README.md "Search balance"; off by default, and BALANCE unset or 0
+# leaves every command, marker and log line as before):
+#   BALANCE=1  rl-loop gets --search-balance --search-balance-controller cluster/search_balance.py (main job and
+#              workers: loop_args), plus --search-balance-prior BALANCE_PRIOR when set (default: the controller reads
+#              <RUN>/balance/prior.json; without one it holds today's recipe, theta0). BALANCE_ARGS replaces those
+#              flags verbatim (word-split) if the loop's names differ. The self-play engine must list the playout-cap
+#              flags (--deep-fraction ...): at the start of every main job build-sp1 is brought to the checkout's commit
+#              by cluster/build_sp1.sh (a no-op when it is current), even when the engines step is already done; a
+#              worker only checks. Safe in a chain: --dependency=singleton means no other main job of the run is
+#              running, workers start after this check, and monitor/anchor jobs never run build-sp1 (probe_net.py is
+#              Python; anchors and gates play build-ninja). Not with AB=1. On a main job a failed precondition
+#              (build-sp1 rebuild, no --deep-fraction, no controller, rl-loop without --search-balance) turns search
+#              balance off for that job with a "WARNING search balance OFF" line instead of failing it (a FAILED job
+#              makes the watchdog cancel the chain); a broken engine binary still fails the job.
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 [ -n "${SLURM_JOB_ID:-}" ] && source cluster/env.sh
@@ -96,6 +111,9 @@ ALLOW_STOCK="${ALLOW_STOCK:-0}"
 MAX_ITER="${MAX_ITER:-}"
 WORKERS="${WORKERS:-0}"
 WORKER="${WORKER:-0}"
+BALANCE="${BALANCE:-0}"
+BALANCE_PRIOR="${BALANCE_PRIOR:-}"
+BALANCE_ARGS="${BALANCE_ARGS:-}"
 
 die() { echo "wave2_iterate: $*" >&2; exit 1; }
 done_step() { echo "${2:-}" > "$ROOT/.done_$1"; }
@@ -105,6 +123,8 @@ case "$AB" in 0|1) ;; *) die "AB is 0 or 1" ;; esac
 case "$WORKER" in 0|1) ;; *) die "WORKER is 0 or 1" ;; esac
 case "$WORKERS" in ''|*[!0-9]*) die "WORKERS is a number" ;; esac
 if [ "$AB" = 1 ] && { [ "$WORKER" = 1 ] || [ "$WORKERS" -gt 0 ]; }; then die "WORKERS/WORKER do not combine with AB=1"; fi
+case "$BALANCE" in 0|1) ;; *) die "BALANCE is 0 or 1" ;; esac
+if [ "$AB" = 1 ] && [ "$BALANCE" = 1 ]; then die "BALANCE=1 does not combine with AB=1"; fi
 
 [ -d "$W2/.git" ] || die "$W2 missing: run cluster/build.sh (it clones branch talisman/wave2 and builds it)"
 mkdir -p "$ROOT"
@@ -118,6 +138,7 @@ echo "train lr $LR trunk $TRUNK_LR  batch $BATCH_SIZE  passes $NEW_PASSES/$REPLA
 echo "gate: $( [ "$NO_GATE" = 1 ] && echo off || echo "$MATCH_GAMES games at $MATCH_MS ms vs the generator and vs it13" )"
 echo "wave 2: base mix ${BASE_MIX:-preset}  extra ${WAVE2_EXTRA:-none}  allow stock $ALLOW_STOCK"
 echo "wave 2b: AB $AB  WIDE ${WIDE_SET:-unset}  arrivals weight $ARRIVALS_WEIGHT"
+[ "$BALANCE" = 1 ] && echo "search balance: on  prior ${BALANCE_PRIOR:-<RUN>/balance/prior.json}  args ${BALANCE_ARGS:-default}"
 
 # ------------------------------------------------------------------ engines
 if [ "$WORKER" = 1 ]; then
@@ -141,6 +162,31 @@ with engine part 2, or ALLOW_STOCK=1 for a plumbing check on stock games"
   done
   done_step engines "$(git -C "$W2" rev-parse HEAD)"
 fi
+# BALANCE=1 on a main job: a failed precondition turns search balance off for this job (today's recipe, exactly as
+# BALANCE=0) with a loud line, instead of failing the job: the watchdog cancels the whole chain on a FAILED job. A
+# worker still dies (it must play what its main job planned).
+balance_off() {
+  if [ "$WORKER" = 1 ]; then die "BALANCE=1: $*"; fi
+  echo "WARNING search balance OFF for this job (BALANCE=1 requested): $*; it runs today's recipe as BALANCE=0" | tee /dev/stderr
+  BALANCE=0
+}
+if [ "$BALANCE" = 1 ]; then
+  # The engines step runs once per run, so a run switched to BALANCE=1 mid-chain (launch_full_run.sh REPLACE_PENDING=1)
+  # would keep a build-sp1 from before the playout cap: bring it to the checkout's commit at every main job's start.
+  if [ "$WORKER" = 0 ] && [ -z "${SP_ENGINE_SET:-}" ]; then
+    if ! bash cluster/build_sp1.sh "$W2"; then
+      # Only safe to go on when the binary left behind is still a working wave 2 engine.
+      grep -q -- "--durative-tree" <<<"$("$SP_ENGINE" --help 2>&1)" || die "self-play engine build failed (BALANCE=1) and $SP_ENGINE is unusable"
+      balance_off "self-play engine build failed (the previous build-sp1 is kept)"
+    fi
+  fi
+  if [ "$BALANCE" = 1 ] && ! grep -q -- "--deep-fraction" <<<"$("$SP_ENGINE" --help 2>&1)"; then
+    balance_off "$SP_ENGINE lists no playout-cap flags (--deep-fraction): it predates the search-balance engine"
+  fi
+  if [ "$BALANCE" = 1 ] && [ -z "$BALANCE_ARGS" ] && [ ! -f "$REPO/cluster/search_balance.py" ]; then
+    balance_off "$REPO/cluster/search_balance.py missing (talisman checkout predates the controller)"
+  fi
+fi
 
 # ------------------------------------------------------------------ env
 if ! is_done env; then
@@ -152,6 +198,9 @@ if ! is_done env; then
   fi
   "$PY" -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
   done_step env
+fi
+if [ "$BALANCE" = 1 ] && ! grep -q -- "--search-balance" <<<"$(cd "$W2" && "$PY" -m hivemind rl-loop --help 2>&1)"; then
+  balance_off "rl-loop lists no --search-balance (wave2-hivemind checkout predates it)"
 fi
 
 # One lineage: init, ITERS (or $1) iterations, results. ROOT, LINEAGE and ARM_WIDE say which.
@@ -179,6 +228,15 @@ loop_args() {  # the rl-loop arguments shared by the main job and its workers
   [ "$NO_GATE" = 1 ] && ARGS+=(--no-gate)
   [ "$ALLOW_STOCK" = 1 ] && ARGS+=(--allow-stock-engine)
   [ "$ARM_WIDE" = 1 ] && ARGS+=(--wide --arrivals-weight "$ARRIVALS_WEIGHT")
+  if [ "$BALANCE" = 1 ]; then
+    if [ -n "$BALANCE_ARGS" ]; then
+      # shellcheck disable=SC2206  # BALANCE_ARGS is split on purpose
+      ARGS+=($BALANCE_ARGS)
+    else
+      ARGS+=(--search-balance --search-balance-controller "$REPO/cluster/search_balance.py")
+      [ -n "$BALANCE_PRIOR" ] && ARGS+=(--search-balance-prior "$BALANCE_PRIOR")
+    fi
+  fi
   return 0
 }
 if [ "$WORKER" = 1 ]; then
@@ -205,6 +263,7 @@ if ! is_done "loop_$LAST"; then
     export RUN RUNS_DIR WIDE AB=0 GAMES_PER_ITER SEGMENT_GAMES VAL_GAMES PARALLEL_GAMES WINDOW NEW_PASSES \
       REPLAY_PASSES BATCH_SIZE BASE_MIX WAVE2_EXTRA LR TRUNK_LR PROMOTE_ABOVE MATCH_GAMES MATCH_MS NO_GATE \
       ALLOW_STOCK W2 WORKERS LINEAGE ARRIVALS_WEIGHT SP_ENGINE MATCH_ENGINE
+    [ "$BALANCE" = 1 ] && export BALANCE BALANCE_PRIOR BALANCE_ARGS
     ARGS+=(--shared-selfplay --selfplay-hook "bash $REPO/cluster/selfplay_workers.sh")
   fi
   # shellcheck disable=SC2086  # WAVE2_EXTRA is split on purpose
