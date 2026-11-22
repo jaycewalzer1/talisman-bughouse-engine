@@ -1,5 +1,6 @@
-"""cluster/decide_full_run.py on synthetic rounds (every blocker, each config and width choice), and dry runs of
-cluster/launch_wave2c.sh and cluster/launch_full_run.sh with a fake sbatch on PATH (every submission's dependency)."""
+"""cluster/decide_full_run.py on synthetic rounds (every blocker, each config and width choice, the hybrid, the long
+test's merged rows), and dry runs of cluster/launch_wave2c.sh, cluster/launch_long_test.sh and
+cluster/launch_full_run.sh with a fake sbatch on PATH (every submission's dependency)."""
 
 from __future__ import annotations
 
@@ -16,13 +17,13 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(REPO, "cluster"))
 
 import decide_full_run as dfr  # noqa: E402
-from wave2c_configs import CONFIGS, ROWS  # noqa: E402
+from wave2c_configs import BENCHED, CONFIGS, LONG_ROWS, ROWS  # noqa: E402
 
 # ---------------------------------------------------------------------- synthetic round
 
 
-def write_row(path, games: int, score: float, errors: int = 0):
-    """results.jsonl of `games` games (pairs on their own openings) whose contender scores `score`."""
+def write_row(path, games: int, score: float, errors: int = 0, opening_base: int = 0):
+    """results.jsonl of `games` games (pairs on their own openings, from opening_base) whose contender scores `score`."""
     os.makedirs(path, exist_ok=True)
     wins = round(score * games)
     team = {"decisions": 60, "think_ms": 30000, "nodes": 50000, "messages": 0, "stalls": 2}
@@ -31,7 +32,7 @@ def write_row(path, games: int, score: float, errors: int = 0):
             ct = "T1" if i % 2 == 0 else "T2"
             other = "T2" if ct == "T1" else "T1"
             g = {"game_id": f"p{i + 1:05d}", "contender_team": ct, "result": ct if i < wins else other,
-                 "reason": "checkmate", "flag": False, "opening_id": i // 2, "pair_index": i // 2,
+                 "reason": "checkmate", "flag": False, "opening_id": opening_base + i // 2, "pair_index": i // 2,
                  "teams": {"T1": team, "T2": team}, "opponent": "upstream-it13", "group": "target"}
             f.write(json.dumps(g) + "\n")
         for i in range(errors):
@@ -81,13 +82,21 @@ def make_round(tmp, scores: dict | None = None, games: int = 600, build=True, gp
         open(os.path.join(arm, "results.tsv"), "w").write(
             "iteration\tgames\tvs_generator\tvs_it13\tpromoted\nrl-it1\t200\t0.48\t0.47\tFalse\n")
     if rate:
-        for config in ("nodur", "cont"):
+        for config in BENCHED:
             for width in bench_widths:
                 d = os.path.join(rd, "bench", f"{config}_{width}")
                 os.makedirs(d)
                 json.dump({"games": 150, "games_asked": 150, "exit": 0, "games_per_gpu_hour": rate * 0.9,
                            "games_per_gpu_hour_steady": rate}, open(os.path.join(d, "bench.json"), "w"))
     return rd
+
+
+def write_long(rd, lrow, parts: list[tuple[int, float]], errors: int = 0):
+    """The long test's row lrow as parts (games, score), each on its own openings (as distinct seeds give)."""
+    for k, (games, score) in enumerate(parts, 1):
+        path = os.path.join(rd, "long", lrow, f"part{k}")
+        write_row(path, games, score, errors=errors if k == 1 else 0, opening_base=1000 * k)
+        shuffle_rows(path, seed=k)
 
 
 def write_ab(tmp, pairs):
@@ -150,6 +159,73 @@ def test_no_preset_nod1_and_best_single_switch_compete(tmp_path):
     assert any("borrows" in n or "its rate and smoke are cont's" in n for n in d.notes)
     rd2 = make_round(str(tmp_path / "x"), {"c_all_nod1_120": 0.58, "c_nodur_120": 0.43})
     assert run_decide(str(tmp_path / "x"), rd2).config == "cont_nod1"
+
+
+def test_hybrid_is_a_candidate_with_its_own_bench_and_smoke(tmp_path):
+    rd = make_round(str(tmp_path), {"h_best_120": 0.57, "c_nodur_120": 0.43})
+    d = run_decide(str(tmp_path), rd)
+    assert d.go and d.config == "hybrid"
+    assert "CONFIG=hybrid" in d.command and not any("borrows" in n or "smoke are" in n for n in d.notes)
+    assert 'WAVE2_EXTRA="--durative-tree false --sit-gate true --hybrid"' in dfr.report(d)
+    # a hybrid tie (the local result) stays nodur
+    rd = make_round(str(tmp_path / "tie"), {"h_best_120": 0.44, "c_nodur_120": 0.44})
+    assert run_decide(str(tmp_path / "tie"), rd).config == "nodur"
+    # the hybrid needs its own smoke: without smoke_hybrid the round is NO-GO
+    smokes = tuple(s for s in dfr.SMOKES if s[0] != "hybrid")
+    d = run_decide(str(tmp_path / "s"), make_round(str(tmp_path / "s"), smokes=smokes))
+    assert not d.go and len(blockers(d, "B3")) == 2 and all("smoke_hybrid" in b for b in blockers(d, "B3"))
+    d = run_decide(str(tmp_path / "m"), make_round(str(tmp_path / "m"), {"h_best_120": None}))
+    assert not d.go and "h_best_120 no games" in blockers(d, "B5")[0]
+
+
+def test_merged_row_stats_sums_parts_and_clusters_openings(tmp_path):
+    rd = make_round(str(tmp_path))
+    write_long(rd, "l_hybrid_120", [(300, 0.5), (280, 0.6), (40, 0.5)], errors=3)
+    m = dfr.merged_row_stats(os.path.join(rd, "long", "l_hybrid_120"))
+    assert m["games"] == 620 and m["parts"] == 3 and m["errors"] == 3 and not m["finished"]
+    assert m["score"] == pytest.approx((150 + 168 + 20) / 620)
+    assert m["ci95"][0] < m["score"] < m["ci95"][1]
+    one = dfr.row_stats(os.path.join(rd, "long", "l_hybrid_120", "part1"))
+    assert m["ci95"][1] - m["ci95"][0] < one["ci95"][1] - one["ci95"][0]   # tighter than one part
+    assert dfr.merged_row_stats(os.path.join(rd, "long", "nothing")) is None
+
+
+def test_long_rows_are_preferred_over_the_round_rows(tmp_path):
+    # the round rows tie (0.44 / 0.44); the long test separates them: hybrid chosen from the merged rows
+    rd = make_round(str(tmp_path), {"h_best_120": 0.44, "c_nodur_120": 0.44})
+    write_long(rd, "l_hybrid_120", [(300, 0.52)] * 5)
+    write_long(rd, "l_nodur_120", [(300, 0.43)] * 5)
+    write_long(rd, "l_same_120", [(300, 0.50)] * 5)
+    d = run_decide(str(tmp_path), rd)
+    assert d.go and d.config == "hybrid", (d.blockers, d.notes)
+    assert any("l_hybrid_120 (long test, 5 parts)" in n and "QUALIFIES" in n and "l_nodur_120 (long test" in n
+               for n in d.notes)
+    assert any(n.startswith("control ok: l_same_120") for n in d.notes)
+    # and the other way: the round row says hybrid, the long test says no
+    rd = make_round(str(tmp_path / "b"), {"h_best_120": 0.60, "c_nodur_120": 0.43})
+    write_long(rd, "l_hybrid_120", [(300, 0.45)] * 5)
+    write_long(rd, "l_nodur_120", [(300, 0.44)] * 5)
+    d = run_decide(str(tmp_path / "b"), rd)
+    assert d.go and d.config == "nodur"
+    # a long row under 250 games is not read: the round row decides
+    rd = make_round(str(tmp_path / "c"), {"h_best_120": 0.60, "c_nodur_120": 0.43})
+    write_long(rd, "l_hybrid_120", [(100, 0.40)])
+    d = run_decide(str(tmp_path / "c"), rd)
+    assert d.config == "hybrid" and any("is read from the round row" in n for n in d.notes)
+
+
+def test_long_test_blockers_control_errors_and_queue(tmp_path):
+    rd = make_round(str(tmp_path / "c"))
+    write_long(rd, "l_same_120", [(300, 0.42)] * 5)
+    d = run_decide(str(tmp_path / "c"), rd)
+    assert not d.go and "l_same_120" in blockers(d, "B4")[0]
+    rd = make_round(str(tmp_path / "e"))
+    write_long(rd, "l_nodur_120", [(300, 0.44)] * 2, errors=60)
+    d = run_decide(str(tmp_path / "e"), rd)
+    assert not d.go and "long l_nodur_120 errors 60" in blockers(d, "B5")[0]
+    d = run_decide(str(tmp_path / "q"), make_round(str(tmp_path / "q")),
+                   queue=["w2c_l_hybrid_120_p3", "w2c_l_same_120_p1"])
+    assert not d.go and "2 of them long-test parts" in blockers(d, "B5")[0]
 
 
 def test_wide_chosen_from_the_ab(tmp_path):
@@ -241,13 +317,15 @@ def test_rows_in_launch_checks_match_the_configs():
     block = text[text.index('if [ "$WHAT" = wave2c ]'):]
     block = block[:block.index("\nfi\n")]
     rows = re.findall(r"^\s*w2c\s+(\S+)", block, re.M)
-    assert sorted(rows) == sorted(ROWS) and len(rows) == 11
+    assert sorted(rows) == sorted(ROWS) and len(rows) == 12
     for name, (row, extra) in CONFIGS.items():
         line = next(l for l in block.splitlines() if re.match(rf"\s*w2c\s+{row}\s", l))
         if "team-tree-reuse" in extra or "continuity" in extra:
             assert "$TOL" in line, row          # the 1000 ms tolerance rides on every row with fix 1 on
         if "own-pace-below-root false" in extra:
             assert '\\"own_pace_below_root\\": false' in line
+        if "--hybrid" in extra:
+            assert '"durative_tree": false, "sit_gate": true, "hybrid": true' in line, row
 
 
 # ---------------------------------------------------------------------- dry runs with a fake sbatch
@@ -311,14 +389,13 @@ def test_launch_wave2c_dry_run_dependencies(fake_slurm):
     assert all(r["NAME"].endswith("/rows/" + r["job"][4:]) for r in rows)
     bench = [r for r in c if r["args"].endswith("cluster/wave2c_bench.sbatch")]
     smoke = [r for r in c if r["args"].endswith("cluster/wave2_iterate.sbatch")]
-    assert sorted(r["CONFIG"] for r in bench) == ["cont", "nodur"]
+    assert sorted(r["CONFIG"] for r in bench) == sorted(BENCHED)
     assert all(r["dep"] == f"afterok:{gpu['id']}" for r in bench + smoke)
-    assert {r["RUN"]: r["WAVE2_EXTRA"] for r in smoke} == {"smoke_nodur": CONFIGS["nodur"][1],
-                                                          "smoke_cont": CONFIGS["cont"][1]}
+    assert {r["RUN"]: r["WAVE2_EXTRA"] for r in smoke} == {f"smoke_{c}": CONFIGS[c][1] for c in BENCHED}
     assert all(r["AB"] == "1" and r["RUNS_DIR"].endswith("wave2c/r1") for r in smoke)
     watchdog = next(r for r in c if r["args"].endswith("cluster/wave2c_watchdog.sh"))
     assert watchdog["dep"] == f"afterany:{build['id']}"
-    assert len(c) == 1 + 1 + 11 + 2 + 2 + 1
+    assert len(c) == 1 + 1 + 12 + 3 + 3 + 1
     assert open(tmp / "wave2c" / "LATEST").read().strip() == "r1"
     jobs = open(tmp / "wave2c" / "r1" / "jobs.tsv").read()
     assert f"build\t{build['id']}" in jobs and f"gpu\t{gpu['id']}" in jobs
@@ -360,6 +437,63 @@ def test_launch_full_run_dry_run_chain(fake_slurm):
     p = subprocess.run(["bash", "cluster/launch_full_run.sh"], cwd=REPO, env={**env, "RESUME": "1", "WIDE": "0"},
                        capture_output=True, text=True)
     assert p.returncode == 1 and "other settings" in p.stderr
+
+
+def test_launch_long_test_dry_run(fake_slurm):
+    tmp, env = fake_slurm
+    runs = tmp / "wave2c"
+    (runs / "r1").mkdir(parents=True)
+    (runs / "LATEST").write_text("r1\n")
+    env["W2C_RUNS"] = str(runs)
+    run = lambda **kw: subprocess.run(["bash", "cluster/launch_long_test.sh"], cwd=REPO, env={**env, **kw},
+                                      capture_output=True, text=True)
+    # no build queued, no BUILD and no build.ok: refused, nothing submitted
+    p = run()
+    assert p.returncode == 1 and "build.ok" in p.stderr and not (tmp / "calls.tsv").exists()
+    # the round's build in the queue: every part waits for it
+    (tmp / "queue").write_text("4242\n")
+    p = run()
+    assert p.returncode == 0, p.stderr
+    c = calls(tmp)
+    assert len(c) == 3 * 5 and all(r["args"].endswith("cluster/eval.sbatch") for r in c)
+    assert all(r["dep"] == "afterok:4242" and "--parsable" in r["args"] for r in c)
+    assert sorted({r["NAME"].rsplit("/", 2)[-2] for r in c}) == sorted(LONG_ROWS)
+    for lrow in LONG_ROWS:
+        mine = [r for r in c if f"/long/{lrow}/" in r["NAME"]]
+        assert [r["NAME"].rsplit("/", 1)[1] for r in mine] == [f"part{k}" for k in range(1, 6)]
+        assert [r["job"] for r in mine] == [f"w2c_{lrow}_p{k}" for k in range(1, 6)]
+        assert all(r["NAME"].startswith(str(runs / "r1" / "long")) for r in mine)
+    assert "GPU-hours: at most 120" in p.stdout
+    tsv = (runs / "r1" / "long" / "jobs.tsv").read_text().splitlines()
+    assert len(tsv) == 15 and "seed 1001" in tsv[0] and "seed 1005" in tsv[4]
+    # a second launch never reuses a folder: parts 6-10 with new seeds; BUILD= works when the queue has none
+    (tmp / "queue").write_text("")
+    p = run(PARTS="5", BUILD="77")
+    assert p.returncode == 0, p.stderr
+    c2 = calls(tmp)[15:]
+    assert {r["NAME"].rsplit("/", 1)[1] for r in c2} == {f"part{k}" for k in range(6, 11)}
+    assert all(r["dep"] == "afterok:77" for r in c2)
+    assert "seed 1010" in (runs / "r1" / "long" / "jobs.tsv").read_text()
+    # after the build passed (build.ok), no dependency at all
+    (runs / "r1" / "build.ok").write_text("Sun Nov 22\n")
+    p = run(PARTS="1")
+    assert p.returncode == 0, p.stderr
+    c3 = calls(tmp)[30:]
+    assert len(c3) == 3 and all(r["dep"] is None for r in c3)
+
+
+def test_launch_long_test_row_options():
+    """The long rows run h_best_120's and c_nodur_120's arena options, and the control is the hybrid on both sides."""
+    text = open(os.path.join(REPO, "cluster", "launch_long_test.sh")).read()
+    checks = open(os.path.join(REPO, "cluster", "launch_checks.sh")).read()
+    hyb = re.search(r"^HYB='(.*)'$", text, re.M).group(1)
+    nodur = re.search(r"^NODUR='(.*)'$", text, re.M).group(1)
+    assert re.search(rf"w2c\s+h_best_120\s+upstream-it13\s+'{re.escape(hyb)}'", checks)
+    assert re.search(rf"w2c\s+c_nodur_120\s+upstream-it13\s+'{re.escape(nodur)}'", checks)
+    rows = re.findall(r"^row\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$", text, re.M)
+    assert [r[0] for r in rows] == list(LONG_ROWS)
+    assert rows == [("l_hybrid_120", "upstream-it13", '"$HYB"', '""'), ("l_nodur_120", "upstream-it13", '"$NODUR"', '""'),
+                    ("l_same_120", "wave2-self", '"$HYB"', '"$HYB"')]
 
 
 # ---------------------------------------------------------------------- wave2_iterate MAX_ITER and build_sp1 stamp

@@ -6,26 +6,29 @@ GPU-hour estimate from the measured self-play rate.
     .venv/bin/python cluster/decide_full_run.py --round r2 --ab runs/wave2/ab2 --run full1
 
 Reads runs/wave2c/<ROUND>/: build.ok (written by the build job on success), gpu_check.json, rows/<row>/ (arena rows,
-scored with tools/compare_evals.py), bench/<config>_<width>*/bench.json, smoke_<config>/{narrow,wide}/ (wave2_iterate
-lineages); and <AB>/results_ab.tsv (default runs/wave2/ab2). The queue (squeue) says whether the round is still running.
+scored with tools/compare_evals.py), long/<row>/part<k>/ (the long test, cluster/launch_long_test.sh: each row's parts
+merged into one row, a cluster bootstrap over openings), bench/<config>_<width>*/bench.json, smoke_<config>/{narrow,wide}/
+(wave2_iterate lineages); and <AB>/results_ab.tsv (default runs/wave2/ab2). The queue (squeue) says whether the round is still running.
 
 Blockers (any one is NO-GO):
   B1 build      build.ok missing: cluster/build.sh did not pass
   B2 gpu        gpu_check.json missing or "overall" not PASS (each failed check is named)
-  B3 smoke      a smoke lineage did not finish an iteration (self-play -> train -> gate): smoke_nodur and smoke_cont, each
-                narrow and wide, need runs/rl-it1/stages/iteration.done and a vs_it13 gate score in results.tsv
-  B4 control    c_same_120 score outside [0.46, 0.54]
-  B5 rows       a row of the round (11: cluster/wave2c_configs.py ROWS) missing, under 250 games, with errors in more than
-                5% of its games, or a w2c_* job still in the queue
+  B3 smoke      a smoke lineage did not finish an iteration (self-play -> train -> gate): smoke_nodur, smoke_cont and
+                smoke_hybrid, each narrow and wide, need runs/rl-it1/stages/iteration.done and a vs_it13 gate score in results.tsv
+  B4 control    c_same_120 score outside [0.46, 0.54], or the long test's merged l_same_120 when it has games
+  B5 rows       a row of the round (12: cluster/wave2c_configs.py ROWS) missing, under 250 games, with errors in more than
+                5% of its games (a merged long row too), or a w2c_* job (rows, long test parts) still in the queue
   B6 rate       no self-play rate R (bench.json with every game played) for the chosen config and width
   B7 budget     the full run's estimate is over the 10,000 GPU-hour budget
 
-Config choice (all against c_nodur_120 of this round): the candidates are c_all_120 (cont), c_all_nod1_120 (cont_nod1)
-and the best-scoring single-switch row (c_reuse/joint/carry/ownpace/waiteval/mateblock_120). A candidate qualifies when
+Config choice (all against c_nodur_120 of this round): the candidates are c_all_120 (cont), c_all_nod1_120 (cont_nod1),
+the best-scoring single-switch row (c_reuse/joint/carry/ownpace/waiteval/mateblock_120) and the hybrid, h_best_120
+(hybrid, spec v6). A row with a merged long-test row (LONG_ROWS: l_hybrid_120 for h_best_120, l_nodur_120 for
+c_nodur_120) of at least 250 games is read from that merged row instead, nodur's included. A candidate qualifies when
   its 95% range lies wholly above c_nodur_120's (lo > nodur hi), or
   its score beats c_nodur_120's by at least 0.05 with at least 500 games in both rows.
 The qualifying candidate with the highest score is chosen; with none, nodur (durative tree off, sit gate on). A chosen
-config other than nodur and cont was not benched or smoke-trained: it borrows cont's rate and smoke (said in the output).
+config other than nodur, cont and hybrid was not benched or smoke-trained: it borrows cont's rate and smoke (said in the output).
 
 Narrow vs wide, from <AB>/results_ab.tsv (each iteration's gate vs it13, 400 games, about +-0.05): wide when at least
 2 iterations have both arms' vs_it13, the wide arm's mean over those iterations is at least 0.03 above the narrow
@@ -55,7 +58,7 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wave2c_configs import BENCHED, BENCHED_AS, CONFIGS, ROWS, SINGLE_SWITCH  # noqa: E402
+from wave2c_configs import BENCHED, BENCHED_AS, CONFIGS, HYBRID, LONG_ROWS, ROWS, SINGLE_SWITCH  # noqa: E402
 
 SAME_RANGE = (0.46, 0.54)
 MIN_ROW_GAMES = 250
@@ -107,6 +110,33 @@ def row_stats(path: str, n_boot: int = 500) -> dict | None:
             "finished": r["finished"]}
 
 
+def merged_row_stats(path: str, n_boot: int = 500) -> dict | None:
+    """One row from the long test's parts (path/part<k>/, each an arena row): games, score, ci95 (cluster bootstrap over
+    openings, an opening played in several parts one cluster), errors, finished (every part has its summary.json),
+    parts. None without games."""
+    from arena.stats import cluster_bootstrap_ci, contender_row, mean_of
+    from tools.compare_evals import load
+
+    parts = sorted((d for d in glob.glob(os.path.join(path, "part*")) if os.path.isdir(d)),
+                   key=lambda d: int(os.path.basename(d)[4:]) if os.path.basename(d)[4:].isdigit() else 0)
+    games, errors, finished = [], 0, bool(parts)
+    for part in parts:
+        g, report, done = load(part)
+        games += g
+        finished = finished and done
+        if report:
+            errors += report.get("errors", 0)
+        elif os.path.exists(os.path.join(part, "results.jsonl")):
+            with open(os.path.join(part, "results.jsonl")) as f:
+                errors += sum('"error"' in line for line in f)
+    if not games:
+        return None
+    rows = [contender_row(g) for g in games]
+    ci = cluster_bootstrap_ci(rows, mean_of("score"), n_boot=n_boot)
+    return {"games": len(rows), "score": ci["est"], "ci95": [ci["lo"], ci["hi"]], "errors": errors,
+            "finished": finished, "parts": len(parts)}
+
+
 def bench_rate(round_dir: str, config: str, width: str) -> tuple[float | None, str]:
     """(games per GPU-hour, where from) from the newest complete bench of config and width."""
     found = []
@@ -155,8 +185,10 @@ def queued_round_jobs() -> list[str]:
 # ---------------------------------------------------------------------- rules
 
 def choose_config(rows: dict[str, dict | None]) -> tuple[str, list[str]]:
-    """The config to train (a CONFIGS name) and the reasons, from the round's rows (rule in the module docstring)."""
+    """The config to train (a CONFIGS name) and the reasons, from the round's rows (rule in the module docstring). A row
+    that decide() read from the long test carries "source" (its label in the reasons)."""
     by_row = {row: name for name, (row, _) in CONFIGS.items()}
+    label = lambda row: rows[row].get("source", row)
     nodur = rows.get(CONFIGS["nodur"][0])
     if not nodur:
         return "nodur", ["c_nodur_120 has no games: nodur by default"]
@@ -164,7 +196,9 @@ def choose_config(rows: dict[str, dict | None]) -> tuple[str, list[str]]:
     candidates = [CONFIGS["cont"][0], CONFIGS["cont_nod1"][0]]
     if singles:
         candidates.append(max(singles, key=lambda r: rows[r]["score"]))
+    candidates += [CONFIGS[n][0] for n in HYBRID]
     reasons, qualified = [], []
+    nodur_label = label(CONFIGS["nodur"][0])
     for row in candidates:
         r = rows.get(row)
         if not r:
@@ -174,17 +208,17 @@ def choose_config(rows: dict[str, dict | None]) -> tuple[str, list[str]]:
         disjoint = r["ci95"][0] > nodur["ci95"][1]
         margin = diff >= MARGIN and r["games"] >= MARGIN_MIN_GAMES and nodur["games"] >= MARGIN_MIN_GAMES
         ok = disjoint or margin
-        reasons.append(f"{row} {r['score']:.3f} [{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}] {r['games']} games vs "
-                       f"c_nodur_120 {nodur['score']:.3f} [{nodur['ci95'][0]:.3f}, {nodur['ci95'][1]:.3f}] "
+        reasons.append(f"{label(row)} {r['score']:.3f} [{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}] {r['games']} games vs "
+                       f"{nodur_label} {nodur['score']:.3f} [{nodur['ci95'][0]:.3f}, {nodur['ci95'][1]:.3f}] "
                        f"{nodur['games']} games: {diff:+.3f}, "
                        + ("QUALIFIES (" + ("ranges disjoint" if disjoint else f">= {MARGIN} with >= "
                                            f"{MARGIN_MIN_GAMES} games each") + ")" if ok else "does not qualify"))
         if ok:
             qualified.append(row)
     if not qualified:
-        return "nodur", reasons + ["no continuity candidate beats c_nodur_120 by the rule: nodur"]
+        return "nodur", reasons + ["no continuity or hybrid candidate beats nodur by the rule: nodur"]
     best = max(qualified, key=lambda r: rows[r]["score"])
-    return by_row[best], reasons + [f"chosen: {best} ({by_row[best]})"]
+    return by_row[best], reasons + [f"chosen: {label(best)} ({by_row[best]})"]
 
 
 def choose_width(ab_tsv: str) -> tuple[int, list[str]]:
@@ -228,6 +262,10 @@ def free_run_name(runs_full: str) -> str:
     return f"full{n}"
 
 
+def _parts(r: dict) -> str:
+    return f"{r['parts']} part{'' if r['parts'] == 1 else 's'}"
+
+
 def decide(round_dir: str, ab_dir: str, run: str | None = None, queue: list[str] | None = None,
            runs_full: str = os.path.join("runs", "full")) -> Decision:
     d = Decision(run=run or free_run_name(runs_full))
@@ -267,16 +305,43 @@ def decide(round_dir: str, ab_dir: str, run: str | None = None, queue: list[str]
         d.blockers.append("B5 rows: " + "; ".join(incomplete))
     queue = queued_round_jobs() if queue is None else queue
     if queue:
-        d.blockers.append(f"B5 rows: round still running ({len(queue)} w2c_* jobs queued: {', '.join(queue[:6])}"
-                          f"{' ...' if len(queue) > 6 else ''})")
-    same = rows.get("c_same_120")
-    if same and not SAME_RANGE[0] <= same["score"] <= SAME_RANGE[1]:
-        d.blockers.append(f"B4 control: c_same_120 {same['score']:.3f} over {same['games']} games is outside "
-                          f"[{SAME_RANGE[0]}, {SAME_RANGE[1]}]: the harness is not fair, no row can be read")
-    elif same:
-        d.notes.append(f"control ok: c_same_120 {same['score']:.3f} over {same['games']} games")
+        parts = sum(1 for j in queue if j.startswith(tuple(f"w2c_{r}_p" for r in LONG_ROWS)))
+        d.blockers.append(f"B5 rows: round still running ({len(queue)} w2c_* jobs queued, {parts} of them long-test "
+                          f"parts: {', '.join(queue[:6])}{' ...' if len(queue) > 6 else ''})")
+    # the long test (cluster/launch_long_test.sh): each row merged over its parts, read instead of its round row
+    long_rows = {}
+    for lrow in LONG_ROWS:
+        path = os.path.join(round_dir, "long", lrow)
+        long_rows[lrow] = merged_row_stats(path) if os.path.isdir(path) else None
+    read = dict(rows)
+    for lrow, r in long_rows.items():
+        if r is None:
+            continue
+        stands_for = LONG_ROWS[lrow]
+        if r["errors"] > MAX_ERROR_SHARE * (r["games"] + r["errors"]):
+            d.blockers.append(f"B5 rows: long {lrow} errors {r['errors']} in {r['games'] + r['errors']} games (> 5%)")
+        if r["games"] < MIN_ROW_GAMES:
+            d.notes.append(f"long test: {lrow} {r['games']} games over {_parts(r)} (< {MIN_ROW_GAMES}): "
+                           f"{stands_for} is read from the round row")
+            continue
+        read[stands_for] = {**r, "source": f"{lrow} (long test, {_parts(r)})"}
+        d.notes.append(f"long test: {lrow} {r['score']:.3f} [{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}] over {r['games']} "
+                       f"games in {_parts(r)}{'' if r['finished'] else ' (not every part finished)'}, read "
+                       f"instead of {stands_for}")
+    if not any(long_rows.values()):
+        d.notes.append(f"long test: none under {round_dir}/long (cluster/launch_long_test.sh)")
+    # the controls: the round's c_same_120 and, when it has games, the long test's l_same_120; both must read 0.50
+    controls = [("c_same_120", rows.get("c_same_120"))]
+    if read.get("c_same_120") is not rows.get("c_same_120"):
+        controls.append((read["c_same_120"]["source"], read["c_same_120"]))
+    for name, same in controls:
+        if same and not SAME_RANGE[0] <= same["score"] <= SAME_RANGE[1]:
+            d.blockers.append(f"B4 control: {name} {same['score']:.3f} over {same['games']} games is outside "
+                              f"[{SAME_RANGE[0]}, {SAME_RANGE[1]}]: the harness is not fair, no row can be read")
+        elif same:
+            d.notes.append(f"control ok: {name} {same['score']:.3f} over {same['games']} games")
     # config and width
-    d.config, why = choose_config(rows)
+    d.config, why = choose_config(read)
     d.notes += ["config: " + w for w in why]
     d.wide, why = choose_width(os.path.join(ab_dir, "results_ab.tsv"))
     d.notes += ["width: " + w for w in why]
