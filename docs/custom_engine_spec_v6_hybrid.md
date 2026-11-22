@@ -5,6 +5,81 @@ Draft, 2026-11-21. Wave 2d. Builds on spec v4 (`docs/custom_engine_spec_v4_durat
 `72e79eb` in `cluster/wave2_engine.ref`; `docs/wave2_engine.md` there). Line numbers below are at `72e79eb`. Network
 for every number quoted: twin-s-clock it13 (HF `aminwoo/bughouse-twin-s-clock@edaa246`).
 
+## Review changes (2026-11-21, before implementation)
+
+An adversarial read of this spec against the code at `72e79eb` (`joint_action.h`, `time_state.h`, `searchthread.cc`
+`process_batch` / `select_and_expand` / `canonicalize_child` / `classify_terminal_position`, `node.h`
+`try_init_and_expand`, `agent.cc` `run_search` final choice, `seat_clock_game.h` `commit_pass`, arena
+`seat_decisions` / `Wave2TeamController.default_sit_ms`). Nothing was built or run. The sections below are already
+edited; this list says what changed and why.
+
+1. **H3 as first written was nodur in practice (fixed: the event lands).** In the one-board shape the trigger fires only
+   when `lead <= 0` (T2). Our lead is the opponent's deficit, so whenever `lead < 0` the opponent may sit back at depth 1
+   (`can_sit(~team)` = its lead > 0). The sit-back child is the root's position again (same boards, same lead, our
+   team to move, gate on), so its value is our best move now: `Q(sit) = min(opponent replies, sit-back) <= Q(act) +
+   noise`, and the 20 permille margin then refuses every sit. Only `lead == 0` exactly escapes, which never happens
+   with millisecond clocks. Fix: in a triggered search the opponent's seat on the event board Y must land a move at
+   depth 1 (that is what T3 assumes: the seat is thinking, not sitting). New option `HybridEventLands`
+   (`all` default, `sit`, `none`), step 4 of H3, test 2.2 rewritten, test 2.7 added. `none` is the first draft's
+   behaviour, kept as the ablation that shows the inertness.
+2. **The rule is applied to every root child, not only to the sit (`all`).** Forbidding the opponent's pass on Y only
+   below our sit gives the opponent fewer options in the sit branch than in the move branches, which biases the root
+   toward sitting whenever the opponent leads. Under `all` the same assumption ("the thinking seat on Y lands a
+   move") holds in every branch, so the comparison is fair. Cost: in a triggered search the move choice can differ
+   from nodur's even when no sit is kept; "no trigger, no change" still holds exactly.
+3. **The rule is a pass restriction, never `can_sit`.** `classify_terminal_position` and `Board::is_checkmate` take
+   `can_sit` as the right to wait out a drop-blockable check. Turning the opponent's `can_sit` off would make such
+   positions mate and could prove a false win for our sit. The depth-1 restriction is a new `mustMoveBoards` mask in
+   `JointActionRules` (like `RequireMoveOn`, a forced pass stays legal); `can_sit` and the terminal rules are untouched.
+4. **The cycle rationale was wrong; the sticky bit is replaced by a one-shot bit.** `canonicalize_child` already refuses
+   to link a child to any node on the current trajectory (`isAncestor`, `searchthread.cc:1680`), the root included, so
+   the pass/sit-back line could never form a cycle. What a key bit is needed for is the new depth-1 legality: depth-1
+   states of a triggered search carry `hybridEvent_` (the event board), which enters `exact_key()` while set and is
+   cleared by the next `advance()`. Depth-2 states are plain v3 states again, so tree reuse after the real landing
+   still works.
+5. **Both-boards shape dropped from H3.** With our team on turn on both boards the "event" was our partner's move,
+   which in a joint tree lands in the same action, so `eventMs = RootMoveTimeMs` measured nothing; what seat X would
+   really wait for is the opponent's reply on Y, a full pace that has not started. Worse, "legal as a double sit"
+   would have allowed passing on both on-turn boards at once (no event at all). v3's capture rule already covers the
+   useful case. H3 now masks only the shape "on turn on X alone, an opponent seat thinking on Y"; T1 says so and
+   test 1.3 asserts an empty mask. Double sits with both boards on turn stay illegal in every mode.
+6. **T7 removed.** After our pass on X the opponents cannot move on X (it is still our turn there), and any mate in one
+   they hold on Y exists whether we sit or move, so the check could never separate the two. The danger of a sit is
+   deeper (the opponent's Y move feeds their partner on X, who mates after we move); the tree's lines,
+   `race_safe_alternative` and certification cover it, as for any move.
+7. **T4 matched the wrong wake.** The arena wakes a pass after `min(PassCapK, 1.5) x budget`
+   (`SIT_INFER_FACTOR`), not `PassCapK x`; an event between the two never arrives inside the wait, and the seat pays a
+   wait plus a second full search for nothing. T4 is now `eventMs <= min(HybridMaxWaitMs, 1.5 x RootMoveTimeMs)` (and
+   `<= PassCapK x RootMoveTimeMs`).
+8. **Mutual sitting could reach the 5 s sit-off (risk 1 was wrong for large budgets).** If the thinking opponent
+   decides to sit while we hybrid-sit, our wake comes after `1.5 x budget`, but the arena infers that seat as sitting
+   only after `1.5 x min(pace, budget)` since its decision began, so the next search can trigger again and sit again.
+   With budgets of a few seconds (early 120 s games) the chain can pass 5 s, and the lower clock (ours: we are behind
+   by construction) loses. Fix: the arena caps a hybrid sit's wait at `eventMs + 100` (from the `Hybrid:` line) and,
+   when the event seat has not landed by the wake, sends `SeatSitting 1` for it until its board lands (T3 then fails and
+   the gate makes us move). Self-play already ends our pass at the opponent's landing (`commit_pass`) and sends the
+   true sitting flag, so it needs only the same cap. Test 3.4 (arena) added.
+9. **Every root pick honours the margin.** The first draft applied the exclusion only at `agent.cc:8440`. The
+   most-visited fallback right after it, the solver PV index (`agent.cc:7930`), Gumbel's `decisionIdx`,
+   `race_safe_alternative` and `certified_mate_free_alternative` (both pick "the best of the alternatives") and
+   self-play's sampling could still play an unqualified hybrid sit. One predicate, `Agent::hybrid_sit_allowed(idx)`,
+   is applied in all of them.
+10. **A proof through a hybrid sit is conditional.** The tree proves it under "the event lands". The sit is kept (that
+    is the knight case) but `run_search` does not report a mate score for it and the arena does not treat it as a proven
+    mate; the `Hybrid:` line says `proven (assumes event)`.
+11. **The prior floor takes visits from the move search.** 150 permille plus the visits the pass then earns is about
+    15-25% of the root budget on triggered searches. That is a real cost against nodur's move quality and is measured:
+    test 4.1 reports agreement on the triggered subset separately (the all-positions numbers would hide it).
+12. **Tests that would pass on broken code.** 0.3 (no trigger, no change) passes trivially if the trigger never fires;
+    it now has a positive control (the same positions with a triggering seat setup must print a non-empty mask on at
+    least 3 of 8). 3.3 asked for zero sit-off games, which nodur's own gate sits can produce; it is now relative to the
+    `off` reference. Every measurement (4.x, 5.x) reports hybrid sits per game and calls a run with no kept sits
+    "inert", not "equal to nodur".
+13. **Small corrections.** `TimeState` already has `seat_ready_ms(seat)` and `seat_sitting(seat)` (`time_state.h:795`);
+    no new accessors. `JointActionRules` gains two bytes (`hybridSitBoards`, `mustMoveBoards`). H1 checks its sit
+    variant with `action_loses_mate_race` before playing it (the main search's race veto and certification saw `a*`,
+    not the sit).
+
 ## Why
 
 | Evidence | Source |
@@ -44,8 +119,9 @@ node), and only second hybrid vs it13.
 3. **What a v3 pass costs.** `TimeState::advance(team, onBoth)` (`time_state.h:376`) moves the lead only when the acting
    team is on turn on both boards. A pass on our only on-turn board is free in lead terms; the price comes one ply
    later, when the opponent's move hands its board to our partner and we are on turn on both boards. This matches the
-   seat clocks (point 2). So under v3 the value of a pass is already priced correctly by the tree's own lines: after
-   our pass the opponent acts, or sits back (legal for it: it leads), and then we, still behind, must move (gate).
+   seat clocks (point 2). After our pass the opponent acts, or sits back (legal for it: it leads), and then we, still
+   behind, must move (gate). *Review: the sit-back line returns the root's own position, so the tree values the pass at
+   most at our best move and the root never keeps it (Review changes 1). H3 therefore forbids that sit-back at depth 1.*
 4. **A v3 pass node is in distribution for the network.** After our pass the boards are unchanged and the opponent team
    is to play, the position at every other node of a v3 tree. The durative tree's wait nodes are not (diagnosis D3:
    the tempo bias of +0.26).
@@ -96,20 +172,20 @@ expected wait `eventMs`. A board X gets its bit when all hold:
 
 | # | Condition | Why |
 |---|---|---|
-| T1 | our team is on turn on X and has at least one legal move there | otherwise the pass is forced or meaningless |
-| T2 | the v3 rules forbid a pass on X in some joint action: `!v3.can_sit(team)` (both shapes), or, on turn on both boards, every non-capturing partner move (the single-pass rule) | the hybrid only adds what the gate forbids; with lead > 0 nodur may already sit and the mask stays empty |
-| T3 | an event is coming on the other board Y: the seat on turn on Y is ours (our partner, deciding in this search: `eventMs = RootMoveTimeMs`) or an opponent seat that is not sitting (`eventMs = durative.ready_ms(seat)` = `max(1, pace - elapsed)`); a committed opponent seat counts as not sitting | waiting is for a landing; with a sitting opponent nothing lands and the sit-off rule says the lower clock moves |
-| T4 | `eventMs <= min(HybridMaxWaitMs, PassCapK x RootMoveTimeMs)` | a short wait only; also bounds the arena's wait (`default_sit_ms`) |
-| T5 | `!durative.sit_off_forces_move(team)` on X | the durative rule for "behind against a sitter" (redundant with T3 for opponents; kept as the stated rule) |
+| T1 | our team is on turn on X **and not on Y** (an opponent seat is on turn on Y), and has at least one legal move on X | the one-board shape only (Review changes 5); with no legal move the pass is forced anyway |
+| T2 | the v3 rules forbid the pass on X: `!v3.can_sit(team)` (in this shape: lead <= 0) | the hybrid only adds what the gate forbids; with lead > 0 nodur may already sit and the mask stays empty |
+| T3 | the opponent seat on turn on Y is thinking, not sitting: `!durative.seat_sitting(seat)`; `eventMs = durative.seat_ready_ms(seat)` = `max(1, pace - elapsed)` | waiting is for a landing; with a sitting opponent nothing lands and the sit-off rule says the lower clock moves |
+| T4 | `eventMs <= min(HybridMaxWaitMs, 1.5 x RootMoveTimeMs, PassCapK x RootMoveTimeMs)` | a short wait only, and one that ends inside the arena's wake (`default_sit_ms`, `min(PassCapK, 1.5) x budget`; Review changes 7) |
+| T5 | `!durative.sit_off_forces_move(team)` on X | the durative rule for "behind against a sitter" (redundant with T3; kept as the stated rule) |
 | T6 | our seat on X has `clock >= max(HybridMinClockMs, 4 x (eventMs + RootMoveTimeMs))` | flag safety: v3 knows no absolute clock |
-| T7 | after the pass on X (with any move on Y), the opponents have no mate in one on either board (`Agent::has_immediate_mate`, `agent.cc:832`, on the board after our pass) | cheap; a sit must never hand over a mate in one |
 
-`TimeState` gains one accessor, `ready_ms(seat)` (durative only; the seat's ready time at the root), and
-`sitting(seat)`; both read existing fields.
+(T7 of the first draft, "no mate in one after the pass", is removed: it could never tell a sit from a move; Review
+changes 6.) The mask has at most one bit. `TimeState` needs no new accessor (`seat_ready_ms`, `seat_sitting`,
+`side_on` exist, `time_state.h:795`).
 
 Telemetry (verbose): `info string Hybrid: sit boards <A|B|AB|-> event <msA>/<msB> mode <mode>`; when the mask is empty
-the line says which condition failed first (`no move`, `gate allows`, `no event`, `opponent sitting`, `wait`, `sit-off`,
-`clock`, `mate in one`). The arena parses it into the search result for counting (below).
+the line says which condition failed first (`no move`, `both boards`, `gate allows`, `opponent sitting`, `wait`,
+`sit-off`, `clock`). The arena parses it into the search result for counting (below).
 
 Where the durative state comes from:
 * **UCI.** New `UCI::current_hybrid_clock()` next to `current_clock()` (`uci.cc:851`): the same
@@ -129,30 +205,46 @@ like any other action; the root takes it only if it beats the best action that m
 
 **Exact behaviour.**
 1. Mask from the trigger. Empty: the search is nodur's (no further change; test 0.3).
-2. **Root legality.** `JointActionRules` gains `uint8_t hybridSitBoards = 0` (bit 0 = A, bit 1 = B; default 0 =
-   today's rules; the struct grows from 5 to 6 bytes, check `JointCandidateGenerator`'s layout and `sizeof(Node)`). In `is_joint_action_legal` (`joint_action.h:56`), a pass on a
-   board whose bit is set is legal as a double sit or a single pass whatever `teamHasTimeAdvantage` and the partner
-   capture say. `RequireMoveOn` still wins (a seat that must move keeps its move). The mask reaches the generator
-   through `RuntimeConfig::hybridSitBoards` (root only, like `rootPlanMove`), read in `Node::try_init_and_expand` when
-   `m_depth == 0`. Nothing below the root sees it.
+2. **Root legality.** `JointActionRules` gains `uint8_t hybridSitBoards = 0` and `uint8_t mustMoveBoards = 0` (bit 0 =
+   A, bit 1 = B; default 0 = today's rules; the struct grows from 5 to 7 bytes, check `JointCandidateGenerator`'s layout
+   and `sizeof(Node)`). In `is_joint_action_legal` (`joint_action.h:55`), the one-board double sit (pass on X, the
+   forced `MOVE_NONE` on the off-turn board Y) is legal when X's bit is set, whatever `teamHasTimeAdvantage` says.
+   `is_double_sit_legal`'s `boardAOnTurn != boardBOnTurn` condition stays: a double sit with both boards on turn is
+   never legal. `RequireMoveOn` still wins. The mask reaches the generator through `RuntimeConfig::hybridSitBoards`
+   (root only, like `rootPlanMove`), read in `Node::try_init_and_expand` when `m_depth == 0`. Nothing below the root
+   sees it.
 3. **Root prior floor.** The network's sit plane is upstream's (`lead_sit_right`), so when we are behind the pass
    prior is near 0 and the pass would get no visits. At the root, on each masked board, the pass entry is mixed as
    PlanCarry mixes a carried move: `p(pass) <- (1 - w) p(pass) + w`, others `(1 - w) p`,
    `w = HybridPassPriorPermille / 1000` (default 150), after the Dirichlet noise (`mix_root_plan`, reused).
-4. **Children of a hybrid sit.** `select_and_expand`'s `time_after_action` (`searchthread.cc:1753`): at depth 0, an
-   action whose pass on a masked board the gate would have refused gets `next.advance(...)` as today, then
-   `next = next.with_hybrid_sit()`. `TimeState::hybridSit_` is a sticky bit: it survives `advance()`, enters
-   `exact_key()` only when set (as `sitGate_` does), and changes nothing else. Its only job is to keep the subtree
-   below a hybrid sit apart from the rest of the tree: after (our pass, their pass back) the boards, team and lead are
-   the root's again, and without the bit `canonicalize_child` could link the grandchild to the root (a cycle in the
-   graph). Below the root the gate applies as in v3: the opponent may sit back exactly when it leads, and then we,
-   behind, must move. That line is the sit-off, priced by the network.
+4. **The event lands (depth 1).** T3 says the opponent seat on Y is thinking, so it will land a move in about
+   `eventMs`. The tree must assume the same, or the opponent "sits back" at depth 1, the root's position returns, and
+   `Q(sit)` can never beat `Q(act)` (Review changes 1). `select_and_expand`'s `time_after_action`
+   (`searchthread.cc:1753`): at depth 0 of a triggered search, every child state gets `next.advance(...)` as today, then
+   `next = next.with_hybrid_event(Y)` (under `HybridEventLands all`, the default; under `sit` only the hybrid-sit child;
+   under `none` no child). `TimeState::hybridEvent_` (2 bits: none, A, B) is **one-shot**: the next `advance()` clears
+   it; it enters `exact_key()` only while set (as `sitGate_` does), so depth-1 nodes of a triggered search never share
+   a node with gate-rule nodes, and depth-2 states are plain v3 states (tree reuse after the real landing still
+   works). In `process_batch` (`searchthread.cc:1353`) a node whose state has the bit gets
+   `rules.mustMoveBoards = bit(Y)`: in `is_joint_action_legal`, a pass on Y is illegal while Y can move (a forced pass
+   stays legal, as for `RequireMoveOn`). **`can_sit` is not touched**: `classify_terminal_position` and
+   `Board::is_checkmate` read it as the right to wait out a drop-blockable check, and turning it off would prove false
+   mates (Review changes 3). In the sit branch the opponent is on turn on Y alone, so it must move there; in a move
+   branch it is on turn on both boards and must move on Y, while a pass on X (its reply to our move) follows v3's rules.
+   From depth 2 on the tree is v3 with the gate: after the opponent's Y move we are on turn on both boards, behind, and
+   may pass on X only with a partner capture. No cycle is possible: `canonicalize_child` already refuses to link a
+   child to a node on the current path (`isAncestor`), and with the event landing the root position cannot recur.
+   `HybridEventLands none` is the first draft (sit-back allowed); it is the ablation for test 2.7.
 5. **The choice.** After the tree, in `run_search` where `bestIdx` is taken (`agent.cc:8440`): if the chosen action is a
    hybrid sit, keep it only if `Q(sit) >= Q(best moving action) + HybridMarginPermille / 1000` (default 20) and the sit
    has at least 10% of the root's visits; otherwise take the best child that is not a hybrid sit (same q-weighted
    rule, with an exclusion predicate added to `get_best_move_idx_with_q_weight`). "Best moving action" means the best
-   child that is not a hybrid sit. Proven results bypass this: a proven mate or a proven loss return as today; a
-   solved WIN child that is a hybrid sit is kept (the tree proved it with the opponent's sit-back in the lines).
+   child that is not a hybrid sit. The predicate is `Agent::hybrid_sit_allowed(idx)` and every root pick uses it: the
+   q-weighted pick, the most-visited fallback after it, the solver PV index (`agent.cc:7930`), Gumbel's `decisionIdx`,
+   `race_safe_alternative` and `certified_mate_free_alternative` (their "best alternative"), and self-play's sample
+   (Review changes 9). Proven results: a proven mate or a proven loss from the root provers return as today (they
+   enumerate v3 actions only). A solved WIN child that is a hybrid sit is kept without the margin test, but the proof
+   assumes the event lands (step 4), so no mate score is printed for it and the report says `proven (assumes event)`.
    `race_safe_alternative` and certification then run on the result as today.
 6. **Tree reuse.** If the mask is non-empty, an exact-hash retained root (`try_reuse_tree`) is not adopted (its
    expanded children were generated under the gate's rules); the search starts fresh. With `ucinewgame` per search
@@ -164,17 +256,21 @@ like any other action; the root takes it only if it beats the best action that m
 * One tree, one network semantics. Every value compared at the root is a v3 value on v3 states, and the states after
   a pass are in the network's training distribution (reading note 4). The durative tree's known value errors (D1
   optimism, D3 tempo bias, the 58% ceiling) never enter.
-* The opponent's best answer to our sit is in the tree: it may sit back when it leads, and the gate then makes us
-  move. So the tree prices the sit-off itself (reading note 3), and the margin only covers noise.
+* The opponent's best move on Y after our sit is in the tree, and so is everything after it under v3's rules. What
+  the tree does not see is the opponent choosing to sit instead of landing: T3 bets that a thinking seat lands. When
+  the bet is wrong the arena finds out at the wake (the event did not land), marks the seat sitting, and the gate
+  makes us move (arena section). The cost of a lost bet is one short wait, lead-neutral.
 * No node split: the budget is nodur's. No cost when nothing triggers.
 * The durative model does exactly the "when" part: T3-T6 read the landing times, sitting flags and clocks that only
   the durative state has.
 
-**Node and time budget.** Unchanged: the same `go nodes N` / `movetime` as nodur. The trigger costs one durative state
-build and at most two `has_immediate_mate` calls (microseconds). The root may carry up to two more legal actions.
+**Node and time budget.** The same `go nodes N` / `movetime` as nodur. The trigger costs one durative state build
+(microseconds). The root carries one more legal action, and with the prior floor it takes about 15-25% of the root's
+visits on a triggered search, visits the move search does not get (measured in 4.1 on the triggered subset). Each
+kept sit costs real clock: the search before it, the wait (at most T4), and a full search after the wake.
 
-**What H3 cannot do.** It never sits when we lead (the mask is empty: the gate already decides there), and it never
-vetoes a gated sit. It does not model *how long* the wait is beyond T4 (v3 has no clock), so a wait for a slow event
+**What H3 cannot do.** It never sits when we lead (the mask is empty: the gate already decides there), it never
+vetoes a gated sit, and it never sits when our team is on turn on both boards (v3's capture rule decides there). It does not model *how long* the wait is beyond T4 (v3 has no clock), so a wait for a slow event
 costs absolute clock that the tree does not see; T4 and T6 bound that.
 
 ## H1: sit decision by a durative probe
@@ -204,7 +300,9 @@ costs absolute clock that the tree does not see; T4 and T6 bound that.
 5. **Decision.** Sit on X iff `Q_dur(sit X) >= Q_dur(a*) + HybridMarginPermille / 1000`, each child has at least 10% of
    the probe's visits, and the sit child is not a solved LOSS (a solved WIN sit is taken). Both values come from the
    same durative tree, so its common biases (D1 level, the speed plane) cancel in the difference; D3 does not cancel
-   fully (only one side has a wait node next), which is what the margin is for.
+   fully (only one side has a wait node next), which is what the margin is for. A sit decided by the probe is then
+   checked with `action_loses_mate_race` (v3 alternation, as for any root action); if it loses the race, `a*` is
+   played. The main search's race veto and certification saw `a*`, not the sit variant.
 6. **Report.** `bestmove` is printed once, after the probe (`SearchOptions::printBestMove = false` for the main
    search). The last `info depth ... nodes` line reports `N_main + N_probe actually searched`, so any front end that
    charges searched nodes (the arena's `charge searched`) charges the probe. Plus `info string Hybrid probe: <n> nodes,
@@ -243,7 +341,8 @@ UCI (all advertised in the `uci` handshake; parsed in `UCI::setoption` next to `
 |---|---|---|---|---|
 | `HybridMode` | combo `off` `gate` `probe` `priced`, off | `--hybrid-mode <mode>` | - | the variant: H3 `gate`, H1 `probe`, H2 `priced` |
 | `Hybrid` | check, false (preset) | `--hybrid <bool>` | - | `true` sets `HybridMode gate`, `false` sets `off`; knobs keep their values; last write wins |
-| `HybridMaxWaitMs` | spin 0..10000, 1000 | `--hybrid-max-wait-ms <ms>` | all | T4: longest expected wait for an event |
+| `HybridEventLands` | combo `all` `sit` `none`, all | `--hybrid-event-lands <s>` | gate, priced | depth-1 rule: the thinking opponent seat on Y must move, below every root child (`all`), below the hybrid sit only (`sit`), or never (`none`, first draft; ablation) |
+| `HybridMaxWaitMs` | spin 0..10000, 1000 | `--hybrid-max-wait-ms <ms>` | all | T4: longest expected wait for an event (also capped at 1.5 x `RootMoveTimeMs`) |
 | `HybridMinClockMs` | spin 0..600000, 3000 | `--hybrid-min-clock-ms <ms>` | all | T6: our seat's clock floor |
 | `HybridMarginPermille` | spin 0..1000, 20 | `--hybrid-margin-permille <n>` | all | how much better a sit must be (q units x 1000) |
 | `HybridPassPriorPermille` | spin 0..1000, 150 | `--hybrid-pass-prior-permille <n>` | gate, priced | root prior floor of the pass on a masked board |
@@ -260,7 +359,8 @@ the self-play check that ties them to `--durative-tree` accepts `--hybrid-mode p
 
 State: `UCI` gains `HybridKnobs hybrid` (mode and knobs); `SearchOptions` gains `struct Hybrid { HybridKnobs knobs;
 std::optional<TimeState> clock; }` and, for H1, `bool probe`, `bool printBestMove = true`. `RuntimeConfig` gains
-`hybridSitBoards` (H3, H2), `rootActionFilter` (H1), `hybridRootClock` (H2), all root-only and empty by default.
+`hybridSitBoards`, `hybridEventBoard` and `hybridEventLands` (H3, H2), `rootActionFilter` (H1), `hybridRootClock`
+(H2), all root-only and empty by default.
 
 Python and arena:
 * `hivemind.wave2.Options` gains the fields; `rl-loop` is not changed this round (the hybrid is a play-time rule; the
@@ -270,8 +370,14 @@ Python and arena:
   what they sent); `WAVE2_INT_RANGES` gets the spins; a preset `hybrid` in `WAVE2_PRESETS` expanding to
   `hybrid_mode: "gate"`. A row with the preset must also set `durative_tree: false` and `sit_gate: true` (the wave 2
   arm defaults `durative_tree` to true): `wave2_flag_options` refuses `hybrid_mode != off` with `DurativeTree true`.
-  `_parse` reads the `Hybrid:` info strings into `SearchResult.hybrid` (`sit`, `act`, `skipped`), and
-  `Wave2TeamController` counts `hybrid_sits` and `hybrid_triggers` per game for the game log.
+  `_parse` reads the `Hybrid:` info strings into `SearchResult.hybrid` (`sit`, `act`, `skipped`, and the event board
+  and `eventMs`), and `Wave2TeamController` counts `hybrid_sits` and `hybrid_triggers` per game for the game log.
+* **Wake and missed events** (Review changes 8). After a kept hybrid sit, `Wave2TeamController` waits
+  `min(default_sit_ms, eventMs + 100)` (a landing still wakes it sooner). If the event seat has not landed by the wake,
+  the controller records it as a missed event and sends `SeatSitting 1` (elapsed 0) for that seat in every search until
+  its board lands, overriding `seat_decisions`' inference. T3 then fails, and the gate makes us move. This bounds a
+  joint sit (we sit, the opponent decided to sit) to one event window plus one search, far below the 5 s sit-off,
+  whatever the budget. Counted per game as `hybrid_missed`.
 * `tools/strength_harness.py`: configs `hybrid` (`{"durative_tree": false, "sit_gate": true, "hybrid": true}`),
   `hybrid_probe`, `hybrid_priced`; the report adds "trigger rate" and "hybrid sit rate" on all positions and on the
   sit-or-act subset.
@@ -283,6 +389,9 @@ Python and arena:
   played only if the margin rule of H3 step 5 holds; otherwise the sample is redrawn over the children that are not
   hybrid sits. At temperature 0 the action is `run_search`'s result. H1: the probe's decision replaces the sampled
   action's half on X (a sit) only if X's seat is deciding now.
+* A hybrid sit's pass in `SeatClockGame::commit_pass` ends at the opponent's landing on Y as any pass does (self-play
+  knows the opponent's real decision, and T3 reads its true `sitting_`), and in any case after
+  `min(PassCapK, 1.5) x` the seat's move time, the arena's wake, so self-play and arena games wait alike.
 * Training records are unchanged: planes and the policy target are the main v3 tree's (`marginal_policy`,
   `joint_policy` of its root). A hybrid sit is the game's action, not a target. This keeps HVM6 the same format and the
   network's sit plane unchanged; whether to teach the network the new sits is a later decision.
@@ -309,17 +418,21 @@ Python and arena:
 
 ## Risks
 
-1. **Mutual sitting until flag or sit-off.** Two hybrids (self-play, `wave2-self`) can sit on the two boards at the same
-   instant. Bounds: a hybrid sit needs an event (T3: the other seat not sitting); on its wake the other seat is
-   sitting, T3 fails, so the seat that is behind moves at its next decision (the gate) and the one ahead may sit (the
-   arena then adjudicates in its favour, as for nodur). The longest joint sit is therefore one wake period
-   (`min(PassCapK, 1.5) x budget` in the arena, `PassCapK x` move time in self-play) plus one search, far under the
-   5 s sit-off. Test 3.3 checks it in games.
-2. **Sitting into a mate or a lost race.** T7 (mate in one), the tree's own lines, and the unchanged
-   `race_safe_alternative` and certification. A deeper mate that only the durative landing order shows is not covered
-   in H3 (v3 alternation).
+1. **Mutual sitting until flag or sit-off.** Only the team that is behind can hybrid-sit (T2), so two hybrids never
+   hybrid-sit at once; the risk is our hybrid sit meeting an opponent that decides to sit while we wait. In self-play
+   T3 reads the true sitting flag and our pass ends at the landing or the cap. In the arena the first draft's bound
+   was wrong: the arena infers an opponent as sitting only after `1.5 x min(pace, budget)`, so with multi-second
+   budgets a chain of hybrid sits could pass 5 s and lose the sit-off on our lower clock. The wake cap and the
+   missed-event mark (arena section) bound the joint sit to one event window plus one search. Tests 3.3 and 3.4.
+2. **Sitting into a mate or a lost race.** The tree's own lines (the opponent's Y move, then its partner on X after we
+   move), and the unchanged `race_safe_alternative` and certification, which now also respect the margin predicate. A
+   deeper mate that only the durative landing order shows is not covered in H3 (v3 alternation).
+2b. **The event-lands bet.** The tree assumes a thinking opponent lands a move (step 4). An opponent that leads and is
+   in check may prefer to sit; then our sit was chosen on a line that does not happen. Cost: one wait, lead-neutral,
+   and the missed-event mark stops a repeat. The match measures it (`hybrid_missed` per game).
 3. **Over-sitting through the prior floor.** 15% prior on a pass the network thinks is illegal buys it visits; the
-   margin and the 10% visit floor decide. Tuned on the harness, not in games (test 4.2 sweep).
+   margin and the 10% visit floor decide. Tuned on the harness, not in games (test 4.2 sweep). It also takes those
+   visits from the move search (Review changes 11).
 4. **Time waste.** Each sit costs a full search before the wait and another after it. Lead-neutral while each team is
    on one board, but absolute clock goes; T4 and T6 bound it, and the match measures it.
 5. **Prover blind spots.** The root loss scan and mate scan enumerate v3-legal actions only: they can call a root lost
@@ -340,54 +453,77 @@ Numbering as v5. C++ in `engine/tests/test_hybrid.cc` (new); Python in the wave2
 * 0.3 **No trigger, no change**: on the 8 `wave2_parity` positions with seat options that fail the trigger (every
   opponent seat `SeatSitting 1`, or `HybridMaxWaitMs 0`), `HybridMode gate` gives the same output as
   `HybridMode off` (1 worker, same compare rules as `wave2_parity.sh`); a new `engine/tests/hybrid_parity.sh` runs it.
-* 0.4 `sizeof(Node)` unchanged or its growth stated (`JointActionRules` gains one byte); `exact_key` and `operator==` of a state without
-  `hybridSit_` are bit-identical to `72e79eb` (`test_time_state.cc` style).
+  **Positive control** in the same script: the same positions with a triggering seat setup (lead -2 s, the opponent
+  on the one-board shape thinking with `pace 300, elapsed 200`) must print a non-empty `Hybrid: sit boards` line on at
+  least 3 of the 8 (positions without the one-board shape are listed as skipped); otherwise the script fails, since an
+  always-empty trigger would pass the parity half trivially.
+* 0.4 `sizeof(Node)` unchanged or its growth stated (`JointActionRules` gains two bytes); `exact_key` and `operator==`
+  of a state without `hybridEvent_` are bit-identical to `72e79eb` (`test_time_state.cc` style); `advance()` clears
+  `hybridEvent_` and the key of the cleared state equals the plain state's.
 
 **1. Trigger rules** (`hybrid_sit_boards`, table-driven, no network)
-* 1.1 Each of T1-T7 failing alone empties that board's bit and names the reason.
+* 1.1 Each of T1-T6 failing alone empties that board's bit and names the reason; with all holding, exactly one bit.
 * 1.2 Lead > 0 on one board: mask empty (gate allows). Lead <= 0, opponent on B thinking with `pace 600, elapsed 500`:
-  A masked, event 100. Same with `elapsed 0` and `HybridMaxWaitMs 500`: empty (`wait`).
-* 1.3 Both boards ours: A masked when every partner move on B is quiet and lead <= 0; event = `RootMoveTimeMs`.
+  A masked, event 100. Same with `elapsed 0` and `HybridMaxWaitMs 500`: empty (`wait`). `RootMoveTimeMs 200`,
+  event 400, `HybridMaxWaitMs 1000`: empty (`wait`: above 1.5 x 200).
+* 1.3 Both boards ours, lead <= 0: mask empty (`both boards`), whatever the partner moves are.
 * 1.4 Opponent on B sitting, our clock lower: empty (`opponent sitting`; T5 agrees).
 * 1.5 Our clock 2 s with `HybridMinClockMs 3000`: empty (`clock`).
+* 1.6 Rules (`is_joint_action_legal`, no network): with `hybridSitBoards` = A and A alone on turn, (pass, none) is
+  legal at lead <= 0; with both boards on turn and both bits set, (pass, pass) stays illegal; `mustMoveBoards` = B
+  makes a pass on B illegal while B can move and legal when B cannot (forced); `RequireMoveOn` still wins.
 
 **2. Search behaviour (H3)** (real network `engine/models/twin-s-clock-it13.onnx`, skipped without it, as v4 test 2)
 * 2.1 **Sits when a needed piece is about to land.** Fixture from `kSitForKnight` (`test_durative_part2.cc:423`) one ply
-  on: B after Bb's `Qd4+`, Bw to move and in check, A with Aw to move needing a knight for `N@f7#`; equal clocks
-  (lead 0: v3 forbids every sit; the opponent may not sit back either), opponent pace 300, elapsed 200 (event 100 ms).
-  With `HybridMode gate` the root plays the pass on A (and the root q is above nodur's best move's q by at least the
-  margin); with `HybridMode off` it plays a move on A.
-* 2.2 **Does not sit when behind against a sit-back.** The same fixture with our lead -10 s: the opponent leads, may
-  sit in check, and then we must move; the root does not choose the pass on A (assert `moveA != MOVE_NONE`, at 2000 and
-  8000 nodes).
+  on: B after Bb's `Qd4+`, Bw to move and in check, A with Aw to move needing a knight for `N@f7#` (it comes from
+  Bb's `Qxh4` after Bw's reply, paired with a pass on A by v3's capture rule); our lead -2 s (v3 forbids our sit; the
+  opponent leads), opponent pace 300, elapsed 200 (event 100 ms), `RootMoveTimeMs 200`. With `HybridMode gate` the
+  root plays the pass on A (q above the best moving child's q by at least the margin, or a solved WIN reported
+  `proven (assumes event)`); with `HybridMode off` it plays a move on A. Check the fixture first: if Bw has a reply
+  that saves the knight, pick a fixture where every reply loses it, and say so in the test.
+* 2.2 **Event-lands bet is visible.** Same fixture with our lead -10 s: under `HybridEventLands all` the result is the
+  same as 2.1 (the tree assumes Bw replies); with Bw `SeatSitting 1` (it sat) the mask is empty and A moves. Assert
+  both, at 2000 and 8000 nodes.
 * 2.3 **Does not sit without an event.** 2.1 with Bw `SeatSitting 1`, and 2.1 with elapsed 0 and
   `HybridMaxWaitMs 100`: mask empty, the result equals `HybridMode off` (same nodes, same action).
+* 2.7 **The first draft was inert** (ablation, documents Review changes 1): 2.1 with `HybridEventLands none` (sit-back
+  allowed) at lead -2 s keeps no sit (`Q(sit) <= Q(best move) + margin`, reason `margin`); at 2.1 under `all`, every
+  depth-1 node below the root has `expanded_rules().mustMoveBoards == bit(B)` and every depth-2 node has none.
 * 2.4 Margin: with `HybridMarginPermille 1000` no hybrid sit is ever kept (2.1 plays a move); with 0 and the uniform
   test network the pass is kept whenever the tree prefers it (rules-level).
-* 2.5 No cycle: a 20k-node search at 2.1 terminates; every node below a hybrid sit has `hybridSit_` set and none is the
-  root node (walk the tree).
+* 2.5 No cycle: a 20k-node search at 2.1, and the same under `HybridEventLands none`, terminates; no node below the
+  root's hybrid-sit child is the root node (walk the tree).
 * 2.6 Certification and the mate-race veto still run on a hybrid sit (a fixture where the pass on A lets a mate in
-  two through: the result is a move).
+  two through: the result is a move), and an alternative they pick is never an unqualified hybrid sit (a fixture where
+  the leader is vetoed and the most-visited other child is a hybrid sit below the margin: the result moves).
 
 **3. Self-play and tournament**
 * 3.1 `selfplay --hybrid-mode gate --durative-tree false --base-mix 30000:1 --flag-loss true`, it13 fp32, 200 nodes,
   4 games: no error, the hybrid telemetry line, HVM6 records byte-identical in format to `HybridMode off`.
 * 3.2 `tournament` hybrid vs nodur, 4 games: no error, per-game hybrid line.
-* 3.3 **No mutual-sit flags.** 40 self-play games, both teams hybrid (200 nodes, 30 s base, FlagLoss on, sit-off 5000):
-  zero games end `sitoff_adjudicated`, and no `flag` game whose flagging seat passed in its last two decisions while
-  the other board's seat was sitting; report sits per game and the share of searches with a non-empty mask. The same
-  run with `HybridMode off` as the reference count.
+* 3.3 **No mutual-sit flags.** 40 self-play games, both teams hybrid (200 nodes, 30 s base, FlagLoss on, sit-off 5000),
+  and the same 40 seeds with `HybridMode off` as the reference: `sitoff_adjudicated` games no more than the reference
+  (nodur's own gate sits can produce some, so zero is not the bar), none whose loser hybrid-sat in its last two
+  decisions, and no `flag` game whose flagging seat hybrid-sat in its last two decisions. Report kept hybrid sits per
+  game and the share of searches with a non-empty mask; a run with no kept sits fails the test (inert).
+* 3.4 **Arena wake and missed events** (main-repo pytest, fake engine): a fake wave 2 process prints
+  `Hybrid: chose sit A ... event 200`; the controller's wait is `min(default_sit_ms, 300)`; if the B seat has not
+  landed by the wake the next search sends `SeatSitting` 1 for it and keeps sending it until B lands; a landing on B
+  clears it.
 
 **4. Positions (harness; measurement, not pass/fail on CI)**
 * 4.1 `score hybrid` at 1k / 4k / 16k on the 300 positions: joint and board agreement with it13@32k within the CIs of
   nodur (87% / 91% at 16k); act-vs-sit agreement at least 90%; sit rate when behind at most 15%; trigger rate
-  reported.
+  reported. Agreement is also reported on the **triggered subset** alone, against nodur on the same subset: the prior
+  floor's lost visits show there and would be diluted in the 300. The harness positions must carry the seat options
+  (paces, elapsed, sitting) from their arena games, or the trigger reads defaults; if they do not, add them first.
 * 4.2 Margin sweep 0 / 20 / 50 and prior 50 / 150 / 300 at 4k: pick the defaults by act-vs-sit agreement with the
   reference while the sit-when-behind rate stays above nodur's (else the hybrid does nothing).
 
 **5. Games (measurement)**
 * 5.1 Local: `match hybrid nodur` (row `wave2-self` with nodur's flags) 150 pairs at 30 s; success = score above 0.5 with
-  the CI's lower end above 0.47; then `match hybrid it13` 150 pairs.
+  the CI's lower end above 0.47; then `match hybrid it13` 150 pairs. Every match reports kept hybrid sits,
+  triggers and missed events per game; a match with (almost) no kept sits is "inert", not "equal to nodur".
 * 5.2 Local, the PACE cost: the same with `--ms-per-node 0.256,0.205` (PACE's 26% charge) against it13.
 * 5.3 PACE (the user pushes and submits; nothing here submits): a `wave2c`-style row `c_hybrid_120`
   (`{"durative_tree": false, "sit_gate": true, "hybrid": true}` vs `upstream-it13`, 120 s, 300 pairs) beside
@@ -402,17 +538,21 @@ v3 node), their subtrees follow v4 rules (flag and sit-off terminals reachable),
 
 ## Build order
 
-1. `hybrid.h` trigger + `TimeState::ready_ms` / `sitting` / `hybridSit_`, tests 0.4 and 1.x. Commit.
+1. `hybrid.h` trigger + `TimeState::hybridEvent_` (one-shot) + `JointActionRules` masks, tests 0.4 and 1.x. Commit.
 2. UCI and self-play options, `current_hybrid_clock`, `search_clock` split, tests 0.2. Commit.
-3. H3: rules mask, prior floor, sticky child bit, choice with margin, report; tests 2.x, 0.1, 0.3. Commit.
-4. Self-play and tournament plumbing, telemetry; tests 3.x. Commit.
-5. Arena flags and preset, harness configs; main-repo Python tests. Commit (main repo).
+3. H3: root mask, prior floor, depth-1 event rule (`HybridEventLands`), margin predicate in every root pick, report;
+   tests 2.x, 0.1, 0.3. Commit.
+4. Self-play and tournament plumbing (hybrid-sit cap in `commit_pass`), telemetry; test 3.3. Commit.
+5. Arena flags and preset, wake cap and missed-event mark, harness configs; main-repo Python tests incl. 3.4.
+   Commit (main repo).
 6. Measurements 4.x, 5.1, 5.2; doc section in `docs/wave2_engine.md` and a results section here.
 7. Only if H3 shows no gain over nodur: H1, then (unlikely) H2.
 
 ## Open decisions
 
 * Whether a gain from H3 should go into training (teach the sit plane the hybrid's sits) or stay a play-time rule.
-* `HybridMaxWaitMs` relative to the budget (a fixed 1000 ms or `k x RootMoveTimeMs`); 120 s games run about 600 ms per
-  move, 30 s local games much less, so a fixed value may trigger very differently on PACE and on the Mac.
+* `HybridMaxWaitMs` relative to the budget. T4 is now also capped at 1.5 x `RootMoveTimeMs` (the arena's wake), so
+  the fixed 1000 ms binds only on long budgets; whether to keep it at all is open.
+* `HybridEventLands all` vs `sit`: `all` keeps the root comparison fair but changes nodur's move choice on triggered
+  searches; the harness (4.1 triggered subset) decides.
 * Whether T6 should use the arena's sit-off time (5 s) explicitly.
