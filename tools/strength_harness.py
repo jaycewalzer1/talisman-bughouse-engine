@@ -447,6 +447,8 @@ def _run_searches(positions: list[dict], cfg: dict, name: str, nodes_list: list[
                 row = {"id": p["id"], "config": name, "nodes": n, "rep": rep, "move_a": res.move_a,
                        "move_b": res.move_b, "q": res.q, "nodes_searched": res.nodes, "wall_ms": res.wall_ms,
                        "binary": proc.binary, "kind": cfg["kind"], "flags": cfg.get("flags")}
+                if getattr(res, "hybrid", None) is not None:
+                    row["hybrid"] = res.hybrid  # spec v6: the trigger line and, when it fired, the root's choice
                 with lock:
                     out.write(json.dumps(row) + "\n")
                     out.flush()
@@ -608,9 +610,49 @@ def report_lines(positions: list[dict], labels: list[dict], scores: list[dict], 
                      f"{_fmt(_boot(sub, _mean('sits'), n_boot), True)} | "
                      + ("-" if name == "ref" else _fmt(_boot(sub, _mean('agree_actsit'), n_boot), True))
                      + f" | {_fmt(_boot(sub, _mean('actsit_played'), n_boot), True)} |")
+    lines += hybrid_lines(pos, ref, keyset, rows_by, n_boot)
     played = [p for p in positions if p["sit_or_act"]]
     lines += ["", f"In the games themselves, the seat sat at {sum(p['played'] == 'pass' for p in played)} of "
               f"{len(played)} sit-or-act positions (by design of the sample: about half are passes)."]
+    return lines
+
+
+def _joint(p: dict, r: dict) -> tuple:
+    return tuple(r[f"move_{x.lower()}"] for x in p["on_turn"])
+
+
+def hybrid_lines(pos: dict, ref: dict, keyset: dict, rows_by: dict, n_boot: int) -> list[str]:
+    """Spec v6 tests 4.1 / 4.2: for every config whose rows carry the engine's ``Hybrid:`` lines, how often the
+    trigger fired and a hybrid sit was kept, and agreement on the triggered subset beside nodur's on the same ids and
+    budget (the prior floor's cost shows there; on the other positions the search is nodur's)."""
+    hyb = [(c, n) for (c, n), rows in keyset.items() if (c, n) in rows_by and any("hybrid" in r for r in rows)]
+    if not hyb:
+        return []
+    lines = ["", "Hybrid (spec v6): trigger and kept sits on all positions; agreement with the reference on the "
+             "triggered subset, beside nodur at the same budget on the same ids. 'Differs from nodur' = the joint "
+             "action is not nodur's (rep 0), on the triggered subset and on the rest (the rest is the noise floor).", "",
+             "| Config | Nodes | n | Triggered | Kept sits | Kept, behind on clock | Triggered: joint agree | nodur same ids | "
+             "Triggered: act-vs-sit agree | nodur same ids | Differs from nodur: triggered / rest |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for c, n in sorted(hyb, key=lambda k: (k[0], k[1])):
+        rows = keyset[(c, n)]
+        nod = {r["id"]: r for r in keyset.get(("nodur", n), [])}
+        trig = [r for r in rows if (r.get("hybrid") or {}).get("sit_board")]
+        kept = [r for r in trig if (r["hybrid"].get("chose") or "").startswith("sit")]
+        behind = [r for r in kept if pos[r["id"]]["lead"] < 0]
+        tid = {r["id"] for r in trig}
+        er = {r["id"]: e for r, e in zip(keyset[(c, n)], rows_by[(c, n)])}
+        sub = [er[i] for i in tid]
+        nsub = [enrich(pos[i], nod[i], ref.get(i)) for i in tid if i in nod]
+        diff_t = sum(_joint(pos[r["id"]], r) != _joint(pos[r["id"]], nod[r["id"]]) for r in trig if r["id"] in nod)
+        rest = [r for r in rows if r["id"] not in tid and r["id"] in nod]
+        diff_r = sum(_joint(pos[r["id"]], r) != _joint(pos[r["id"]], nod[r["id"]]) for r in rest)
+        has_ref = bool(sub) and "agree_joint" in sub[0]
+        f = (lambda rs, k: _fmt(_boot(rs, _mean(k), n_boot), True) if rs and has_ref else "-")
+        lines.append(f"| {c} | {n} | {len(rows)} | {len(trig)} ({len(trig) / max(1, len(rows)):.0%}) | {len(kept)} | "
+                     f"{len(behind)} | {f(sub, 'agree_joint')} | {f(nsub, 'agree_joint')} | {f(sub, 'agree_actsit')} | "
+                     f"{f(nsub, 'agree_actsit')} | {diff_t}/{sum(1 for r in trig if r['id'] in nod)} / "
+                     f"{diff_r}/{len(rest)} |")
     return lines
 
 
@@ -802,6 +844,10 @@ def match_summary(out: str, specs: list[dict] | None = None) -> list[str]:
                      f"(W {r['wins']} / D {r['draws']} / L {r['losses']}; pentanomial {r['pentanomial']}; "
                      f"nodes/game A {r['contender_nodes_per_game']:.0f}, B {r['baseline_nodes_per_game']:.0f}; "
                      f"reasons {r['reasons']})")
+        if r.get("contender_hybrid_triggers_per_game"):  # spec v6: a match with no kept sits is "inert"
+            lines.append(f"A's hybrid per game: {r['contender_hybrid_triggers_per_game']:.2f} triggers, "
+                         f"{r['contender_hybrid_sits_per_game']:.2f} kept sits, "
+                         f"{r['contender_hybrid_missed_per_game']:.2f} missed events")
     return lines
 
 

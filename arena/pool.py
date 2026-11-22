@@ -330,7 +330,9 @@ def results_by_opponent(summaries: list[dict], n_boot: int = 2000, seed: int = 0
                    "clusters": sc["clusters"], "reasons": dict(sorted(reasons.items()))}
             for m in ("contender_nodes_per_game", "baseline_nodes_per_game", "flag_rate", "contender_capped_share",
                       "baseline_capped_share", "contender_reuse_per_search", "contender_plan_carries_per_search",
-                      "baseline_reuse_per_search", "baseline_plan_carries_per_search"):
+                      "baseline_reuse_per_search", "baseline_plan_carries_per_search",
+                      "contender_hybrid_sits_per_game", "contender_hybrid_triggers_per_game",
+                      "contender_hybrid_missed_per_game"):
                 c = st["metrics"][m]
                 row[m] = c["est"]
                 row[m + "_ci95"] = [c["lo"], c["hi"]]

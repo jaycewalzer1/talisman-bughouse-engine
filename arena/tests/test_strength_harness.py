@@ -97,3 +97,27 @@ def test_cluster_bootstrap_is_deterministic_and_brackets_the_estimate():
     est, lo, hi = h._boot(rows, h._mean("x"), n_boot=300)
     assert lo <= est <= hi
     assert h._boot(rows, h._mean("x"), n_boot=300) == (est, lo, hi)
+
+
+def test_report_hybrid_section_counts_triggers_kept_sits_and_the_triggered_subset():
+    """Spec v6 4.1: trigger and kept-sit counts from the rows' Hybrid lines, agreement on the triggered subset beside
+    nodur on the same ids, and how often the joint action differs from nodur (triggered / rest)."""
+    pos = [{"id": i, "game": f"g{i}", "board": "A", "on_turn": ["A"], "sit_or_act": True, "lead": -300,
+            "played": "e2e4", "result": 1.0} for i in range(4)]
+    labels = [{"id": i, "nodes": 32000, "move_a": "e2e4", "move_b": None, "q": 0.1} for i in range(4)]
+    fired = {"sit_board": "A", "event_ms": 200, "chose": "act", "choice_reason": "no sit chosen"}
+    nod = [{"id": i, "config": "nodur", "nodes": 4000, "move_a": "e2e4", "move_b": None, "q": 0.1} for i in range(4)]
+    hyb = [{"id": 0, "config": "hybrid", "nodes": 4000, "move_a": None, "move_b": None, "q": 0.2,
+            "hybrid": {**fired, "chose": "sit A", "choice_reason": "margin"}},
+           {"id": 1, "config": "hybrid", "nodes": 4000, "move_a": "e2e4", "move_b": None, "q": 0.1, "hybrid": fired},
+           {"id": 2, "config": "hybrid", "nodes": 4000, "move_a": "d2d4", "move_b": None, "q": 0.1,
+            "hybrid": {"sit_board": None, "reason": "gate allows"}},
+           {"id": 3, "config": "hybrid", "nodes": 4000, "move_a": "e2e4", "move_b": None, "q": 0.1,
+            "hybrid": {"sit_board": None, "reason": "both boards"}}]
+    lines = h.report_lines(pos, labels, nod + hyb, None, n_boot=50)
+    row = next(l for l in lines if l.startswith("| hybrid | 4000 | 4 | 2 (50%)"))
+    cells = [c.strip() for c in row.strip("|").split("|")]
+    assert cells[4] == "1" and cells[5] == "1"  # one kept sit, behind on clock
+    assert cells[6].startswith("50%") and cells[7].startswith("100%")  # triggered joint agree: hybrid / nodur
+    assert cells[10] == "1/2 / 1/2"  # differs from nodur: triggered 1 of 2, rest 1 of 2
+    assert not any(l.startswith("| nodur | 4000 | 4 | 0") for l in lines)  # nodur has no Hybrid lines
