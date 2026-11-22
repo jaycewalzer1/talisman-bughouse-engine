@@ -401,6 +401,7 @@ def parse_continuity(lines: list[str], res: SearchResult) -> SearchResult:
 HYBRID_PREFIX = "info string Hybrid: "
 _HYBRID_SIT_RE = re.compile(r"^sit boards (A|B|AB|-) event (\S+)/(\S+) mode (\S+)(?: \(([^)]*)\))?")
 _HYBRID_CHOSE_RE = re.compile(r"^chose (sit A|sit B|act) .*? \(([^()]*)")
+_HYBRID_QV_RE = re.compile(r"q_sit (\S+) q_act (\S+) visits (\d+)/(\d+)")
 
 
 def parse_hybrid(lines: list[str], res: SearchResult) -> SearchResult:
@@ -420,6 +421,13 @@ def parse_hybrid(lines: list[str], res: SearchResult) -> SearchResult:
                           "mode": m.group(4), "reason": m.group(5), "chose": None, "choice_reason": None}
         elif c and res.hybrid is not None:
             res.hybrid["chose"], res.hybrid["choice_reason"] = c.group(1), c.group(2).strip()
+            qv = _HYBRID_QV_RE.search(rest)
+            if qv:  # the root's comparison, for the harness (q in the deciding team's view, visits sit/total)
+                try:
+                    res.hybrid.update(q_sit=float(qv.group(1)), q_act=float(qv.group(2)),
+                                      visits_sit=int(qv.group(3)), visits_total=int(qv.group(4)))
+                except ValueError:
+                    pass
     return res
 
 

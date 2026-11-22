@@ -983,7 +983,7 @@ def test_wave2_parses_hybrid_lines():
     on = res(["info string HybridMode set to gate", "info string Hybrid: sit boards A event 120/- mode gate",
               "info string Hybrid: chose sit A q_sit 0.31 q_act 0.2 visits 60/400 (margin)"]).hybrid
     assert on == {"sit_board": "A", "event_ms": 120, "mode": "gate", "reason": None, "chose": "sit A",
-                  "choice_reason": "margin"}
+                  "choice_reason": "margin", "q_sit": 0.31, "q_act": 0.2, "visits_sit": 60, "visits_total": 400}
     proven = res(["info string Hybrid: sit boards B event -/80 mode gate",
                   "info string Hybrid: chose sit B q_sit 0.5 q_act 0.2 visits 5/63 (proven (assumes event))"])
     assert proven.hybrid["event_ms"] == 80 and proven.hybrid["choice_reason"] == "proven"
