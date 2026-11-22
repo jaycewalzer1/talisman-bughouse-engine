@@ -552,9 +552,11 @@ def report_lines(positions: list[dict], labels: list[dict], scores: list[dict], 
     ref = {r["id"]: r for r in labels}
     ref_nodes = sorted({r["nodes"] for r in labels})
     keyset: dict[tuple, list] = {}
+    seen = set()
     for r in scores:
-        if r.get("rep", 0) != 0 or r["id"] not in pos:
-            continue
+        if r.get("rep", 0) != 0 or r["id"] not in pos or (r["id"], r["config"], r["nodes"]) in seen:
+            continue  # the first row of a (position, config, budget) counts, if two runs overlapped
+        seen.add((r["id"], r["config"], r["nodes"]))
         keyset.setdefault((r["config"], r["nodes"]), []).append(r)
     names = configs or list(dict.fromkeys(k[0] for k in sorted(keyset, key=lambda k: (list(CONFIGS).index(k[0])
                                                                                        if k[0] in CONFIGS else 99,
