@@ -4,6 +4,7 @@
 // docs/durative_diagnosis.md, docs/custom_engine_spec_v5_continuity.md, docs/custom_engine_spec_v6_hybrid.md.
 
 import { type ReactNode, useEffect, useState } from 'react'
+import RunMetrics from './RunMetrics'
 import TrainingCurve from './TrainingCurve'
 
 type Mode = 'v3' | 'durative' | 'hybrid'
@@ -35,7 +36,7 @@ const PICTURES: Record<Mode, Level[]> = {
   ],
 }
 
-interface Step { label: string; title: string; mode: Mode | 'chart' | 'progress' | 'training'; body: ReactNode; refs: string[] }
+interface Step { label: string; title: string; mode: Mode | 'chart' | 'progress' | 'training' | 'metrics'; body: ReactNode; refs: string[] }
 
 const STEPS: Step[] = [
   {
@@ -184,6 +185,24 @@ const STEPS: Step[] = [
         flag-loss drift in self-play.</p>
     </>,
     refs: ['cluster/training_curve.py', 'runs/full/<RUN>/runs/rl-itN/arms/match_*/games.tsv'],
+  },
+  {
+    label: 'Metrics', title: 'What moves Elo: every KPI, iteration by iteration', mode: 'metrics',
+    body: <>
+      <p>One record per iteration from <code>cluster/run_metrics.py</code>. <b>Elo against fixed anchors is the
+        target</b>: the gate against it13 at 100 ms every iteration, and the 120 s anchor matches every second one.
+        Everything else is a diagnostic that might explain a change in Elo, or an alarm.</p>
+      <ul>
+        <li><b>Alerts</b>: STOP is a recommendation (Elo flat for the GPU spent), never acted on by itself.</li>
+        <li><b>Small multiples</b>: one KPI per chart, one dot per iteration in the Training step's colours. Each
+          caption says what the KPI means and which way is good.</li>
+        <li><b>Input heatmap</b> (<code>cluster/probe_net.py</code>): blank one group of input planes and see how far
+          the net's moves and evaluation shift on a frozen probe set. A row getting darker means the net learned to
+          use that input.</li>
+      </ul>
+      <p>Greyed cards were not measured; the reason is printed, never a guessed number.</p>
+    </>,
+    refs: ['cluster/run_metrics.py --summary', 'cluster/probe_net.py eval RUN N', 'runs/full/<RUN>/metrics/itN.json'],
   },
 ]
 
@@ -407,6 +426,7 @@ export default function DurativeTree() {
       <div className="nn-layout">
         <div>
           {step.mode === 'training' && <div className="nn-stage"><TrainingCurve /></div>}
+          {step.mode === 'metrics' && <div className="nn-stage"><RunMetrics /></div>}
           {step.mode === 'progress' && (
             <div className="nn-stage dt-charts">
               <Trend title="Arena strength vs upstream it13 · 120 s, equal clocks · bar = 95% range" points={ARENA_HISTORY.map(p => {

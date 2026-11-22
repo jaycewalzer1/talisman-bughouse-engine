@@ -1,0 +1,3046 @@
+{
+ "schema": 1,
+ "generated_at": "2026-11-22T15:00:00",
+ "sample": "synthetic: every number is made up, for the viewer only",
+ "runs": [
+  {
+   "run": "sample6",
+   "root": "runs/full/sample6",
+   "settings": "SAMPLE ONLY. GAMES=10000 ITERS=10 GATE_GAMES=400 GATE_MS=100 REPLAY=0.1/iter",
+   "iterations": [
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 1,
+     "done": true,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 400,
+       "score": 0.5025,
+       "elo": 1.74,
+       "ci": [
+        -32.4,
+        35.91
+       ],
+       "wins": 195,
+       "losses": 193,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5141
+        },
+        {
+         "games": 100,
+         "score": 0.4901
+        },
+        {
+         "games": 100,
+         "score": 0.5019
+        },
+        {
+         "games": 100,
+         "score": 0.4868
+        }
+       ]
+      },
+      "gate_it13": {
+       "games": 400,
+       "score": 0.508,
+       "elo": 5.56,
+       "ci": [
+        -28.55,
+        39.78
+       ],
+       "wins": 197,
+       "losses": 191,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.4965
+        },
+        {
+         "games": 100,
+         "score": 0.531
+        },
+        {
+         "games": 100,
+         "score": 0.4978
+        },
+        {
+         "games": 100,
+         "score": 0.4938
+        }
+       ]
+      },
+      "promoted": false,
+      "anchors": {
+       "it0": {
+        "games": 400,
+        "score": 0.508,
+        "elo": 5.56,
+        "ci": [
+         -28.55,
+         39.78
+        ],
+        "wins": 197,
+        "losses": 191,
+        "draws": 12,
+        "movetime": 100,
+        "clock": null,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.4965
+         },
+         {
+          "games": 100,
+          "score": 0.531
+         },
+         {
+          "games": 100,
+          "score": 0.4978
+         },
+         {
+          "games": 100,
+          "score": 0.4938
+         }
+        ]
+       }
+      },
+      "elo_vs_it13": 5.56
+     },
+     "cost": {
+      "gpu_hours": 23.84,
+      "gpu_hours_cum": 23.84,
+      "elo_per_gpu_hour": 0.233,
+      "wall_hours": 24.32
+     },
+     "selfplay": {
+      "games": 10000,
+      "positions": 1025944,
+      "segments": 5,
+      "game_length": {
+       "mean": 112.2,
+       "p50": 101,
+       "p90": 196
+      },
+      "terminations": {
+       "checkmate": 9300,
+       "flag": 310,
+       "repetition": 300
+      },
+      "flag_rate": 0.031,
+      "repeat_rate": 0.105,
+      "sit_rate": 0.0042,
+      "pass_rate": 0.29,
+      "hybrid_wait_rate": 0.078,
+      "drop_rate": 0.186,
+      "pocket_mean": 11.1,
+      "value_target": {
+       "win": 0.46,
+       "draw": 0.004,
+       "loss": 0.536
+      },
+      "policy_target_entropy": {
+       "mean": 1.15,
+       "p10": 0.05
+      }
+     },
+     "training": {
+      "steps": 6000,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": 0.0,
+      "new_positions": 1050000,
+      "replay_positions": 0,
+      "curve": [
+       {
+        "train_loss": 3.6583,
+        "search_loss": 3.6842,
+        "search_wdl": 0.6567,
+        "search_top1_a": 0.7817,
+        "search_value_mae": 0.1492,
+        "epoch": 0.4,
+        "lr": 8.3e-05,
+        "seconds": 300
+       },
+       {
+        "train_loss": 3.6167,
+        "search_loss": 3.68,
+        "search_wdl": 0.6533,
+        "search_top1_a": 0.7833,
+        "search_value_mae": 0.1483,
+        "epoch": 0.8,
+        "lr": 6.7e-05,
+        "seconds": 600
+       },
+       {
+        "train_loss": 3.575,
+        "search_loss": 3.6775,
+        "search_wdl": 0.65,
+        "search_top1_a": 0.785,
+        "search_value_mae": 0.1475,
+        "epoch": 1.2,
+        "lr": 5e-05,
+        "seconds": 900
+       },
+       {
+        "train_loss": 3.5333,
+        "search_loss": 3.6767,
+        "search_wdl": 0.6467,
+        "search_top1_a": 0.7867,
+        "search_value_mae": 0.1467,
+        "epoch": 1.6,
+        "lr": 3.3e-05,
+        "seconds": 1200
+       },
+       {
+        "train_loss": 3.4917,
+        "search_loss": 3.6775,
+        "search_wdl": 0.6433,
+        "search_top1_a": 0.7883,
+        "search_value_mae": 0.1458,
+        "epoch": 2.0,
+        "lr": 1.7e-05,
+        "seconds": 1500
+       },
+       {
+        "train_loss": 3.45,
+        "search_loss": 3.68,
+        "search_wdl": 0.64,
+        "search_top1_a": 0.79,
+        "search_value_mae": 0.145,
+        "epoch": 2.4,
+        "lr": 0.0,
+        "seconds": 1800
+       }
+      ],
+      "final": {
+       "train_loss": 3.45,
+       "search_loss": 3.68,
+       "search_wdl": 0.64,
+       "search_top1_a": 0.79,
+       "search_value_mae": 0.145,
+       "epoch": 2.4,
+       "lr": 0.0,
+       "seconds": 1800
+      },
+      "grad_norm": null
+     },
+     "search": {
+      "nps": [
+       18920.4,
+       18823.6
+      ],
+      "depth": null,
+      "sit_gate_rate": 0.006,
+      "time_use": {
+       "contender_ms_per_search": 78.26,
+       "baseline_ms_per_search": 83.3,
+       "movetime": 100
+      }
+     },
+     "network": {
+      "schema": 1,
+      "iteration": 1,
+      "run": "sample6",
+      "network": "runs/rl-it1/arms/C/last.pt",
+      "sha256": "65dc9f503f63af83bd0561e6211c70cf",
+      "probe_set": {
+       "path": "probe/probe.npz",
+       "positions": 2000,
+       "sha256": "5e1d000000000000000000000000000000000000000000000000000000000000"
+      },
+      "heldout": {
+       "loss": 3.9562,
+       "policy_loss": 1.58,
+       "value_loss": 0.8048,
+       "top1": 0.8,
+       "value_mae": 0.12,
+       "positions": 1650,
+       "subset": "val"
+      },
+      "calibration": {
+       "buckets": [
+        {
+         "lo": 0.0,
+         "hi": 0.1,
+         "n": 117,
+         "predicted": 0.041,
+         "actual": 0.1458
+        },
+        {
+         "lo": 0.1,
+         "hi": 0.2,
+         "n": 32,
+         "predicted": 0.1411,
+         "actual": 0.2583
+        },
+        {
+         "lo": 0.2,
+         "hi": 0.3,
+         "n": 53,
+         "predicted": 0.2689,
+         "actual": 0.3843
+        },
+        {
+         "lo": 0.3,
+         "hi": 0.4,
+         "n": 62,
+         "predicted": 0.3391,
+         "actual": 0.4852
+        },
+        {
+         "lo": 0.4,
+         "hi": 0.5,
+         "n": 98,
+         "predicted": 0.4434,
+         "actual": 0.6129
+        },
+        {
+         "lo": 0.5,
+         "hi": 0.6,
+         "n": 48,
+         "predicted": 0.5604,
+         "actual": 0.4496
+        },
+        {
+         "lo": 0.6,
+         "hi": 0.7,
+         "n": 49,
+         "predicted": 0.6412,
+         "actual": 0.5526
+        },
+        {
+         "lo": 0.7,
+         "hi": 0.8,
+         "n": 33,
+         "predicted": 0.7372,
+         "actual": 0.6163
+        },
+        {
+         "lo": 0.8,
+         "hi": 0.9,
+         "n": 88,
+         "predicted": 0.8455,
+         "actual": 0.7061
+        },
+        {
+         "lo": 0.9,
+         "hi": 1.0,
+         "n": 140,
+         "predicted": 0.9279,
+         "actual": 0.8422
+        }
+       ],
+       "ece": 0.119
+      },
+      "input_groups": {
+       "a_pieces": {
+        "policy_kl": 1.2251,
+        "value_delta": 0.4693,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_ours": {
+        "policy_kl": 0.0924,
+        "value_delta": 0.0583,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_theirs": {
+        "policy_kl": 0.0774,
+        "value_delta": 0.0667,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_all": {
+        "policy_kl": 1.2008,
+        "value_delta": 0.5711,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pieces": {
+        "policy_kl": 1.727,
+        "value_delta": 0.3187,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_ours": {
+        "policy_kl": 0.1207,
+        "value_delta": 0.0721,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_theirs": {
+        "policy_kl": 0.0947,
+        "value_delta": 0.0641,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_all": {
+        "policy_kl": 1.6996,
+        "value_delta": 0.4003,
+        "planes": [],
+        "fill": "zero"
+       },
+       "clocks": {
+        "policy_kl": 0.2139,
+        "value_delta": 0.1176,
+        "planes": [],
+        "fill": "zero"
+       },
+       "turn": {
+        "policy_kl": 0.0235,
+        "value_delta": 0.0195,
+        "planes": [],
+        "fill": "zero"
+       },
+       "castling_ep": {
+        "policy_kl": 0.0158,
+        "value_delta": 0.001,
+        "planes": [],
+        "fill": "zero"
+       },
+       "history": {
+        "policy_kl": 0.0481,
+        "value_delta": 0.0348,
+        "planes": [],
+        "fill": "zero"
+       }
+      },
+      "agreement": {
+       "prev_top1": 0.9422,
+       "prev_policy_kl": 0.012,
+       "search_top1": 0.8
+      },
+      "layers": [
+       {
+        "name": "stem",
+        "delta_rel": 0.00103,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.0",
+        "delta_rel": 0.00122,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.1",
+        "delta_rel": 0.00133,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.2",
+        "delta_rel": 0.00111,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.3",
+        "delta_rel": 0.00114,
+        "dead_frac": 0
+       },
+       {
+        "name": "policy_head",
+        "delta_rel": 0.00138,
+        "dead_frac": 0
+       },
+       {
+        "name": "value_head",
+        "delta_rel": 0.00107,
+        "dead_frac": 0
+       }
+      ],
+      "worst": [
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "predicted": -0.907,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#497",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "predicted": -0.668,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#187",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "predicted": -0.895,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#5",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "predicted": -0.942,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#548",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "predicted": -0.852,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#580",
+        "category": "near_end"
+       }
+      ],
+      "swings": [
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "prev": -0.432,
+        "now": 0.148,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg00/search_1003_00000.dst#277",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "prev": -0.642,
+        "now": 0.565,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg01/search_1003_00000.dst#749",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "prev": -0.494,
+        "now": 0.553,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg02/search_1003_00000.dst#292",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "prev": -0.484,
+        "now": 0.721,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg03/search_1003_00000.dst#24",
+        "category": "near_end"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "prev": -0.339,
+        "now": 0.349,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg04/search_1003_00000.dst#506",
+        "category": "time_trouble"
+       }
+      ],
+      "ablation_positions": 1000,
+      "device": "cuda",
+      "seconds": 41.2
+     },
+     "changes": {
+      "generator": [
+       null,
+       "twin-s-clock-it13"
+      ]
+     },
+     "alerts": [],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play"
+     }
+    },
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 2,
+     "done": true,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 400,
+       "score": 0.5089,
+       "elo": 6.21,
+       "ci": [
+        -27.9,
+        40.43
+       ],
+       "wins": 197,
+       "losses": 191,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.4637
+        },
+        {
+         "games": 100,
+         "score": 0.5142
+        },
+        {
+         "games": 100,
+         "score": 0.5564
+        },
+        {
+         "games": 100,
+         "score": 0.6301
+        }
+       ]
+      },
+      "gate_it13": {
+       "games": 400,
+       "score": 0.521,
+       "elo": 14.6,
+       "ci": [
+        -19.45,
+        48.93
+       ],
+       "wins": 202,
+       "losses": 185,
+       "draws": 13,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5787
+        },
+        {
+         "games": 100,
+         "score": 0.5113
+        },
+        {
+         "games": 100,
+         "score": 0.5422
+        },
+        {
+         "games": 100,
+         "score": 0.5908
+        }
+       ]
+      },
+      "promoted": true,
+      "anchors": {
+       "it0": {
+        "games": 400,
+        "score": 0.521,
+        "elo": 14.6,
+        "ci": [
+         -19.45,
+         48.93
+        ],
+        "wins": 202,
+        "losses": 185,
+        "draws": 13,
+        "movetime": 100,
+        "clock": null,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5787
+         },
+         {
+          "games": 100,
+          "score": 0.5113
+         },
+         {
+          "games": 100,
+          "score": 0.5422
+         },
+         {
+          "games": 100,
+          "score": 0.5908
+         }
+        ]
+       },
+       "hybrid-it13": {
+        "games": 400,
+        "score": 0.522,
+        "elo": 15.3,
+        "ci": [
+         -18.75,
+         49.64
+        ],
+        "wins": 203,
+        "losses": 184,
+        "draws": 13,
+        "movetime": null,
+        "clock": 120000,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.4367
+         },
+         {
+          "games": 100,
+          "score": 0.4805
+         },
+         {
+          "games": 100,
+          "score": 0.4609
+         },
+         {
+          "games": 100,
+          "score": 0.4343
+         }
+        ]
+       },
+       "upstream-it13": {
+        "games": 400,
+        "score": 0.521,
+        "elo": 14.6,
+        "ci": [
+         -19.45,
+         48.93
+        ],
+        "wins": 202,
+        "losses": 185,
+        "draws": 13,
+        "movetime": null,
+        "clock": 120000,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5455
+         },
+         {
+          "games": 100,
+          "score": 0.5859
+         },
+         {
+          "games": 100,
+          "score": 0.5008
+         },
+         {
+          "games": 100,
+          "score": 0.4788
+         }
+        ]
+       }
+      },
+      "elo_vs_it13": 14.6
+     },
+     "cost": {
+      "gpu_hours": 23.49,
+      "gpu_hours_cum": 47.33,
+      "elo_per_gpu_hour": 0.385,
+      "wall_hours": 23.96
+     },
+     "selfplay": {
+      "games": 10000,
+      "positions": 1048876,
+      "segments": 5,
+      "game_length": {
+       "mean": 114.0,
+       "p50": 102,
+       "p90": 198
+      },
+      "terminations": {
+       "checkmate": 9220,
+       "flag": 350,
+       "repetition": 320
+      },
+      "flag_rate": 0.035,
+      "repeat_rate": 0.102,
+      "sit_rate": 0.0053,
+      "pass_rate": 0.294,
+      "hybrid_wait_rate": 0.084,
+      "drop_rate": 0.19,
+      "pocket_mean": 11.35,
+      "value_target": {
+       "win": 0.465,
+       "draw": 0.004,
+       "loss": 0.531
+      },
+      "policy_target_entropy": {
+       "mean": 1.12,
+       "p10": 0.045
+      }
+     },
+     "training": {
+      "steps": 6000,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": 0.1,
+      "new_positions": 1050000,
+      "replay_positions": 105000,
+      "curve": [
+       {
+        "train_loss": 3.6383,
+        "search_loss": 3.6592,
+        "search_wdl": 0.6487,
+        "search_top1_a": 0.7857,
+        "search_value_mae": 0.1492,
+        "epoch": 0.4,
+        "lr": 8.3e-05,
+        "seconds": 300
+       },
+       {
+        "train_loss": 3.5967,
+        "search_loss": 3.655,
+        "search_wdl": 0.6453,
+        "search_top1_a": 0.7873,
+        "search_value_mae": 0.1483,
+        "epoch": 0.8,
+        "lr": 6.7e-05,
+        "seconds": 600
+       },
+       {
+        "train_loss": 3.555,
+        "search_loss": 3.6525,
+        "search_wdl": 0.642,
+        "search_top1_a": 0.789,
+        "search_value_mae": 0.1475,
+        "epoch": 1.2,
+        "lr": 5e-05,
+        "seconds": 900
+       },
+       {
+        "train_loss": 3.5133,
+        "search_loss": 3.6517,
+        "search_wdl": 0.6387,
+        "search_top1_a": 0.7907,
+        "search_value_mae": 0.1467,
+        "epoch": 1.6,
+        "lr": 3.3e-05,
+        "seconds": 1200
+       },
+       {
+        "train_loss": 3.4717,
+        "search_loss": 3.6525,
+        "search_wdl": 0.6353,
+        "search_top1_a": 0.7923,
+        "search_value_mae": 0.1458,
+        "epoch": 2.0,
+        "lr": 1.7e-05,
+        "seconds": 1500
+       },
+       {
+        "train_loss": 3.43,
+        "search_loss": 3.655,
+        "search_wdl": 0.632,
+        "search_top1_a": 0.794,
+        "search_value_mae": 0.145,
+        "epoch": 2.4,
+        "lr": 0.0,
+        "seconds": 1800
+       }
+      ],
+      "final": {
+       "train_loss": 3.43,
+       "search_loss": 3.655,
+       "search_wdl": 0.632,
+       "search_top1_a": 0.794,
+       "search_value_mae": 0.145,
+       "epoch": 2.4,
+       "lr": 0.0,
+       "seconds": 1800
+      },
+      "grad_norm": null
+     },
+     "search": {
+      "nps": [
+       18721.0,
+       18800.1
+      ],
+      "depth": null,
+      "sit_gate_rate": 0.008,
+      "time_use": {
+       "contender_ms_per_search": 76.61,
+       "baseline_ms_per_search": 83.3,
+       "movetime": 100
+      }
+     },
+     "network": {
+      "schema": 1,
+      "iteration": 2,
+      "run": "sample6",
+      "network": "runs/rl-it2/arms/C/last.pt",
+      "sha256": "ca04c79f6f15b6ad2db3997fe39639be",
+      "probe_set": {
+       "path": "probe/probe.npz",
+       "positions": 2000,
+       "sha256": "5e1d000000000000000000000000000000000000000000000000000000000000"
+      },
+      "heldout": {
+       "loss": 3.9172,
+       "policy_loss": 1.56,
+       "value_loss": 0.7883,
+       "top1": 0.806,
+       "value_mae": 0.118,
+       "positions": 1650,
+       "subset": "val"
+      },
+      "calibration": {
+       "buckets": [
+        {
+         "lo": 0.0,
+         "hi": 0.1,
+         "n": 85,
+         "predicted": 0.0578,
+         "actual": 0.1827
+        },
+        {
+         "lo": 0.1,
+         "hi": 0.2,
+         "n": 34,
+         "predicted": 0.1457,
+         "actual": 0.2743
+        },
+        {
+         "lo": 0.2,
+         "hi": 0.3,
+         "n": 44,
+         "predicted": 0.2402,
+         "actual": 0.3086
+        },
+        {
+         "lo": 0.3,
+         "hi": 0.4,
+         "n": 102,
+         "predicted": 0.3313,
+         "actual": 0.4416
+        },
+        {
+         "lo": 0.4,
+         "hi": 0.5,
+         "n": 87,
+         "predicted": 0.4539,
+         "actual": 0.578
+        },
+        {
+         "lo": 0.5,
+         "hi": 0.6,
+         "n": 86,
+         "predicted": 0.5495,
+         "actual": 0.4447
+        },
+        {
+         "lo": 0.6,
+         "hi": 0.7,
+         "n": 120,
+         "predicted": 0.6552,
+         "actual": 0.5392
+        },
+        {
+         "lo": 0.7,
+         "hi": 0.8,
+         "n": 113,
+         "predicted": 0.7566,
+         "actual": 0.6529
+        },
+        {
+         "lo": 0.8,
+         "hi": 0.9,
+         "n": 92,
+         "predicted": 0.8518,
+         "actual": 0.7253
+        },
+        {
+         "lo": 0.9,
+         "hi": 1.0,
+         "n": 66,
+         "predicted": 0.9617,
+         "actual": 0.8511
+        }
+       ],
+       "ece": 0.1129
+      },
+      "input_groups": {
+       "a_pieces": {
+        "policy_kl": 1.1816,
+        "value_delta": 0.4539,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_ours": {
+        "policy_kl": 0.1116,
+        "value_delta": 0.0657,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_theirs": {
+        "policy_kl": 0.085,
+        "value_delta": 0.0771,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_all": {
+        "policy_kl": 1.1749,
+        "value_delta": 0.5638,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pieces": {
+        "policy_kl": 1.7323,
+        "value_delta": 0.3063,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_ours": {
+        "policy_kl": 0.1448,
+        "value_delta": 0.0767,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_theirs": {
+        "policy_kl": 0.1085,
+        "value_delta": 0.0711,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_all": {
+        "policy_kl": 1.6734,
+        "value_delta": 0.4003,
+        "planes": [],
+        "fill": "zero"
+       },
+       "clocks": {
+        "policy_kl": 0.2651,
+        "value_delta": 0.1429,
+        "planes": [],
+        "fill": "zero"
+       },
+       "turn": {
+        "policy_kl": 0.0357,
+        "value_delta": 0.0165,
+        "planes": [],
+        "fill": "zero"
+       },
+       "castling_ep": {
+        "policy_kl": 0.0127,
+        "value_delta": 0.0111,
+        "planes": [],
+        "fill": "zero"
+       },
+       "history": {
+        "policy_kl": 0.0578,
+        "value_delta": 0.0304,
+        "planes": [],
+        "fill": "zero"
+       }
+      },
+      "agreement": {
+       "prev_top1": 0.9384,
+       "prev_policy_kl": 0.016,
+       "search_top1": 0.807
+      },
+      "layers": [
+       {
+        "name": "stem",
+        "delta_rel": 0.00198,
+        "dead_frac": 0.0002
+       },
+       {
+        "name": "blocks.0",
+        "delta_rel": 0.00179,
+        "dead_frac": 0.0002
+       },
+       {
+        "name": "blocks.1",
+        "delta_rel": 0.00163,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.2",
+        "delta_rel": 0.002,
+        "dead_frac": 0
+       },
+       {
+        "name": "blocks.3",
+        "delta_rel": 0.00184,
+        "dead_frac": 0
+       },
+       {
+        "name": "policy_head",
+        "delta_rel": 0.00186,
+        "dead_frac": 0
+       },
+       {
+        "name": "value_head",
+        "delta_rel": 0.00184,
+        "dead_frac": 0
+       }
+      ],
+      "worst": [
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "predicted": -0.625,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#160",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "predicted": -0.781,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#135",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "predicted": -0.991,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#819",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "predicted": -0.612,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#666",
+        "category": "near_end"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "predicted": -0.959,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#768",
+        "category": "time_trouble"
+       }
+      ],
+      "swings": [
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "prev": -0.557,
+        "now": 0.341,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg00/search_1003_00000.dst#374",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "prev": -0.898,
+        "now": 0.172,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg01/search_1003_00000.dst#202",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "prev": -0.73,
+        "now": 0.438,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg02/search_1003_00000.dst#491",
+        "category": "near_end"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "prev": -0.359,
+        "now": 0.341,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg03/search_1003_00000.dst#855",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "prev": -0.521,
+        "now": 0.737,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg04/search_1003_00000.dst#490",
+        "category": "check_or_swing"
+       }
+      ],
+      "ablation_positions": 1000,
+      "device": "cuda",
+      "seconds": 41.2
+     },
+     "changes": {
+      "train.replay_fraction": [
+       0.0,
+       0.1
+      ]
+     },
+     "alerts": [],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play"
+     }
+    },
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 3,
+     "done": true,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 400,
+       "score": 0.5083,
+       "elo": 5.77,
+       "ci": [
+        -28.34,
+        39.99
+       ],
+       "wins": 197,
+       "losses": 191,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5458
+        },
+        {
+         "games": 100,
+         "score": 0.5119
+        },
+        {
+         "games": 100,
+         "score": 0.568
+        },
+        {
+         "games": 100,
+         "score": 0.5055
+        }
+       ]
+      },
+      "gate_it13": {
+       "games": 400,
+       "score": 0.514,
+       "elo": 9.73,
+       "ci": [
+        -24.35,
+        44.0
+       ],
+       "wins": 199,
+       "losses": 189,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5579
+        },
+        {
+         "games": 100,
+         "score": 0.4946
+        },
+        {
+         "games": 100,
+         "score": 0.5723
+        },
+        {
+         "games": 100,
+         "score": 0.4533
+        }
+       ]
+      },
+      "promoted": false,
+      "anchors": {
+       "it0": {
+        "games": 400,
+        "score": 0.514,
+        "elo": 9.73,
+        "ci": [
+         -24.35,
+         44.0
+        ],
+        "wins": 199,
+        "losses": 189,
+        "draws": 12,
+        "movetime": 100,
+        "clock": null,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5579
+         },
+         {
+          "games": 100,
+          "score": 0.4946
+         },
+         {
+          "games": 100,
+          "score": 0.5723
+         },
+         {
+          "games": 100,
+          "score": 0.4533
+         }
+        ]
+       }
+      },
+      "elo_vs_it13": 9.73
+     },
+     "cost": {
+      "gpu_hours": 23.03,
+      "gpu_hours_cum": 70.36,
+      "elo_per_gpu_hour": -0.211,
+      "wall_hours": 23.49
+     },
+     "selfplay": {
+      "games": 10000,
+      "positions": 1028590,
+      "segments": 5,
+      "game_length": {
+       "mean": 116.0,
+       "p50": 103,
+       "p90": 200
+      },
+      "terminations": {
+       "checkmate": 9140,
+       "flag": 390,
+       "repetition": 340
+      },
+      "flag_rate": 0.039,
+      "repeat_rate": 0.099,
+      "sit_rate": 0.0064,
+      "pass_rate": 0.298,
+      "hybrid_wait_rate": 0.09,
+      "drop_rate": 0.194,
+      "pocket_mean": 11.6,
+      "value_target": {
+       "win": 0.47,
+       "draw": 0.004,
+       "loss": 0.526
+      },
+      "policy_target_entropy": {
+       "mean": 1.09,
+       "p10": 0.04
+      }
+     },
+     "training": {
+      "steps": 6000,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": 0.2,
+      "new_positions": 1050000,
+      "replay_positions": 210000,
+      "curve": [
+       {
+        "train_loss": 3.6183,
+        "search_loss": 3.6342,
+        "search_wdl": 0.6407,
+        "search_top1_a": 0.7897,
+        "search_value_mae": 0.1492,
+        "epoch": 0.4,
+        "lr": 8.3e-05,
+        "seconds": 300
+       },
+       {
+        "train_loss": 3.5767,
+        "search_loss": 3.63,
+        "search_wdl": 0.6373,
+        "search_top1_a": 0.7913,
+        "search_value_mae": 0.1483,
+        "epoch": 0.8,
+        "lr": 6.7e-05,
+        "seconds": 600
+       },
+       {
+        "train_loss": 3.535,
+        "search_loss": 3.6275,
+        "search_wdl": 0.634,
+        "search_top1_a": 0.793,
+        "search_value_mae": 0.1475,
+        "epoch": 1.2,
+        "lr": 5e-05,
+        "seconds": 900
+       },
+       {
+        "train_loss": 3.4933,
+        "search_loss": 3.6267,
+        "search_wdl": 0.6307,
+        "search_top1_a": 0.7947,
+        "search_value_mae": 0.1467,
+        "epoch": 1.6,
+        "lr": 3.3e-05,
+        "seconds": 1200
+       },
+       {
+        "train_loss": 3.4517,
+        "search_loss": 3.6275,
+        "search_wdl": 0.6273,
+        "search_top1_a": 0.7963,
+        "search_value_mae": 0.1458,
+        "epoch": 2.0,
+        "lr": 1.7e-05,
+        "seconds": 1500
+       },
+       {
+        "train_loss": 3.41,
+        "search_loss": 3.63,
+        "search_wdl": 0.624,
+        "search_top1_a": 0.798,
+        "search_value_mae": 0.145,
+        "epoch": 2.4,
+        "lr": 0.0,
+        "seconds": 1800
+       }
+      ],
+      "final": {
+       "train_loss": 3.41,
+       "search_loss": 3.63,
+       "search_wdl": 0.624,
+       "search_top1_a": 0.798,
+       "search_value_mae": 0.145,
+       "epoch": 2.4,
+       "lr": 0.0,
+       "seconds": 1800
+      },
+      "grad_norm": null
+     },
+     "search": {
+      "nps": [
+       18724.4,
+       19096.0
+      ],
+      "depth": null,
+      "sit_gate_rate": 0.01,
+      "time_use": {
+       "contender_ms_per_search": 79.59,
+       "baseline_ms_per_search": 83.3,
+       "movetime": 100
+      }
+     },
+     "network": {
+      "schema": 1,
+      "iteration": 3,
+      "run": "sample6",
+      "network": "runs/rl-it3/arms/C/last.pt",
+      "sha256": "5b4b1b75321c52966bd8c67656d050cd",
+      "probe_set": {
+       "path": "probe/probe.npz",
+       "positions": 2000,
+       "sha256": "5e1d000000000000000000000000000000000000000000000000000000000000"
+      },
+      "heldout": {
+       "loss": 3.895,
+       "policy_loss": 1.54,
+       "value_loss": 0.7727,
+       "top1": 0.812,
+       "value_mae": 0.116,
+       "positions": 1650,
+       "subset": "val"
+      },
+      "calibration": {
+       "buckets": [
+        {
+         "lo": 0.0,
+         "hi": 0.1,
+         "n": 229,
+         "predicted": 0.0312,
+         "actual": 0.1029
+        },
+        {
+         "lo": 0.1,
+         "hi": 0.2,
+         "n": 78,
+         "predicted": 0.1596,
+         "actual": 0.1846
+        },
+        {
+         "lo": 0.2,
+         "hi": 0.3,
+         "n": 41,
+         "predicted": 0.2381,
+         "actual": 0.324
+        },
+        {
+         "lo": 0.3,
+         "hi": 0.4,
+         "n": 27,
+         "predicted": 0.3621,
+         "actual": 0.399
+        },
+        {
+         "lo": 0.4,
+         "hi": 0.5,
+         "n": 102,
+         "predicted": 0.4679,
+         "actual": 0.5311
+        },
+        {
+         "lo": 0.5,
+         "hi": 0.6,
+         "n": 47,
+         "predicted": 0.5588,
+         "actual": 0.497
+        },
+        {
+         "lo": 0.6,
+         "hi": 0.7,
+         "n": 40,
+         "predicted": 0.6417,
+         "actual": 0.5623
+        },
+        {
+         "lo": 0.7,
+         "hi": 0.8,
+         "n": 91,
+         "predicted": 0.7387,
+         "actual": 0.6645
+        },
+        {
+         "lo": 0.8,
+         "hi": 0.9,
+         "n": 38,
+         "predicted": 0.8525,
+         "actual": 0.7643
+        },
+        {
+         "lo": 0.9,
+         "hi": 1.0,
+         "n": 108,
+         "predicted": 0.9471,
+         "actual": 0.9124
+        }
+       ],
+       "ece": 0.0615
+      },
+      "input_groups": {
+       "a_pieces": {
+        "policy_kl": 1.1372,
+        "value_delta": 0.4428,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_ours": {
+        "policy_kl": 0.1464,
+        "value_delta": 0.0652,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_theirs": {
+        "policy_kl": 0.1071,
+        "value_delta": 0.0849,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_all": {
+        "policy_kl": 1.138,
+        "value_delta": 0.5548,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pieces": {
+        "policy_kl": 1.6961,
+        "value_delta": 0.3029,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_ours": {
+        "policy_kl": 0.1688,
+        "value_delta": 0.0931,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_theirs": {
+        "policy_kl": 0.1645,
+        "value_delta": 0.0788,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_all": {
+        "policy_kl": 1.687,
+        "value_delta": 0.3913,
+        "planes": [],
+        "fill": "zero"
+       },
+       "clocks": {
+        "policy_kl": 0.2992,
+        "value_delta": 0.1711,
+        "planes": [],
+        "fill": "zero"
+       },
+       "turn": {
+        "policy_kl": 0.0619,
+        "value_delta": 0.0213,
+        "planes": [],
+        "fill": "zero"
+       },
+       "castling_ep": {
+        "policy_kl": 0.0153,
+        "value_delta": 0.0055,
+        "planes": [],
+        "fill": "zero"
+       },
+       "history": {
+        "policy_kl": 0.0594,
+        "value_delta": 0.0356,
+        "planes": [],
+        "fill": "zero"
+       }
+      },
+      "agreement": {
+       "prev_top1": 0.9267,
+       "prev_policy_kl": 0.02,
+       "search_top1": 0.814
+      },
+      "layers": [
+       {
+        "name": "stem",
+        "delta_rel": 0.00221,
+        "dead_frac": 0.0017
+       },
+       {
+        "name": "blocks.0",
+        "delta_rel": 0.00238,
+        "dead_frac": 0.0001
+       },
+       {
+        "name": "blocks.1",
+        "delta_rel": 0.00233,
+        "dead_frac": 0.0019
+       },
+       {
+        "name": "blocks.2",
+        "delta_rel": 0.0024,
+        "dead_frac": 0.0002
+       },
+       {
+        "name": "blocks.3",
+        "delta_rel": 0.00259,
+        "dead_frac": 0.0024
+       },
+       {
+        "name": "policy_head",
+        "delta_rel": 0.00259,
+        "dead_frac": 0.0003
+       },
+       {
+        "name": "value_head",
+        "delta_rel": 0.00231,
+        "dead_frac": 0.0001
+       }
+      ],
+      "worst": [
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "predicted": -0.688,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#277",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "predicted": -0.698,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#840",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "predicted": -0.831,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#693",
+        "category": "near_end"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "predicted": -0.672,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#265",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "predicted": -0.838,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#550",
+        "category": "check_or_swing"
+       }
+      ],
+      "swings": [
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "prev": -0.794,
+        "now": 0.151,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg00/search_1003_00000.dst#803",
+        "category": "opening"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "prev": -0.87,
+        "now": 0.644,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg01/search_1003_00000.dst#147",
+        "category": "near_end"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "prev": -0.785,
+        "now": 0.196,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg02/search_1003_00000.dst#225",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "prev": -0.465,
+        "now": 0.166,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg03/search_1003_00000.dst#167",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "prev": -0.307,
+        "now": 0.683,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg04/search_1003_00000.dst#724",
+        "category": "crowded_pockets"
+       }
+      ],
+      "ablation_positions": 1000,
+      "device": "cuda",
+      "seconds": 41.2
+     },
+     "changes": {
+      "generator": [
+       "twin-s-clock-w2-it0",
+       "twin-s-clock-w2-it2"
+      ],
+      "train.replay_fraction": [
+       0.1,
+       0.2
+      ]
+     },
+     "alerts": [],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play"
+     }
+    },
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 4,
+     "done": true,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 400,
+       "score": 0.5176,
+       "elo": 12.26,
+       "ci": [
+        -21.8,
+        46.56
+       ],
+       "wins": 201,
+       "losses": 187,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5996
+        },
+        {
+         "games": 100,
+         "score": 0.5541
+        },
+        {
+         "games": 100,
+         "score": 0.4784
+        },
+        {
+         "games": 100,
+         "score": 0.5294
+        }
+       ]
+      },
+      "gate_it13": {
+       "games": 400,
+       "score": 0.536,
+       "elo": 25.06,
+       "ci": [
+        -8.95,
+        59.55
+       ],
+       "wins": 208,
+       "losses": 179,
+       "draws": 13,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.6014
+        },
+        {
+         "games": 100,
+         "score": 0.5871
+        },
+        {
+         "games": 100,
+         "score": 0.5075
+        },
+        {
+         "games": 100,
+         "score": 0.53
+        }
+       ]
+      },
+      "promoted": true,
+      "anchors": {
+       "it0": {
+        "games": 400,
+        "score": 0.536,
+        "elo": 25.06,
+        "ci": [
+         -8.95,
+         59.55
+        ],
+        "wins": 208,
+        "losses": 179,
+        "draws": 13,
+        "movetime": 100,
+        "clock": null,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.6014
+         },
+         {
+          "games": 100,
+          "score": 0.5871
+         },
+         {
+          "games": 100,
+          "score": 0.5075
+         },
+         {
+          "games": 100,
+          "score": 0.53
+         }
+        ]
+       },
+       "hybrid-it13": {
+        "games": 400,
+        "score": 0.542,
+        "elo": 29.25,
+        "ci": [
+         -4.74,
+         63.82
+        ],
+        "wins": 210,
+        "losses": 177,
+        "draws": 13,
+        "movetime": null,
+        "clock": 120000,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5235
+         },
+         {
+          "games": 100,
+          "score": 0.6063
+         },
+         {
+          "games": 100,
+          "score": 0.5663
+         },
+         {
+          "games": 100,
+          "score": 0.5264
+         }
+        ]
+       },
+       "upstream-it13": {
+        "games": 400,
+        "score": 0.508,
+        "elo": 5.56,
+        "ci": [
+         -28.55,
+         39.78
+        ],
+        "wins": 197,
+        "losses": 191,
+        "draws": 12,
+        "movetime": null,
+        "clock": 120000,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5159
+         },
+         {
+          "games": 100,
+          "score": 0.5671
+         },
+         {
+          "games": 100,
+          "score": 0.4839
+         },
+         {
+          "games": 100,
+          "score": 0.514
+         }
+        ]
+       }
+      },
+      "elo_vs_it13": 25.06
+     },
+     "cost": {
+      "gpu_hours": 24.64,
+      "gpu_hours_cum": 95.0,
+      "elo_per_gpu_hour": 0.622,
+      "wall_hours": 25.13
+     },
+     "selfplay": {
+      "games": 10000,
+      "positions": 1056245,
+      "segments": 5,
+      "game_length": {
+       "mean": 114.6,
+       "p50": 104,
+       "p90": 202
+      },
+      "terminations": {
+       "checkmate": 9060,
+       "flag": 429,
+       "repetition": 360
+      },
+      "flag_rate": 0.043,
+      "repeat_rate": 0.096,
+      "sit_rate": 0.0075,
+      "pass_rate": 0.302,
+      "hybrid_wait_rate": 0.096,
+      "drop_rate": 0.198,
+      "pocket_mean": 11.85,
+      "value_target": {
+       "win": 0.475,
+       "draw": 0.004,
+       "loss": 0.521
+      },
+      "policy_target_entropy": {
+       "mean": 0.79,
+       "p10": 0.035
+      }
+     },
+     "training": {
+      "steps": 6000,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": 0.3,
+      "new_positions": 1050000,
+      "replay_positions": 315000,
+      "curve": [
+       {
+        "train_loss": 3.5983,
+        "search_loss": 3.6092,
+        "search_wdl": 0.6327,
+        "search_top1_a": 0.7937,
+        "search_value_mae": 0.1492,
+        "epoch": 0.4,
+        "lr": 8.3e-05,
+        "seconds": 300
+       },
+       {
+        "train_loss": 3.5567,
+        "search_loss": 3.605,
+        "search_wdl": 0.6293,
+        "search_top1_a": 0.7953,
+        "search_value_mae": 0.1483,
+        "epoch": 0.8,
+        "lr": 6.7e-05,
+        "seconds": 600
+       },
+       {
+        "train_loss": 3.515,
+        "search_loss": 3.6025,
+        "search_wdl": 0.626,
+        "search_top1_a": 0.797,
+        "search_value_mae": 0.1475,
+        "epoch": 1.2,
+        "lr": 5e-05,
+        "seconds": 900
+       },
+       {
+        "train_loss": 3.4733,
+        "search_loss": 3.6017,
+        "search_wdl": 0.6227,
+        "search_top1_a": 0.7987,
+        "search_value_mae": 0.1467,
+        "epoch": 1.6,
+        "lr": 3.3e-05,
+        "seconds": 1200
+       },
+       {
+        "train_loss": 3.4317,
+        "search_loss": 3.6025,
+        "search_wdl": 0.6193,
+        "search_top1_a": 0.8003,
+        "search_value_mae": 0.1458,
+        "epoch": 2.0,
+        "lr": 1.7e-05,
+        "seconds": 1500
+       },
+       {
+        "train_loss": 3.39,
+        "search_loss": 3.605,
+        "search_wdl": 0.616,
+        "search_top1_a": 0.802,
+        "search_value_mae": 0.145,
+        "epoch": 2.4,
+        "lr": 0.0,
+        "seconds": 1800
+       }
+      ],
+      "final": {
+       "train_loss": 3.39,
+       "search_loss": 3.605,
+       "search_wdl": 0.616,
+       "search_top1_a": 0.802,
+       "search_value_mae": 0.145,
+       "epoch": 2.4,
+       "lr": 0.0,
+       "seconds": 1800
+      },
+      "grad_norm": null
+     },
+     "search": {
+      "nps": [
+       18948.7,
+       18817.3
+      ],
+      "depth": null,
+      "sit_gate_rate": 0.012,
+      "time_use": {
+       "contender_ms_per_search": 78.84,
+       "baseline_ms_per_search": 83.3,
+       "movetime": 100
+      }
+     },
+     "network": {
+      "schema": 1,
+      "iteration": 4,
+      "run": "sample6",
+      "network": "runs/rl-it4/arms/C/last.pt",
+      "sha256": "64dbc8d30aaaaf81963892a766465d28",
+      "probe_set": {
+       "path": "probe/probe.npz",
+       "positions": 2000,
+       "sha256": "5e1d000000000000000000000000000000000000000000000000000000000000"
+      },
+      "heldout": {
+       "loss": 3.8684,
+       "policy_loss": 1.52,
+       "value_loss": 0.7643,
+       "top1": 0.818,
+       "value_mae": 0.114,
+       "positions": 1650,
+       "subset": "val"
+      },
+      "calibration": {
+       "buckets": [
+        {
+         "lo": 0.0,
+         "hi": 0.1,
+         "n": 88,
+         "predicted": 0.061,
+         "actual": 0.1291
+        },
+        {
+         "lo": 0.1,
+         "hi": 0.2,
+         "n": 48,
+         "predicted": 0.1485,
+         "actual": 0.2165
+        },
+        {
+         "lo": 0.2,
+         "hi": 0.3,
+         "n": 64,
+         "predicted": 0.2583,
+         "actual": 0.2933
+        },
+        {
+         "lo": 0.3,
+         "hi": 0.4,
+         "n": 82,
+         "predicted": 0.3487,
+         "actual": 0.3944
+        },
+        {
+         "lo": 0.4,
+         "hi": 0.5,
+         "n": 69,
+         "predicted": 0.45,
+         "actual": 0.5367
+        },
+        {
+         "lo": 0.5,
+         "hi": 0.6,
+         "n": 29,
+         "predicted": 0.5196,
+         "actual": 0.5304
+        },
+        {
+         "lo": 0.6,
+         "hi": 0.7,
+         "n": 95,
+         "predicted": 0.6516,
+         "actual": 0.6198
+        },
+        {
+         "lo": 0.7,
+         "hi": 0.8,
+         "n": 56,
+         "predicted": 0.7483,
+         "actual": 0.7009
+        },
+        {
+         "lo": 0.8,
+         "hi": 0.9,
+         "n": 108,
+         "predicted": 0.8481,
+         "actual": 0.7634
+        },
+        {
+         "lo": 0.9,
+         "hi": 1.0,
+         "n": 160,
+         "predicted": 0.9548,
+         "actual": 0.9111
+        }
+       ],
+       "ece": 0.0543
+      },
+      "input_groups": {
+       "a_pieces": {
+        "policy_kl": 1.1084,
+        "value_delta": 0.4316,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_ours": {
+        "policy_kl": 0.1821,
+        "value_delta": 0.0876,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_theirs": {
+        "policy_kl": 0.1646,
+        "value_delta": 0.0917,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_all": {
+        "policy_kl": 1.1146,
+        "value_delta": 0.5583,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pieces": {
+        "policy_kl": 1.6781,
+        "value_delta": 0.3024,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_ours": {
+        "policy_kl": 0.2136,
+        "value_delta": 0.1002,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_theirs": {
+        "policy_kl": 0.1654,
+        "value_delta": 0.0898,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_all": {
+        "policy_kl": 1.6614,
+        "value_delta": 0.394,
+        "planes": [],
+        "fill": "zero"
+       },
+       "clocks": {
+        "policy_kl": 0.3366,
+        "value_delta": 0.1794,
+        "planes": [],
+        "fill": "zero"
+       },
+       "turn": {
+        "policy_kl": 0.045,
+        "value_delta": 0.02,
+        "planes": [],
+        "fill": "zero"
+       },
+       "castling_ep": {
+        "policy_kl": 0.0031,
+        "value_delta": 0.0065,
+        "planes": [],
+        "fill": "zero"
+       },
+       "history": {
+        "policy_kl": 0.0688,
+        "value_delta": 0.037,
+        "planes": [],
+        "fill": "zero"
+       }
+      },
+      "agreement": {
+       "prev_top1": 0.9206,
+       "prev_policy_kl": 0.024,
+       "search_top1": 0.821
+      },
+      "layers": [
+       {
+        "name": "stem",
+        "delta_rel": 0.00289,
+        "dead_frac": 0.0038
+       },
+       {
+        "name": "blocks.0",
+        "delta_rel": 0.00301,
+        "dead_frac": 0.0043
+       },
+       {
+        "name": "blocks.1",
+        "delta_rel": 0.00306,
+        "dead_frac": 0.0041
+       },
+       {
+        "name": "blocks.2",
+        "delta_rel": 0.00315,
+        "dead_frac": 0.0032
+       },
+       {
+        "name": "blocks.3",
+        "delta_rel": 0.00293,
+        "dead_frac": 0.005
+       },
+       {
+        "name": "policy_head",
+        "delta_rel": 0.00286,
+        "dead_frac": 0.0042
+       },
+       {
+        "name": "value_head",
+        "delta_rel": 0.00306,
+        "dead_frac": 0.0021
+       }
+      ],
+      "worst": [
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "predicted": -0.666,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#526",
+        "category": "opening"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "predicted": -0.749,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#752",
+        "category": "near_end"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "predicted": -0.72,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#518",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "predicted": -0.944,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#537",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "predicted": -0.699,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#583",
+        "category": "crowded_pockets"
+       }
+      ],
+      "swings": [
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "prev": -0.713,
+        "now": 0.33,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg00/search_1003_00000.dst#251",
+        "category": "near_end"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "prev": -0.928,
+        "now": 0.718,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg01/search_1003_00000.dst#366",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "prev": -0.831,
+        "now": 0.335,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg02/search_1003_00000.dst#487",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "prev": -0.769,
+        "now": 0.559,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg03/search_1003_00000.dst#517",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "prev": -0.445,
+        "now": 0.164,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg04/search_1003_00000.dst#148",
+        "category": "middlegame"
+       }
+      ],
+      "ablation_positions": 1000,
+      "device": "cuda",
+      "seconds": 41.2
+     },
+     "changes": {
+      "train.lr": [
+       0.0001,
+       0.0001
+      ],
+      "train.replay_fraction": [
+       0.2,
+       0.3
+      ],
+      "wave2.HybridSitMarginPermil": [
+       20,
+       15
+      ]
+     },
+     "alerts": [
+      {
+       "level": "warn",
+       "code": "entropy_collapse",
+       "message": "policy target entropy 0.790 vs it1 1.150 (-31%)"
+      }
+     ],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play"
+     }
+    },
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 5,
+     "done": true,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 400,
+       "score": 0.5039,
+       "elo": 2.72,
+       "ci": [
+        -31.42,
+        36.9
+       ],
+       "wins": 196,
+       "losses": 192,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.4408
+        },
+        {
+         "games": 100,
+         "score": 0.5053
+        },
+        {
+         "games": 100,
+         "score": 0.5151
+        },
+        {
+         "games": 100,
+         "score": 0.5324
+        }
+       ]
+      },
+      "gate_it13": {
+       "games": 400,
+       "score": 0.517,
+       "elo": 11.82,
+       "ci": [
+        -22.25,
+        46.11
+       ],
+       "wins": 201,
+       "losses": 187,
+       "draws": 12,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5584
+        },
+        {
+         "games": 100,
+         "score": 0.447
+        },
+        {
+         "games": 100,
+         "score": 0.5445
+        },
+        {
+         "games": 100,
+         "score": 0.4641
+        }
+       ]
+      },
+      "promoted": false,
+      "anchors": {
+       "it0": {
+        "games": 400,
+        "score": 0.517,
+        "elo": 11.82,
+        "ci": [
+         -22.25,
+         46.11
+        ],
+        "wins": 201,
+        "losses": 187,
+        "draws": 12,
+        "movetime": 100,
+        "clock": null,
+        "blocks": [
+         {
+          "games": 100,
+          "score": 0.5584
+         },
+         {
+          "games": 100,
+          "score": 0.447
+         },
+         {
+          "games": 100,
+          "score": 0.5445
+         },
+         {
+          "games": 100,
+          "score": 0.4641
+         }
+        ]
+       }
+      },
+      "elo_vs_it13": 11.82
+     },
+     "cost": {
+      "gpu_hours": 24.73,
+      "gpu_hours_cum": 119.73,
+      "elo_per_gpu_hour": -0.535,
+      "wall_hours": 25.22
+     },
+     "selfplay": {
+      "games": 10000,
+      "positions": 1026875,
+      "segments": 5,
+      "game_length": {
+       "mean": 118.7,
+       "p50": 105,
+       "p90": 204
+      },
+      "terminations": {
+       "checkmate": 8980,
+       "flag": 730,
+       "repetition": 380
+      },
+      "flag_rate": 0.073,
+      "repeat_rate": 0.093,
+      "sit_rate": 0.0086,
+      "pass_rate": 0.306,
+      "hybrid_wait_rate": 0.102,
+      "drop_rate": 0.202,
+      "pocket_mean": 12.1,
+      "value_target": {
+       "win": 0.48,
+       "draw": 0.004,
+       "loss": 0.516
+      },
+      "policy_target_entropy": {
+       "mean": 0.67,
+       "p10": 0.03
+      }
+     },
+     "training": {
+      "steps": 6000,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": 0.4,
+      "new_positions": 1050000,
+      "replay_positions": 420000,
+      "curve": [
+       {
+        "train_loss": 3.5783,
+        "search_loss": 3.5842,
+        "search_wdl": 0.6247,
+        "search_top1_a": 0.7977,
+        "search_value_mae": 0.1492,
+        "epoch": 0.4,
+        "lr": 8.3e-05,
+        "seconds": 300
+       },
+       {
+        "train_loss": 3.5367,
+        "search_loss": 3.58,
+        "search_wdl": 0.6213,
+        "search_top1_a": 0.7993,
+        "search_value_mae": 0.1483,
+        "epoch": 0.8,
+        "lr": 6.7e-05,
+        "seconds": 600
+       },
+       {
+        "train_loss": 3.495,
+        "search_loss": 3.5775,
+        "search_wdl": 0.618,
+        "search_top1_a": 0.801,
+        "search_value_mae": 0.1475,
+        "epoch": 1.2,
+        "lr": 5e-05,
+        "seconds": 900
+       },
+       {
+        "train_loss": 3.4533,
+        "search_loss": 3.5767,
+        "search_wdl": 0.6147,
+        "search_top1_a": 0.8027,
+        "search_value_mae": 0.1467,
+        "epoch": 1.6,
+        "lr": 3.3e-05,
+        "seconds": 1200
+       },
+       {
+        "train_loss": 3.4117,
+        "search_loss": 3.5775,
+        "search_wdl": 0.6113,
+        "search_top1_a": 0.8043,
+        "search_value_mae": 0.1458,
+        "epoch": 2.0,
+        "lr": 1.7e-05,
+        "seconds": 1500
+       },
+       {
+        "train_loss": 3.37,
+        "search_loss": 3.58,
+        "search_wdl": 0.608,
+        "search_top1_a": 0.806,
+        "search_value_mae": 0.145,
+        "epoch": 2.4,
+        "lr": 0.0,
+        "seconds": 1800
+       }
+      ],
+      "final": {
+       "train_loss": 3.37,
+       "search_loss": 3.58,
+       "search_wdl": 0.608,
+       "search_top1_a": 0.806,
+       "search_value_mae": 0.145,
+       "epoch": 2.4,
+       "lr": 0.0,
+       "seconds": 1800
+      },
+      "grad_norm": null
+     },
+     "search": {
+      "nps": [
+       18850.6,
+       18980.6
+      ],
+      "depth": null,
+      "sit_gate_rate": 0.014,
+      "time_use": {
+       "contender_ms_per_search": 76.2,
+       "baseline_ms_per_search": 83.3,
+       "movetime": 100
+      }
+     },
+     "network": {
+      "schema": 1,
+      "iteration": 5,
+      "run": "sample6",
+      "network": "runs/rl-it5/arms/C/last.pt",
+      "sha256": "67c98fb9736506ecae7c8f097ddfcbc9",
+      "probe_set": {
+       "path": "probe/probe.npz",
+       "positions": 2000,
+       "sha256": "5e1d000000000000000000000000000000000000000000000000000000000000"
+      },
+      "heldout": {
+       "loss": 3.8301,
+       "policy_loss": 1.5,
+       "value_loss": 0.7723,
+       "top1": 0.824,
+       "value_mae": 0.112,
+       "positions": 1650,
+       "subset": "val"
+      },
+      "calibration": {
+       "buckets": [
+        {
+         "lo": 0.0,
+         "hi": 0.1,
+         "n": 64,
+         "predicted": 0.0394,
+         "actual": 0.0631
+        },
+        {
+         "lo": 0.1,
+         "hi": 0.2,
+         "n": 87,
+         "predicted": 0.149,
+         "actual": 0.2175
+        },
+        {
+         "lo": 0.2,
+         "hi": 0.3,
+         "n": 33,
+         "predicted": 0.2499,
+         "actual": 0.2604
+        },
+        {
+         "lo": 0.3,
+         "hi": 0.4,
+         "n": 93,
+         "predicted": 0.3602,
+         "actual": 0.4067
+        },
+        {
+         "lo": 0.4,
+         "hi": 0.5,
+         "n": 120,
+         "predicted": 0.4494,
+         "actual": 0.471
+        },
+        {
+         "lo": 0.5,
+         "hi": 0.6,
+         "n": 34,
+         "predicted": 0.5542,
+         "actual": 0.4949
+        },
+        {
+         "lo": 0.6,
+         "hi": 0.7,
+         "n": 51,
+         "predicted": 0.6517,
+         "actual": 0.646
+        },
+        {
+         "lo": 0.7,
+         "hi": 0.8,
+         "n": 83,
+         "predicted": 0.7402,
+         "actual": 0.7109
+        },
+        {
+         "lo": 0.8,
+         "hi": 0.9,
+         "n": 86,
+         "predicted": 0.857,
+         "actual": 0.799
+        },
+        {
+         "lo": 0.9,
+         "hi": 1.0,
+         "n": 71,
+         "predicted": 0.9394,
+         "actual": 0.8859
+        }
+       ],
+       "ece": 0.0391
+      },
+      "input_groups": {
+       "a_pieces": {
+        "policy_kl": 1.075,
+        "value_delta": 0.4201,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_ours": {
+        "policy_kl": 0.2046,
+        "value_delta": 0.1026,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_pocket_theirs": {
+        "policy_kl": 0.1657,
+        "value_delta": 0.1059,
+        "planes": [],
+        "fill": "zero"
+       },
+       "a_all": {
+        "policy_kl": 1.0935,
+        "value_delta": 0.5391,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pieces": {
+        "policy_kl": 1.6582,
+        "value_delta": 0.3029,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_ours": {
+        "policy_kl": 0.2447,
+        "value_delta": 0.1124,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_pocket_theirs": {
+        "policy_kl": 0.2069,
+        "value_delta": 0.1057,
+        "planes": [],
+        "fill": "zero"
+       },
+       "b_all": {
+        "policy_kl": 1.6391,
+        "value_delta": 0.395,
+        "planes": [],
+        "fill": "zero"
+       },
+       "clocks": {
+        "policy_kl": 0.4056,
+        "value_delta": 0.2197,
+        "planes": [],
+        "fill": "zero"
+       },
+       "turn": {
+        "policy_kl": 0.0567,
+        "value_delta": 0.0365,
+        "planes": [],
+        "fill": "zero"
+       },
+       "castling_ep": {
+        "policy_kl": 0.0137,
+        "value_delta": 0.0037,
+        "planes": [],
+        "fill": "zero"
+       },
+       "history": {
+        "policy_kl": 0.0531,
+        "value_delta": 0.0409,
+        "planes": [],
+        "fill": "zero"
+       }
+      },
+      "agreement": {
+       "prev_top1": 0.9091,
+       "prev_policy_kl": 0.028,
+       "search_top1": 0.828
+      },
+      "layers": [
+       {
+        "name": "stem",
+        "delta_rel": 0.00354,
+        "dead_frac": 0.0049
+       },
+       {
+        "name": "blocks.0",
+        "delta_rel": 0.00374,
+        "dead_frac": 0.004
+       },
+       {
+        "name": "blocks.1",
+        "delta_rel": 0.0037,
+        "dead_frac": 0.0065
+       },
+       {
+        "name": "blocks.2",
+        "delta_rel": 0.00345,
+        "dead_frac": 0.0068
+       },
+       {
+        "name": "blocks.3",
+        "delta_rel": 0.00369,
+        "dead_frac": 0.0067
+       },
+       {
+        "name": "policy_head",
+        "delta_rel": 0.00352,
+        "dead_frac": 0.0051
+       },
+       {
+        "name": "value_head",
+        "delta_rel": 0.00356,
+        "dead_frac": 0.007
+       }
+      ],
+      "worst": [
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "predicted": -0.764,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#370",
+        "category": "near_end"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "predicted": -0.63,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#774",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "predicted": -0.89,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#50",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "predicted": -0.888,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#53",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "predicted": -0.666,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/val/search_1999_00000.dst#293",
+        "category": "middlegame"
+       }
+      ],
+      "swings": [
+       {
+        "fen": "A r1bqkbnr/ppp1pp1p/2n5/3p2N1/8/8/PPPPPPPP/RNBQKB1R[|] us ; B rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[P|] us ; lead -0.34",
+        "prev": -0.321,
+        "now": 0.415,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg00/search_1003_00000.dst#397",
+        "category": "time_trouble"
+       },
+       {
+        "fen": "A r1bqk1nr/p3ppbp/2pp2p1/8/8/P1N2B2/1PP1PPPP/R1BQKB1R[PPPB|ppppnb] them ; B 5r1r/1pp1q1k1/2n1p1pp/p3n3/4BN2/4Q1NP/PPP3P1/3R1RK1[|n] us ; lead -0.31",
+        "prev": -0.814,
+        "now": 0.762,
+        "actual": 1.0,
+        "source": "runs/rl-it1/search/train/seg01/search_1003_00000.dst#77",
+        "category": "check_or_swing"
+       },
+       {
+        "fen": "A 2kr3r/ppp2ppp/2n5/4P3/3q4/2N5/PP3PPP/R2QR1K1[NBp|pp] us ; B r2qkb1r/pp3ppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R[|b] them ; lead 0.12",
+        "prev": -0.572,
+        "now": 0.199,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg02/search_1003_00000.dst#369",
+        "category": "crowded_pockets"
+       },
+       {
+        "fen": "A 4k3/8/8/8/8/8/8/4K3[QQRN|pp] us ; B 6k1/5ppp/8/8/8/8/5PPP/6K1[|] them ; lead 0.85",
+        "prev": -0.864,
+        "now": 0.674,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg03/search_1003_00000.dst#116",
+        "category": "middlegame"
+       },
+       {
+        "fen": "A rnb1kbnr/pppp1ppp/8/4p3/5PPq/8/PPPPP2P/RNBQKBNR[|] them ; B rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR[|] us ; lead -0.02",
+        "prev": -0.493,
+        "now": 0.262,
+        "actual": -1.0,
+        "source": "runs/rl-it1/search/train/seg04/search_1003_00000.dst#404",
+        "category": "opening"
+       }
+      ],
+      "ablation_positions": 1000,
+      "device": "cuda",
+      "seconds": 41.2
+     },
+     "changes": {
+      "generator": [
+       "twin-s-clock-w2-it2",
+       "twin-s-clock-w2-it4"
+      ],
+      "train.replay_fraction": [
+       0.3,
+       0.4
+      ],
+      "match.movetime": [
+       100,
+       100
+      ]
+     },
+     "alerts": [
+      {
+       "level": "warn",
+       "code": "flag_rate_jump",
+       "message": "flag rate 0.043 -> 0.073 (+3.0 points)"
+      },
+      {
+       "level": "warn",
+       "code": "entropy_collapse",
+       "message": "policy target entropy 0.670 vs it1 1.150 (-42%)"
+      },
+      {
+       "level": "stop",
+       "code": "elo_per_gpu_flat",
+       "message": "Elo vs it13 gained +6.3 over the last 3 iterations for 72 GPU-hours (< 10): recommend stopping the run"
+      }
+     ],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play"
+     }
+    },
+    {
+     "schema": 1,
+     "run": "sample6",
+     "iteration": 6,
+     "done": false,
+     "generated_at": "2026-11-22T15:00:00",
+     "outcome": {
+      "gate_generator": {
+       "games": 140,
+       "score": 0.49,
+       "elo": -6.95,
+       "ci": [
+        -65.25,
+        50.95
+       ],
+       "wins": 67,
+       "losses": 69,
+       "draws": 4,
+       "movetime": 100,
+       "clock": null,
+       "blocks": [
+        {
+         "games": 100,
+         "score": 0.5135
+        },
+        {
+         "games": 40,
+         "score": 0.4731
+        }
+       ]
+      },
+      "gate_it13": null,
+      "promoted": null,
+      "anchors": {},
+      "elo_vs_it13": null
+     },
+     "cost": {
+      "gpu_hours": 9.1,
+      "gpu_hours_cum": 128.83,
+      "elo_per_gpu_hour": null,
+      "wall_hours": 9.28
+     },
+     "selfplay": {
+      "games": 6000,
+      "positions": 640000,
+      "segments": 3,
+      "game_length": {
+       "mean": 119.1,
+       "p50": 106,
+       "p90": 206
+      },
+      "terminations": {
+       "checkmate": 8900,
+       "flag": 509,
+       "repetition": 400
+      },
+      "flag_rate": 0.051,
+      "repeat_rate": 0.09,
+      "sit_rate": 0.0097,
+      "pass_rate": 0.31,
+      "hybrid_wait_rate": 0.108,
+      "drop_rate": 0.206,
+      "pocket_mean": 12.35,
+      "value_target": {
+       "win": 0.485,
+       "draw": 0.004,
+       "loss": 0.511
+      },
+      "policy_target_entropy": {
+       "mean": 0.55,
+       "p10": 0.025
+      }
+     },
+     "training": {
+      "steps": null,
+      "lr": 0.0001,
+      "trunk_lr": 5e-05,
+      "replay_fraction": null,
+      "new_positions": null,
+      "replay_positions": null,
+      "curve": [],
+      "final": null,
+      "grad_norm": null
+     },
+     "search": {
+      "nps": null,
+      "depth": null,
+      "sit_gate_rate": null,
+      "time_use": null
+     },
+     "network": null,
+     "changes": {
+      "train.replay_fraction": [
+       0.4,
+       0.5
+      ]
+     },
+     "alerts": [],
+     "unavailable": {
+      "training.grad_norm": "the trainer clips gradients at 5.0 but does not log their norm",
+      "search.depth": "the engine logs no search depth in matches or self-play",
+      "network": "metrics/it6.probe.json missing (probe runs after training)",
+      "training.final": "training has not started",
+      "outcome.gate_it13": "gate not played yet",
+      "outcome.elo_vs_it13": "gate vs it13 not played yet",
+      "cost.elo_per_gpu_hour": "needs this iteration's Elo vs it13",
+      "search.nps": "gate not played yet",
+      "search.sit_gate_rate": "gate not played yet",
+      "search.time_use": "gate not played yet"
+     }
+    }
+   ],
+   "alerts": [
+    {
+     "level": "warn",
+     "code": "entropy_collapse",
+     "message": "policy target entropy 0.790 vs it1 1.150 (-31%)",
+     "iteration": 4
+    },
+    {
+     "level": "warn",
+     "code": "flag_rate_jump",
+     "message": "flag rate 0.043 -> 0.073 (+3.0 points)",
+     "iteration": 5
+    },
+    {
+     "level": "warn",
+     "code": "entropy_collapse",
+     "message": "policy target entropy 0.670 vs it1 1.150 (-42%)",
+     "iteration": 5
+    },
+    {
+     "level": "stop",
+     "code": "elo_per_gpu_flat",
+     "message": "Elo vs it13 gained +6.3 over the last 3 iterations for 72 GPU-hours (< 10): recommend stopping the run",
+     "iteration": 5
+    }
+   ]
+  }
+ ]
+}

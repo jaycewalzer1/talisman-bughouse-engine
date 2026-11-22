@@ -54,3 +54,57 @@
 .dt-it { background: var(--bg); border: 1px solid var(--line); border-left: 5px solid; border-radius: 6px; padding: 8px 10px; line-height: 1.45; }
 .dt-it ul { margin: 4px 0 0; padding-left: 1.1em; color: var(--dim); }
 .dt-settings { color: var(--dim); margin: 10px 4px 0; overflow-wrap: anywhere; }
+
+/* Metrics step (RunMetrics.tsx). Charts scale to the column instead of the stage's 860px minimum, so it fits a phone. */
+.dt-page .nn-stage .rm svg { min-width: 0; width: 100%; height: auto; }
+.rm .rm-wide { max-height: 40vh; }
+.rm-h { margin: 22px 4px 8px; font-size: 1.05em; font-weight: 600; }
+.rm-src { color: var(--dim); margin: 0 4px 6px; font-size: .9em; }
+.rm-sample { color: var(--bad); font-weight: 600; }
+.rm-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.rm-tile { display: flex; flex-direction: column; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.rm-tile span { color: var(--dim); font-size: .9em; }
+.rm-tile b { font-size: 1.7em; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rm-tile small { color: var(--dim); overflow-wrap: anywhere; }
+.rm-na { opacity: .55; }
+.rm-alerts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rm-alerts li { background: var(--bg); border: 1px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: 6px; padding: 6px 10px; overflow-wrap: anywhere; }
+.rm-alerts li.rm-stop { border-left-color: var(--bad); }
+.rm-level { display: inline-block; min-width: 5em; font-weight: 600; font-size: .85em; }
+.rm-stop .rm-level { color: var(--bad); }
+.rm-warn .rm-level { color: var(--dim); }
+.rm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.rm-card { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.rm-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.rm-card-head b { font-weight: 500; }
+.rm-card-head span { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.rm-card-head small { color: var(--dim); font-weight: 400; }
+.rm-card svg { display: block; margin: 4px 0 2px; }
+.rm-link { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.rm-hit { fill: transparent; }
+.rm-xt { fill: var(--dim); font-size: 10px; text-anchor: middle; font-family: var(--font); }
+.rm-cap { color: var(--dim); font-size: .88em; margin: 4px 0 0; line-height: 1.4; }
+.rm-cap i { font-style: normal; color: var(--text); white-space: nowrap; }
+.rm-why { color: var(--dim); font-style: italic; font-size: .86em; margin: 4px 0 0; overflow-wrap: anywhere; }
+.rm-end { fill: var(--text); font-size: 13px; font-family: var(--font); }
+.dt-page .nn-stage .rm svg.rm-key { width: 14px; height: 14px; display: inline-block; }
+.rm-cal { margin: 0 0 10px; width: min(420px, 100%); }
+.rm-cal figcaption { color: var(--dim); font-size: .88em; }
+.rm-scroll { overflow-x: auto; max-width: 100%; }
+.rm-heat { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; font-size: .88em; }
+.rm-heat th { font-weight: 500; text-align: left; padding: 2px 8px 2px 0; white-space: nowrap; }
+.rm-heat thead th { text-align: center; }
+.rm-heat td { min-width: 3.6em; text-align: center; padding: 4px 6px; border-radius: 3px; }
+.rm-heat .rm-na-cell { color: var(--dim); background: var(--bg); font-style: italic; }
+.rm-heat .rm-delta { color: var(--dim); text-align: right; }
+.rm-tables { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.rm-tables h4 { margin: 6px 0 4px; font-weight: 500; }
+.rm-pos td { white-space: normal; vertical-align: top; font-variant-numeric: tabular-nums; }
+.rm-pos td:first-child { min-width: 16em; }
+.rm-pos code { font-size: .85em; overflow-wrap: anywhere; }
+.rm-pos small { color: var(--dim); }
+.rm-un { margin-top: 4px; color: var(--dim); }
+.rm-un summary { cursor: pointer; }
+/* The .dt-page column rule above outranks network.css's one-column breakpoint; restore it so narrow screens stack. */
+@media (max-width: 1180px) { .dt-page .nn-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .dt-page.nn-page { padding: 14px 16px 24px; } .rm-grid { grid-template-columns: minmax(0, 1fr); } }

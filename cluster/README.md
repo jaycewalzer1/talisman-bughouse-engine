@@ -237,3 +237,70 @@ ENGINES=my_engines.json NAME=final1 bash cluster/launch_final_match.sh   # 3-eng
 one per call; it needs 20 GPU-hours between the first and last) and until then assumes PACE's 2022 RTX 6000 rate,
 saying so. It keeps 30 GPU-hours back for the final match. `launch_final_match.sh` takes a JSON list of three engines
 (`cluster/final_match_engines.example.json`) and copies each model into the match folder at launch.
+
+## Training monitor
+
+Every finished iteration of a run gets one record with every KPI and with how the network's use of its inputs
+changes, so what moves Elo can be read off the iterations. Elo against fixed anchors is the target; the rest are
+diagnostics and alarms. A number that cannot be measured from what exists is `null` and listed under `unavailable`
+with the reason, never estimated.
+
+| File (under `runs/full/<RUN>/`) | Written by | What |
+|---|---|---|
+| `metrics/itN.json` | `cluster/run_metrics.py RUN_ROOT` | the iteration's record (schema 1): outcome (gates, promotion, anchors, Elo vs it13), cost (GPU-hours, Elo per GPU-hour), self-play stats, training curve, search, network (the probe), settings changed, alerts, `unavailable` |
+| `metrics/itN.probe.json` | `cluster/probe_net.py eval RUN_ROOT N` | the network on the frozen probe set: held-out loss/top-1/value MAE, calibration, input-group ablations (policy KL and value change per plane group), agreement with the previous iteration and with search, per-layer change and dead units, worst positions and biggest swings |
+| `probe/` | `cluster/probe_net.py build RUN_ROOT` | the probe set: built once per run from its validation games and reused by every iteration, so iterations are probed on the same positions |
+| `metrics/summary.json` | `run_metrics.py --summary` | every run's iterations in one file (the dev panel reads it) |
+| `alerts.tsv` | `run_metrics.py --alerts RUN_ROOT` | one line per new alert: time, iteration, level (`warn`, `stop`), code, message |
+| `anchors/itN/<anchor>/summary.json`, `games.tsv` | `cluster/launch_anchor_match.sh` | the iteration's network at 120 s against a fixed anchor (below) |
+| `metrics/monitor_jobs.tsv`, `metrics/logs/` | the watchdog | monitor jobs submitted per iteration and their logs |
+
+**Monitor job.** `cluster/monitor_iteration.sbatch RUN_ROOT N` (30 min, one RTX 6000, `-J mon_<RUN>_itN`) builds the
+probe set when it is missing (one job builds under the `probe.lock` directory, others wait), runs `probe_net.py eval`
+on cuda with the wave2-hivemind venv (torch), then `run_metrics.py RUN_ROOT` and `--alerts` with the repo venv. It needs
+`stages/train.done` only, so the probe is ready before the gate ends; the record is rewritten when the gate finishes.
+
+**Anchors.** `cluster/launch_anchor_match.sh RUN_ROOT N` plays `rl-itN/models/C.onnx` (copied to `anchors/itN/C.onnx`
+with its SHA-256) at the real 120 s clock against fixed anchors, on the long test's arena setup (pool
+`arena/pools/wave2.json`, bughouse openings, v3 rules, `MEASURE=1`, equal clocks) with the gate's engine options
+(the `wave2` dict of `stages/match_generator.done`, reduced to the arena player options that differ from the wave 2
+values and checked to send the same engine options; for hybrid1 that is
+`{"durative_tree": false, "sit_gate": true, "hybrid_mode": "gate"}`). Anchors (`ANCHORS`): `hybrid-it13` (it13 under
+the same options: what training added to the network) and `upstream-it13` (stock upstream it13: the headline).
+`ANCHOR_GAMES` (400) per anchor in `ANCHOR_PARTS` (2) `eval.sbatch` jobs (`-J am_<RUN>_itN_<anchor>_p<k>`, seed
+`SEED_BASE` + k, 5000 + k, so every iteration plays the same openings), every `ANCHOR_EVERY` (2) iterations
+(`FORCE=1` any). It plays the engine commit in the run's `launch_settings.txt` (the checkout may differ only outside
+`engine/`). Each call does what is missing: parts with a `summary.json` are done, queued parts are left alone, others
+are submitted again (eval resumes their games) up to `MAX_TRIES` (3); when every part of an anchor has finished it
+writes `<anchor>/summary.json` (`games, score, elo, ci` (Elo, from the cluster bootstrap over openings), `score_ci,
+wins, losses, draws, errors, movetime: null, clock, blocks` of 100 games, and the options played) and `games.tsv`
+(one game a line, the contender's result +1/-1/0 in the second column). `anchors/itN/done` marks the iteration done.
+`run_metrics.py` reads each `<anchor>/summary.json` into `outcome.anchors` of `itN.json` (an anchor still playing is
+listed under `unavailable`; the gate's it0 match is `gate_it13` only), and re-reads a finished iteration when one lands.
+**Cost: about 21 GPU-hours** per anchored iteration with the defaults (1.6 GPU-minutes a game at 120 s), so about
+10 GPU-hours per iteration at `ANCHOR_EVERY=2`.
+
+**Watchdog.** `cluster/full_run_watchdog.sh` drives all of it on every pass (`MONITOR=0` switches it off): a monitor
+job for each iteration with `train.done` and no probe (at most `MONITOR_TRIES`, 2, per iteration), anchor matches
+for each due finished iteration from `anchors/FROM` on **only when `ANCHORS` is set** (opt-in, for their GPU-hours:
+e.g. `ANCHORS="hybrid-it13 upstream-it13"`; a watchdog that takes this code over by its self-handover has none), and `run_metrics.py` plus `--alerts` on the login node when
+a marker, probe or anchor result is newer than the last collection, with new alerts copied into `watchdog.log`.
+`anchors/FROM` is written at the first pass with the newest due finished iteration, so a watchdog that picks the
+monitor up mid-run does not backfill old anchors; `ANCHOR_FROM=N`
+overrides. Alerts never cancel anything: a `stop` alert is a recommendation. `GPU_HOURS` counts `mon_` and `am_` jobs
+with `full_` and `sp_`; at the cap no new monitor or anchor jobs start, pending ones are cancelled, and finished
+anchor parts are still merged. The watchdog stays alive while monitor or anchor jobs are queued after the chain ends.
+When `squeue` fails, neither submits anything that pass (finished parts are still merged). `DRY_RUN=1` (watchdog and anchor launcher) prints each `sbatch`/`scancel` instead of running it.
+
+**Panel.** `.venv/bin/python cluster/run_metrics.py --summary runs/full/<RUN>` writes `metrics/summary.json`, which
+the dev panel reads (copy the run's `metrics/` and `anchors/*/*/summary.json` to the Mac, or run it on a read-only
+copy with `--out`).
+
+**Backfill** an old run (any `wave2_iterate.sbatch` root, e.g. `runs/wave2/ab2/narrow`):
+
+```bash
+.venv/bin/python cluster/run_metrics.py runs/full/hybrid1          # records from what exists, probes null
+for n in 1 2 3; do sbatch -J mon_hybrid1_it$n cluster/monitor_iteration.sbatch runs/full/hybrid1 $n; done
+FORCE=1 bash cluster/launch_anchor_match.sh runs/full/hybrid1 1    # anchors for an iteration the watchdog skipped
+bash cluster/launch_anchor_match.sh runs/full/hybrid1 1            # again once the parts end: merges summary.json
+```

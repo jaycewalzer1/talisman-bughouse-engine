@@ -31,6 +31,37 @@ function readTraining(): Promise<{ at: number; ok: boolean; text: string }> {
   })
 }
 
+// GET /api/metrics -> { at, ok, text, source } where text is `cluster/run_metrics.py --summary` JSON over every full run,
+// for durative.html's Metrics step. Same ssh rules and 120 s cache as /api/training. The collector writes metrics/ and
+// alerts.tsv into each run folder on PACE (its cache; idempotent). For development, METRICS_LOCAL=<summary.json> serves
+// that file and METRICS_LOCAL=<run root> runs the collector locally with the repo venv; ?sample=1 serves the synthetic
+// fixture (src/dev/fixtures/metrics_summary.sample.json) whatever the source.
+const METRICS_CMD = `cd ${PACE_REPO} && .venv/bin/python cluster/run_metrics.py --summary $(ls -d runs/full/*/ 2>/dev/null)`
+const REPO = path.resolve(import.meta.dirname, '..')
+const SAMPLE = path.resolve(import.meta.dirname, 'src/dev/fixtures/metrics_summary.sample.json')
+type Metrics = { at: number; ok: boolean; text: string; source: string }
+let metricsCache: Metrics | null = null
+
+function readMetrics(sample: boolean): Promise<Metrics> {
+  const local = process.env.METRICS_LOCAL
+  const fromFile = (file: string, source: string): Metrics => {
+    try { return { at: Date.now(), ok: true, text: fs.readFileSync(file, 'utf8'), source } }
+    catch (e) { return { at: Date.now(), ok: false, text: String(e), source } }
+  }
+  if (sample) return Promise.resolve(fromFile(SAMPLE, 'sample'))
+  if (local && local.endsWith('.json')) return Promise.resolve(fromFile(path.resolve(REPO, local), `local ${local}`))
+  if (metricsCache && Date.now() - metricsCache.at < 120_000) return Promise.resolve(metricsCache)
+  const [cmd, args, source] = local
+    ? [path.join(REPO, '.venv/bin/python'), ['cluster/run_metrics.py', '--summary', path.resolve(REPO, local)], `local ${local}`]
+    : ['ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pace', METRICS_CMD], 'PACE']
+  return new Promise(done => {
+    execFile(cmd, args, { cwd: REPO, timeout: 120_000, maxBuffer: 64 << 20 }, (err, stdout, stderr) => {
+      metricsCache = { at: Date.now(), ok: !err, text: err ? `${stderr || err.message}` : stdout, source }
+      done(metricsCache)
+    })
+  })
+}
+
 function readPace(): Promise<{ at: number; ok: boolean; text: string }> {
   if (paceCache && Date.now() - paceCache.at < 60_000) return Promise.resolve(paceCache)
   return new Promise(done => {
@@ -71,6 +102,12 @@ export function runsApi(): Plugin {
       })
       server.middlewares.use('/api/training', (_req, res) => {
         readTraining().then(r => {
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(r))
+        })
+      })
+      server.middlewares.use('/api/metrics', (req, res) => {
+        readMetrics(/[?&]sample=1\b/.test(req.url ?? '')).then(r => {
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify(r))
         })
