@@ -483,3 +483,120 @@ seeds). Whether the preset closes the gap to nodur is for `c_all_120` against `c
 * `wave2_game_parity.sh` was not rerun (no engine source change since the engine agent's 5/5).
 * Wave 2 at 64k nodes was not run, as in the baseline.
 * PACE needs the push and the new pin (10.4). Nothing was pushed.
+
+## 11. Hybrid round (spec v6)
+
+The final local check of the hybrid (`docs/custom_engine_spec_v6_hybrid.md`, H3 as built plus the review fixes) before
+the wave 2c round and the long test go to PACE. Engine: `talisman/wave2` at `4b45129` (clean tree; the review fixes
+`a1c3a09..4b45129` on top of `e5f3aae`, the engine the Measurements section used). Main repo: `custom-engine` at
+`98e69a8`, whose `cluster/wave2_engine.ref` already pins `4b45129`. Network for every measurement: twin-s-clock it13
+(`engine/models/twin-s-clock-fp32.onnx`, HF `aminwoo/bughouse-twin-s-clock@edaa246`) on ONNX Runtime (Core ML EP);
+the self-play smoke used its FP32 copy `twin-s-clock-it13-fp32.onnx`. The Mac was quiet at the start (load 6-10, 86%
+free memory); the harness scoring, the Python suites and the self-play smoke then ran side by side (load up to about
+28), which changes wall times only. Output: `runs/strength/scores_v6fix.jsonl`, `runs/strength/report_v6fix.md`,
+`runs/wave2_local/hybrid_v6/` (git-ignored).
+
+### 11.1 Build and suites
+
+| Check | Result |
+|---|---|
+| Clean build: old `build-ninja` and `build-sp1` moved to the Trash; `build-ninja` with the `ninja-release` preset, `-DHIVEMIND_BACKEND=onnxruntime`, 4 workers, tests on, `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` = `third_party/upstream-hivemind/engine/build-ninja/_deps/googletest-src`; `build-sp1` 1 worker, fast build, ccache, tests off; 2 jobs each, one at a time | OK, 48/48 steps in 47 s and 11/11 in 11 s (6 and 4 compiler warnings, as before) |
+| C++ suite `build-ninja/tests/hivemind_tests` | 629 tests: 628 passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`, as before), 0 failed; 57 s. Includes the 8 `HybridIt13` tests and the review-fix regressions |
+| `engine/tests/stock_parity.sh` (`JOBS=2`) | 8/8 positions identical |
+| `engine/tests/wave2_parity.sh` (every wave 2c / v6 option off vs `261081b`, `JOBS=2`) | 8/8 identical |
+| `engine/tests/wave2_game_parity.sh` (`JOBS=2`) | 5/5 identical (selfplay pgn and clocks, tournament pgn and tsv, a 10-search UCI session) |
+| `engine/tests/hybrid_parity.sh` (spec v6 test 0.3, `JOBS=2`) | 8/8 identical with no trigger; positive control fired on 3 of 3 one-board positions (5 skipped: on turn on 2 boards). Position 7 matched on its second attempt (the script reruns a differing pair up to twice; the script names position 8 as the known run-to-run case, so position 7 needing a rerun is new and noted here) |
+| wave2-hivemind Python (`uv run --offline pytest`), in two parts | without `tests/distill`: 186 passed, 8 failed, all macOS bsdtar "Option --compare is not supported" (6 in `tests/data/test_archive.py`, 2 in `tests/test_cli_rl_loop.py`), as in 10.1. With a GNU-tar shim on PATH (scratchpad; `-I` to `--use-compress-program`, `--format` dropped outside create, `--compare` emulated), those two files pass 33/33 (the rl-loop file gained a test since 10.1). `tests/distill`: 19 passed (515 s under load). Total 205 passed, 8 failed (environment only) |
+| Main repo `arena/tests` | 354 passed (includes the decide / launch dry-run tests of `test_decide_full_run.py`) |
+| Main repo `arena/tests_phase1` | 105 passed |
+
+### 11.2 Harness rerun: nodur and the chosen hybrid on the fixed engine
+
+`tools/strength_harness.py score nodur` and `score hybrid` (`{"durative_tree": false, "sit_gate": true, "hybrid": true}`,
+the H3 defaults) at 1k / 4k / 16k, `--jobs 2`, into `runs/strength/scores_v6fix.jsonl`; the same 300 positions and
+it13 @ 32k labels as the baselines and the Measurements; `report --scores runs/strength/scores_v6fix.jsonl --configs
+nodur hybrid`. "Measure" = the spec v6 Measurements table (engine `e5f3aae`, before the review fixes; nodur from the
+baselines at `72e79eb`). Wall: 243 + 212 s (1k+4k) and 636 + 635 s (16k).
+
+All positions (n 300), joint agreement with it13 @ 32k:
+
+| Config | 1k now | 1k Measure | 4k now | 4k Measure | 16k now | 16k Measure | 16k board now / Measure |
+|---|---|---|---|---|---|---|---|
+| nodur | 59% [54, 65] | 61% [56, 67] | 76% [71, 81] | 76% [71, 81] | 88% [84, 91] | 87% [83, 91] | 92% / 91% |
+| hybrid | 59% [53, 64] | 60% [54, 66] | 74% [69, 79] | 75% [71, 80] | 87% [83, 91] | 88% [84, 91] | 90% / 90% |
+
+Root q, Brier and log-loss: both configs 0.054-0.060, 0.119-0.122, 0.375-0.384, as in the Measurements.
+
+Triggered subset (the same 30 positions fire as before, 10%):
+
+| Nodes | Kept sits now / Measure | Triggered: joint agree now / Measure | nodur same ids now / Measure | Act-vs-sit agree now / Measure | Differs from nodur: triggered / rest, now / Measure |
+|---|---|---|---|---|---|
+| 1000 | 1 / 1 | 60% / 67% | 70% / 70% | 97% / 97% | 3/30, 16/270 / 2/30, 17/270 |
+| 4000 | 3 / 2 | 73% / 77% | 83% / 83% | 90% / 93% | 3/30, 17/270 / 2/30, 12/270 |
+| 16000 | 2 / 2 | 90% / 90% | 97% / 97% | 93% / 93% | 2/30, 12/270 / 2/30, 8/270 |
+
+Sit rate when behind on clock (sit-or-act subset, n 35): hybrid 6% / 6% / 3%, nodur 3% / 0% / 0% (Measure: hybrid
+3-6%, nodur 0-3%). Kept sits by position: 167 at every budget, 222 and 292 at 4k, 42 at 16k (Measure: 167 every
+budget, 222 at 4k, 42 at 16k; 292 is new).
+
+Reading: **the review fixes did not change the hybrid's picture on positions.** Every difference from the Measurements
+is 1-2 positions of 30, inside the 4-worker noise floor (nodur against itself differs on 1/30 triggered and 11/270
+other positions, spec v6 4.1). The hybrid still agrees with it13 @ 32k less than nodur where it sits, and is level
+elsewhere. **Position 167 is still a conditionally proven sit** (`choice_reason` proven, q_sit 0.972 against q_act
+0.987, 163 nodes at the 1k budget): the review fixes stop proofs that lean on the event below *moving* children
+(`a1c3a09`), not the sit's own proof through the event, so the known issue in the Measurements stays open.
+
+### 11.3 Self-play smoke with the chosen hybrid
+
+`build-sp1/hivemind.bin selfplay --model models/twin-s-clock-it13-fp32.onnx --games 3 --nodes 48 --seed 11
+--base-mix 15000:1 --durative-tree false --sit-gate true --flag-loss true --instant-transfer false
+--mate-race-by-landing false --pass-cap-k 8 --hybrid true` (`runs/wave2_local/hybrid_v6/selfplay`):
+
+| Network | Games | Samples | Hybrid | Wall, peak memory |
+|---|---|---|---|---|
+| it13 fp32 | 3, no error: flag (Bb), resignation, flag (Ab) | 147 | 146 searches, 17 triggered, 0 sits kept (3 refused by the margin, the rest no sit chosen) | 211 s, 197 MB |
+
+The hybrid runs whole self-play games without error and writes training data (`chunk_11_000000.hvm`), but kept no sit
+in these 3 games at 48 nodes, so the smoke does not exercise the "sit never the policy target" fix (`a4a6c0a`); that
+is covered by the C++ tests and `tests/test_wave2_training.py`.
+
+### 11.4 Cluster dry runs (fake `sbatch` / `squeue` on PATH)
+
+* `launch_wave2c.sh` (`NO_PULL=1`, `W2C_RUNS` in the scratchpad): checkout at the pin `4b45129`; 21 submissions: the
+  build (`-t 4:00:00`, writes `build.ok`), the GPU check (`afterok:build`), 12 rows (`afterok:build`, names
+  `w2c_<row>`, `NAME` `<round>/rows/<row>`) including `w2c_h_best_120`, `w2c_bench_{nodur,cont,hybrid}` and
+  `w2c_smoke_{nodur,cont,hybrid}` (`afterok:gpu`; smoke `WAVE2_EXTRA` for the hybrid `--durative-tree false
+  --sit-gate true --hybrid`), the watchdog (`afterany:build`). Prints "GPU-hours: at most 137". `h_best_120` in
+  `launch_checks.sh`: `upstream-it13`, `{"durative_tree": false, "sit_gate": true, "hybrid": true}`, 120000 ms, 600
+  pairs.
+* `launch_long_test.sh` (`W2C_RUNS=runs/dryrun_v6_long`, round `r1` with `engine.ref` = the pin), build 4242 queued:
+  15 parts `w2c_l_{hybrid,nodur,same}_120_p1..p5`, all `--dependency=afterok:4242`, folders
+  `<round>/long/<row>/part1..5`, seeds 1001-1005 in every row, watchdog `w2c_watchdog_long` `afterany:4242`, "at most
+  120" GPU-hours. Then with `build.ok` and `PARTS=1`: parts 6 (no folder reused), seed 1006, no dependency; the
+  options each part gets: `l_hybrid_120` `upstream-it13` with the hybrid's flags, `l_nodur_120` `upstream-it13` with
+  `{"durative_tree": false, "sit_gate": true}`, `l_same_120` `wave2-self` with the hybrid on both sides, all 120000 ms,
+  200 pairs, `ENGINE_REF=4b45129...`. Dry-run folders moved to the Trash afterwards.
+* `resume_ab2.sh` (queue holding build 4242; a made-up `runs/wave2/ab2` with a narrow `.done_loop_1` without
+  `iteration.done` and a wide one with it): the narrow marker set aside as `.done_loop_1.skipped-<stamp>`, the wide one
+  kept; 3 submissions, `ab2_w0` twice (WIDE 0) and `ab2_w1` (WIDE 1), all `afterok:4242,singleton`, MAX_ITER 2, AB 1,
+  10000 games. With no build queued: exit 1; with `BUILD=77`: the same 3 on `afterok:77,singleton` (it still prints
+  the "no w2c_build job" line to stderr first, cosmetic). The made-up folder went to the Trash. The ab2 jobs will run
+  nodur on the new pin; with the hybrid off it plays bit-for-bit as before (11.1 parity).
+* `bash -n` on `launch_wave2c.sh`, `launch_long_test.sh`, `resume_ab2.sh`, `launch_checks.sh`: OK.
+
+### 11.5 Engine head for the pin, and what PACE needs
+
+**The pin should be `4b451290d2417acadaaa111748bfdef14d0ba9b3`** (`talisman/wave2` HEAD, the hybrid with the review
+fixes), which `cluster/wave2_engine.ref` already holds. Remote state (read with `git ls-remote`, nothing pushed):
+`fork/talisman/wave2` is at `72e79eb`, 12 commits behind `4b45129`; `origin/custom-engine` is at `ca33b42`, behind
+the local branch. Before `launch_wave2c.sh` on PACE: push `talisman/wave2` to the fork (the build fetches the pin from
+there) and push `custom-engine`. None of this was done here.
+
+### 11.6 Not done or still open
+
+* No strength result: this check only shows the fixed engine scores like `e5f3aae` on positions. The local match
+  verdict (0.502 vs nodur, a tie) stands; `h_best_120` and the long test decide.
+* Position 167's conditionally proven sit is still open (11.2).
+* `hybrid_parity.sh` position 7 needed a second attempt (11.1).
+* The self-play smoke kept no hybrid sit (11.3).
+* The 8 tar failures are the Mac's bsdtar; the shim used here is not in the repo.
