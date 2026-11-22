@@ -268,7 +268,7 @@ switches (D1 and D5 included); on one without them they refuse to start.
 ## 8. Wave 2c readiness round (GO / NO-GO for the full run)
 
 Added 2026-11-21; the hybrid (spec v6) added 2026-11-22, which moved `cluster/wave2_engine.ref` to wave2-hivemind
-`1831259` (the wave 2d engine with the 2026-11-22 review fixes): push that commit to the fork (`talisman/wave2`) before the round's build, or the build
+`ff835c8` (the wave 2d engine with the 2026-11-22 review fixes): push that commit to the fork (`talisman/wave2`) before the round's build, or the build
 cannot fetch it. One PACE round whose results decide the full training run (10 iterations x 50,000 games, about
 1,700 GPU-hours at R = 300; budget about 10,000) and its settings: which engine config to train, narrow or wide.
 Operating steps and the job table: `cluster/README.md`, "Wave 2c readiness round".
