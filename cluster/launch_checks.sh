@@ -10,7 +10,7 @@
 #   bash cluster/launch_checks.sh controls   # three more same_* seeds: the noise floor of a 1600-game row (3 jobs)
 #   bash cluster/launch_checks.sh harness    # equal-clock harness checks with measured per-arm ms_per_node (8 jobs)
 #   bash cluster/launch_checks.sh wave2      # wave 2 (durative tree on upstream v3) vs it13, ablations (11 jobs)
-#   bash cluster/launch_checks.sh wave2c     # wave 2c continuity fixes vs it13, one fix at a time (11 jobs)
+#   bash cluster/launch_checks.sh wave2c     # wave 2c continuity fixes and the hybrid vs it13, one at a time (12 jobs)
 #   bash cluster/launch_checks.sh all
 # Running "learner" again continues any run that has not finished. "features" refuses to overwrite a result.
 set -euo pipefail
@@ -209,7 +209,7 @@ if [ "$WHAT" = wave2 ]; then  # not part of "all": 11 jobs. Read docs/wave2_test
   # stock it13 at its own 800 fixed nodes (D1's opponent setting) instead of clock_k 110
   w2  vs_it13_800n_120 upstream-it13-800n '{}'                                          120000  800    SPRT=0,20
 fi
-if [ "$WHAT" = wave2c ]; then  # not part of "all": 11 jobs. Read docs/wave2_tests.md "Wave 2c rows".
+if [ "$WHAT" = wave2c ]; then  # not part of "all": 12 jobs. Read docs/wave2_tests.md "Wave 2c rows".
   # Spec v5 (docs/custom_engine_spec_v5_continuity.md): team tree reuse (fix 1), joint team actions (fix 2) and plan
   # carry (fix 3), each a player option of the wave 2 arm that is off by default. Same common settings as "wave2"
   # (pool contender, equal clock, MEASURE=1 per binary + flags, so a fix that changes node cost is charged its own
@@ -260,5 +260,11 @@ if [ "$WHAT" = wave2c ]; then  # not part of "all": 11 jobs. Read docs/wave2_tes
   # (docs/durative_diagnosis.md) changed SeatElapsedMs/SeatSitting for every wave 2 arm with no flag, so the PACE
   # ref_120 (0.227) ran on the old arena inputs and an effect of D4 would be credited to whichever fix is read against it
   w2c  c_ref_120     upstream-it13  '{}'                                             120000  600
+  # spec v6, the hybrid (docs/custom_engine_spec_v6_hybrid.md): nodur's v3 tree and gate choose the moves, and the root
+  # may also sit when behind, to wait for the other board's thinking seat (H3, HybridMode gate, every knob at its
+  # default: event lands all, margin 20, prior floor 150). Read against c_nodur_120 like the continuity rows. Local
+  # 2026-11-22: 0.502 [0.438, 0.562] vs nodur over 273 games, 0.35 kept sits a game. No h_alt_120: no runner-up was
+  # picked (the permissive prior 300 / margin 0 variant scored 0.456 vs nodur; event lands "sit" was only position-scored)
+  w2c  h_best_120    upstream-it13  '{"durative_tree": false, "sit_gate": true, "hybrid": true}'  120000  600
 fi
 squeue -u "$USER"

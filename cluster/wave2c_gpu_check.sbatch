@@ -10,8 +10,8 @@
 #   w2_env         the wave2-hivemind Python env (uv sync, or venv + pip without uv)
 #   sp1_build      the one-worker self-play engine at that commit (cluster/build_sp1.sh: TensorRT, rebuilt when stale)
 #   options        build-sp1 and build-ninja both advertise the wave 2c options (TeamTreeReuse, JointPlans, PlanCarry,
-#                  OwnPaceBelowRoot, WaitNodeActingEval, BlockableCheckNotMate): a binary without them would refuse
-#                  every continuity row and self-play run
+#                  OwnPaceBelowRoot, WaitNodeActingEval, BlockableCheckNotMate) and the hybrid's (HybridMode, spec v6):
+#                  a binary without them would refuse every continuity or hybrid row and self-play run
 #   narrow_parity  it13 (narrow, 74 planes) on the TensorRT match engine against Python ONNX Runtime, wave 2 flags and
 #                  seat clocks (tools/upstream_check.py parity --engine wave2, tolerance 2e-2: TensorRT runs FP16)
 #   wide_net       it13 widened (twin-s-clock-wide, 130 planes) made by `python -m hivemind.wave2 widen` when missing
@@ -21,7 +21,7 @@
 #   stock_binary   engine/tests/stock_parity.sh (wave 2 binary with every option off = stock v3.0.3 bit for bit): needs an
 #                  ONNX Runtime C++ install (ONNXRuntime_ROOT), so SKIP when there is none
 #   sp_<config>_<width>  6 self-play games on TensorRT through the rl-loop segment command (cluster/wave2_selfplay_bench.py)
-#                  for nodur and cont, narrow and wide: the self-play TensorRT path of both candidates and both widths
+#                  for nodur, cont and hybrid, narrow and wide: the self-play TensorRT path of each candidate and width
 # cluster/check_clock_engine.py is not here: it checks our fork's hivemind-clock build (a think_gain head it randomises),
 # which it13 and the wide network do not have; cluster/build.sh runs it on the clock network and fails the build if it fails.
 #   OUT=runs/wave2c/<ROUND> sbatch --dependency=afterok:<build> cluster/wave2c_gpu_check.sbatch   (launch_wave2c.sh does this)
@@ -65,13 +65,14 @@ options() {
   local e h o
   for e in "$W2/engine/build-sp1/hivemind" "$W2/engine/build-ninja/hivemind"; do
     h=$("$e" --help 2>&1)   # not `--help | grep -q`: SIGPIPE under pipefail (wave2_iterate.sbatch)
-    for o in team-tree-reuse joint-plans plan-carry own-pace-below-root wait-node-acting-eval blockable-check-not-mate; do
+    for o in team-tree-reuse joint-plans plan-carry own-pace-below-root wait-node-acting-eval blockable-check-not-mate \
+             hybrid-mode; do
       grep -q -- "--$o" <<<"$h" || { echo "$e lacks --$o"; return 1; }
     done
-    echo "$e: all wave 2c options"
+    echo "$e: all wave 2c and hybrid options"
   done
 }
-check options "both engines advertise the wave 2c options" options
+check options "both engines advertise the wave 2c and hybrid options" options
 check narrow_parity "it13 TensorRT vs ONNX Runtime, tol $TOL" \
   $PY tools/upstream_check.py parity --engine wave2 --coreml default --positions 40 --tol "$TOL"
 WIDE_FP32="$W2/engine/models/twin-s-clock-wide-fp32.onnx"
@@ -89,7 +90,7 @@ if [ -n "${ONNXRuntime_ROOT:-}" ] && [ -d "${ONNXRuntime_ROOT:-}" ]; then
 else
   skip stock_binary "no ONNX Runtime C++ install (ONNXRuntime_ROOT): the bit-for-bit stock check runs on the Mac"
 fi
-for config in nodur cont; do
+for config in nodur cont hybrid; do
   for width in narrow wide; do
     # one folder per job: a resubmitted check plays its games again in a fresh folder (the bench refuses a used one)
     check "sp_${config}_$width" "$SP_GAMES self-play games, $config, $width, TensorRT build-sp1" \

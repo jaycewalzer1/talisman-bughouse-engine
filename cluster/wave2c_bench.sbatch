@@ -16,7 +16,7 @@ cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}"
 [ -n "${SLURM_JOB_ID:-}" ] && source cluster/env.sh
 
 OUT="${OUT:?set OUT, the round folder (runs/wave2c/<ROUND>)}"
-CONFIG="${CONFIG:?set CONFIG, nodur or cont (cluster/wave2c_configs.py)}"
+CONFIG="${CONFIG:?set CONFIG, nodur, cont or hybrid (cluster/wave2c_configs.py)}"
 W2="$PWD/third_party/wave2-hivemind"
 W2PY="$W2/.venv/bin/python"
 echo "commit $(git rev-parse HEAD)  wave2 $(git -C "$W2" rev-parse HEAD)  pin $(cat cluster/wave2_engine.ref)"
