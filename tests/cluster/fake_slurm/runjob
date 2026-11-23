@@ -1,0 +1,13 @@
+#!/bin/bash
+# Fake Slurm for local checks of the cluster scripts (tests/cluster/test_launch_switch.py and by hand):
+# state in $FAKE_SLURM_Q (one file set per job id); main jobs run only through runjob ID, sp_* jobs start at once.
+# Runs queued job N in the foreground: its saved environment, cwd and script. State RUNNING -> COMPLETED/FAILED.
+Q="${FAKE_SLURM_Q:?}"; n="$1"
+echo RUNNING > "$Q/$n.state"; echo $$ > "$Q/$n.pid"
+args=(); while IFS= read -r a; do args+=("$a"); done < "$Q/$n.args"
+env -i bash -c 'source "$1" 2>/dev/null; cd "$2"; export SLURM_SUBMIT_DIR="$2" FAKE_JOB_ID="$3"; shift 3; exec bash "$@"' \
+  _ "$Q/$n.env" "$(cat "$Q/$n.cwd")" "$n" "${args[@]}" > "$Q/$n.out" 2>&1
+rc=$?
+st=$(cat "$Q/$n.state")
+if [ "$st" = RUNNING ]; then if [ $rc = 0 ]; then echo COMPLETED > "$Q/$n.state"; else echo FAILED > "$Q/$n.state"; fi; fi
+exit $rc

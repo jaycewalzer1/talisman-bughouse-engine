@@ -1,0 +1,18 @@
+#!/bin/bash
+# Fake Slurm for local checks of the cluster scripts (tests/cluster/test_launch_switch.py and by hand):
+# state in $FAKE_SLURM_Q (one file set per job id); main jobs run only through runjob ID, sp_* jobs start at once.
+Q="${FAKE_SLURM_Q:?}"; state=""; name=""; ids=()
+while [ $# -gt 0 ]; do
+  case "$1" in -t) state="$2"; shift ;; -u) shift ;; -n) name="$2"; shift ;; *) ids+=("$1") ;; esac
+  shift
+done
+[ -n "${FAKE_SCANCEL_FAIL:-}" ] && [[ " ${ids[*]} " == *" $FAKE_SCANCEL_FAIL "* ]] && { echo "scancel: fake failure" >&2; exit 1; }
+echo "$(date +%T) scancel state=$state name=$name ${ids[*]}" >> "$Q/sbatch.log"
+for f in "$Q"/*.state; do
+  n=$(basename "$f" .state); st=$(cat "$f")
+  [ "${#ids[@]}" -eq 0 ] || [[ " ${ids[*]} " == *" $n "* ]] || continue
+  [ -z "$name" ] || [ "$(cat "$Q/$n.name")" = "$name" ] || continue
+  [ -z "$state" ] || [ "$st" = "$state" ] || continue
+  case "$st" in PENDING|RUNNING) echo CANCELLED > "$f" ;; esac
+done
+exit 0

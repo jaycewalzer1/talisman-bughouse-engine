@@ -233,6 +233,33 @@ ENGINES=my_engines.json NAME=final1 bash cluster/launch_final_match.sh   # 3-eng
 .venv/bin/python cluster/final_match_status.py runs/final_match/final1
 ```
 
+**Switching a running run to workers, more iterations or a cap.** `RESUME=1 REPLACE_PENDING=1` may also change
+`WORKERS`, `SEGMENT_GAMES`, `PER_JOB`, `ITERS` (the run's last iteration) and `GPU_HOURS`; `CONFIG`/`WAVE2_EXTRA`,
+`WIDE` and `GAMES_PER_ITER` stay (they are what the lineage is). The old `launch_settings.txt` line goes to
+`launch_settings.history`, and `balance 1` is kept unless `BALANCE=0` is given. The switch is safe at any point of an
+iteration: rl-loop plays each iteration's self-play the way it began. An iteration begun with workers writes
+`stages/selfplay_mode.done` (`{"shared": true, "segment_games": S}`) and is finished shared by any later job; one begun
+without them (no such marker, e.g. hybrid1's it2) is finished by the main job alone with the segment size it began
+with, no hook runs and workers leave it, even if the job that resumes it (in self-play, training or the gate) has
+workers. The next iteration then starts with the new settings. The cap is the watchdog's, so a `GPU_HOURS` change needs
+`NEW_WATCHDOG=1`, which replaces the run's watchdog: it finds the old one by the `watching full_<RUN>` line in its
+Slurm log (`OLD_WATCHDOG=id[,id]|none` names it instead; a `full_watchdog` job without a log yet must be named), submits
+the new one with `--dependency=afterany:<old>`, then the chain, cancels the old pending jobs and only then the old
+watchdog, so two never run together (if that cancel fails, the new one is cancelled instead and the old one keeps
+watching without the cap). The new one keeps the old one's `monitor`/`anchors` (its last `watching` line in
+`watchdog.log`; `MONITOR`/`ANCHORS` override) and counts the cap from the run's first `watching` line (`CAP_SINCE`
+overrides; its crash checks start now). With `BALANCE=1`, `GAMES_PER_ITER` must be a multiple of `SEGMENT_GAMES`.
+Tested locally end to end on a copy of `runs/wave2/int-shared` with the fake Slurm in `tests/cluster/fake_slurm`
+(`tests/cluster/test_launch_switch.py` covers the launcher alone).
+
+```bash
+# hybrid1: 5 workers per iteration from it3 on (it2 finishes single-GPU), 20 iterations, a 400 GPU-hour cap
+DRY_RUN=1 RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 ITERS=20 CHAIN=10 GPU_HOURS=400 \
+  bash cluster/launch_full_run.sh
+RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 ITERS=20 CHAIN=10 GPU_HOURS=400 \
+  bash cluster/launch_full_run.sh
+```
+
 `gpu_budget.py` measures the account's dollar rate per GPU-hour from its own snapshots (`runs/budget/snapshots.tsv`,
 one per call; it needs 20 GPU-hours between the first and last) and until then assumes PACE's 2022 RTX 6000 rate,
 saying so. It keeps 30 GPU-hours back for the final match. `launch_final_match.sh` takes a JSON list of three engines

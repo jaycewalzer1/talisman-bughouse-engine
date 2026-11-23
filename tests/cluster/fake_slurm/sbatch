@@ -1,0 +1,29 @@
+#!/bin/bash
+# Fake Slurm for local checks of the cluster scripts (tests/cluster/test_launch_switch.py and by hand):
+# state in $FAKE_SLURM_Q (one file set per job id); main jobs run only through runjob ID, sp_* jobs start at once.
+# Fake sbatch: queues the job (state file), sp_* jobs start at once in the background.
+Q="${FAKE_SLURM_Q:?}"
+name=""; dep=""; parsable=0; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --parsable) parsable=1 ;;
+    -J) name="$2"; shift ;;
+    --job-name=*) name="${1#*=}" ;;
+    --dependency=*) dep="${1#*=}" ;;
+    -t|-o|-A|-q) shift ;;
+    -*) ;;
+    *) args=("$@"); break ;;
+  esac
+  shift
+done
+script="${args[0]}"
+[ -n "$name" ] || name=$(sed -n 's/^#SBATCH .*-J \([^ ]*\).*/\1/p' "$script" | head -1)
+n=$(( $(cat "$Q/counter" 2>/dev/null || echo 1000) + 1 )); echo "$n" > "$Q/counter"
+export -p > "$Q/$n.env"
+echo "$PWD" > "$Q/$n.cwd"; printf '%s\n' "${args[@]}" > "$Q/$n.args"
+echo "$name" > "$Q/$n.name"; echo "$dep" > "$Q/$n.dep"; echo PENDING > "$Q/$n.state"
+echo "$(date +%T) sbatch $n $name dep=$dep $script" >> "$Q/sbatch.log"
+if [[ "$name" == sp_* ]]; then
+  nohup "$(dirname "$0")/runjob" "$n" </dev/null >/dev/null 2>&1 &
+fi
+echo "$n"

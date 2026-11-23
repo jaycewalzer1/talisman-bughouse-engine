@@ -1,0 +1,16 @@
+#!/bin/bash
+# Fake Slurm for local checks of the cluster scripts (tests/cluster/test_launch_switch.py and by hand):
+# state in $FAKE_SLURM_Q (one file set per job id); main jobs run only through runjob ID, sp_* jobs start at once.
+Q="${FAKE_SLURM_Q:?}"; names=""; states="PENDING,RUNNING"; fmt="%i"; ids=""
+while [ $# -gt 0 ]; do
+  case "$1" in -h) ;; -u) shift ;; -n) names="$2"; shift ;; -t) states="$2"; shift ;; -o) fmt="$2"; shift ;; -j) ids="$2"; shift ;; esac
+  shift
+done
+for f in "$Q"/*.state; do
+  [ -e "$f" ] || continue
+  n=$(basename "$f" .state); st=$(cat "$f"); nm=$(cat "$Q/$n.name")
+  [[ ",$states," == *",$st,"* ]] || continue
+  [ -z "$names" ] || [[ ",$names," == *",$nm,"* ]] || continue
+  [ -z "$ids" ] || [[ ",$ids," == *",$n,"* ]] || continue
+  out="$fmt"; out="${out//%i/$n}"; out="${out//%j/$nm}"; out="${out//%T/$st}"; echo "$out"
+done

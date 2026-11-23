@@ -1,0 +1,8 @@
+#!/bin/bash
+# Fake Slurm for local checks of the cluster scripts (tests/cluster/test_launch_switch.py and by hand):
+# state in $FAKE_SLURM_Q (one file set per job id); main jobs run only through runjob ID, sp_* jobs start at once.
+Q="${FAKE_SLURM_Q:?}"; n="$3"
+[ -f "$Q/$n.state" ] || exit 1
+echo "JobId=$n JobName=$(cat "$Q/$n.name")"
+[ -f "$Q/$n.out" ] && echo "   StdOut=$Q/$n.out"
+[ -f "$Q/$n.out" ] || echo "   StdOut=$Q/$n.out.notyet"

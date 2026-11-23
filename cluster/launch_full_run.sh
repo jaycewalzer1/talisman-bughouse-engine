@@ -32,7 +32,20 @@
 #   CONFIG/WAVE2_EXTRA, WIDE, GAMES_PER_ITER, ITERS, WORKERS, SEGMENT_GAMES and PER_JOB when unset, and must match apart
 #   from "engine" and "balance"; the old line goes to launch_settings.history. No new watchdog (NEW_WATCHDOG=1 adds
 #   one). The running job finishes its iteration as it started; the first replaced job continues from the markers.
-#   Switch back the same way with BALANCE=0.
+#   Switch back the same way with BALANCE=0 (BALANCE left unset keeps the recorded "balance 1").
+# Switching a RUNNING run to concurrent self-play, more iterations or a GPU-hour cap (same switch, at an iteration
+# boundary for the workers; cluster/README.md "Switching a running run"):
+#   RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 WORKERS=5 ITERS=20 GPU_HOURS=400 CHAIN=10 bash cluster/launch_full_run.sh
+#   With REPLACE_PENDING=1, WORKERS, SEGMENT_GAMES, PER_JOB, ITERS (the MAX_ITER of the run) and GPU_HOURS may change
+#   too (config/wave2_extra, wide and games_per_iter may not); the change goes to launch_settings.history. rl-loop
+#   finishes the iteration in progress the way it began (an iteration begun without workers is finished by the main
+#   job alone, with its own segment size) and starts the next one with the new settings. With BALANCE=1 the games per
+#   iteration must be a multiple of SEGMENT_GAMES (rl-loop refuses otherwise). GPU_HOURS lives in the watchdog, so
+#   changing it needs NEW_WATCHDOG=1, which then REPLACES the run's watchdog: the new one is submitted first with
+#   --dependency=afterany on the old one (found by the "watching full_<RUN>" line of its Slurm log, or OLD_WATCHDOG=
+#   ids|none), then the old one is cancelled, so the two never run together. It keeps the old one's monitor and
+#   anchors settings (its last "watching" line in watchdog.log; MONITOR/ANCHORS override) and counts the cap from
+#   the run's first watchdog line (CAP_SINCE overrides). If the old watchdog cannot be cancelled, the new one is.
 # DRY_RUN=1: no git pull or checkout, nothing written, every sbatch/scancel printed instead of run (squeue still read;
 # a fake squeue/sbatch on PATH works for local checks).
 set -euo pipefail
@@ -78,6 +91,10 @@ EOF
     PER_JOB="${PER_JOB:-${REC_per_job:-}}"
   fi
   CHAIN="${CHAIN:-${#PENDING_IDS[@]}}"
+  GPU_HOURS="${GPU_HOURS-${REC_gpu_hours:-}}"
+  # Search balance stays as recorded unless BALANCE is given (BALANCE=0 switches it off): a switch made for other
+  # settings must not turn it off by leaving BALANCE out.
+  if [ -z "${BALANCE:-}" ] && [ "${REC_balance:-0}" = 1 ]; then BALANCE=1; echo "BALANCE=1 kept from launch_settings.txt (BALANCE=0 turns it off)"; fi
 fi
 
 WIDE="${WIDE:-0}"
@@ -87,10 +104,21 @@ ITERS="${ITERS:-10}"
 WORKERS="${WORKERS:-0}"
 GPU_HOURS="${GPU_HOURS:-}"
 BALANCE="${BALANCE:-0}"
+NEW_WATCHDOG="${NEW_WATCHDOG:-0}"
 case "$WORKERS" in ''|*[!0-9]*) echo "WORKERS is a number" >&2; exit 1 ;; esac
 case "$BALANCE" in 0|1) ;; *) echo "BALANCE is 0 or 1" >&2; exit 1 ;; esac
+case "$NEW_WATCHDOG" in 0|1) ;; *) echo "NEW_WATCHDOG is 0 or 1" >&2; exit 1 ;; esac
 if [ "$WORKERS" -gt 0 ]; then SEGMENT_GAMES="${SEGMENT_GAMES:-500}"; PER_JOB="${PER_JOB:-2}"; else PER_JOB="${PER_JOB:-1}"; fi
 case "$WIDE" in 0|1) ;; *) echo "WIDE is 0 or 1" >&2; exit 1 ;; esac
+for v in ITERS PER_JOB CHAIN GAMES_PER_ITER ${SEGMENT_GAMES:+SEGMENT_GAMES}; do
+  case "${!v}" in ''|*[!0-9]*|0) echo "$v is a positive number (got '${!v}')" >&2; exit 1 ;; esac
+done
+case "$GPU_HOURS" in ''|[0-9]*) ;; *) echo "GPU_HOURS is a number of GPU-hours" >&2; exit 1 ;; esac
+# rl-loop --search-balance plans whole segments: a remainder would fail the first job (and the watchdog the chain).
+if [ "$BALANCE" = 1 ] && [ $((GAMES_PER_ITER % ${SEGMENT_GAMES:-2000})) -ne 0 ]; then
+  echo "BALANCE=1 needs GAMES_PER_ITER ($GAMES_PER_ITER) to be a multiple of SEGMENT_GAMES (${SEGMENT_GAMES:-2000})" >&2
+  exit 1
+fi
 
 if [ "${NO_PULL:-0}" != 1 ]; then
   git fetch -q origin
@@ -128,9 +156,13 @@ fi
 
 settings="config ${CONFIG:-custom}  wave2_extra $WAVE2_EXTRA  wide $WIDE  games_per_iter $GAMES_PER_ITER  iters $ITERS  engine $pin"
 if [ "$WORKERS" -gt 0 ]; then settings="$settings  workers $WORKERS  segment_games $SEGMENT_GAMES  per_job $PER_JOB"; fi
+if [ -n "$GPU_HOURS" ]; then settings="$settings  gpu_hours $GPU_HOURS"; fi
 if [ "$BALANCE" = 1 ]; then settings="$settings  balance 1"; fi
-# The settings without the fields a switch may change (REPLACE_PENDING=1 compares these).
-core() { sed -e 's/  engine [0-9a-f]*//' -e 's/  balance [01]//'; }
+# The settings without the fields a switch may change (REPLACE_PENDING=1 compares these): what the lineage is
+# (config, wave2_extra, wide, games_per_iter) stays; how it is run (engine pin, balance, iterations, workers,
+# segment size, iterations per job, GPU-hour cap) may change.
+core() { sed -e 's/  engine [0-9a-f]*//' -e 's/  balance [01]//' -e 's/  iters [0-9]*//' -e 's/  workers [0-9]*//' \
+             -e 's/  segment_games [0-9]*//' -e 's/  per_job [0-9]*//' -e 's/  gpu_hours [0-9.]*//'; }
 if [ -e "$RUNS_DIR/$RUN" ]; then
   if [ "$RESUME" != 1 ]; then
     echo "$RUNS_DIR/$RUN exists: pick a new RUN, or RESUME=1 to add CHAIN jobs to it" >&2
@@ -139,10 +171,20 @@ if [ -e "$RUNS_DIR/$RUN" ]; then
   was=$(cat "$RUNS_DIR/$RUN/launch_settings.txt" 2>/dev/null || true)
   if [ "$REPLACE_PENDING" = 1 ]; then
     if [ "$(core <<<"$was")" != "$(core <<<"$settings")" ]; then
-      echo "REPLACE_PENDING=1 may change only engine and balance; other settings differ from launch_settings.txt:" >&2
+      echo "REPLACE_PENDING=1 may change engine, balance, iters, workers, segment_games, per_job and gpu_hours only;" \
+           "other settings differ from launch_settings.txt:" >&2
       echo "  was: $was" >&2
       echo "  now: $settings" >&2
       exit 1
+    fi
+    if [ "$GPU_HOURS" != "${REC_gpu_hours:-}" ] && [ "$NEW_WATCHDOG" != 1 ]; then
+      echo "GPU_HOURS ${GPU_HOURS:-none} differs from the run's ${REC_gpu_hours:-none}: the cap is the watchdog's," \
+           "so this needs NEW_WATCHDOG=1 (it replaces the run's watchdog)" >&2
+      exit 1
+    fi
+    done_its=$( (find "$RUNS_DIR/$RUN/runs" -path '*/rl-it*/stages/iteration.done' 2>/dev/null || true) | wc -l | tr -d ' ')
+    if [ "$ITERS" -le "$done_its" ]; then
+      echo "warning: ITERS $ITERS: the run has $done_its finished iterations; the new jobs will exit at once" >&2
     fi
   elif [ "$was" != "$settings" ]; then
     echo "RESUME=1 with other settings than $RUNS_DIR/$RUN/launch_settings.txt:" >&2
@@ -158,6 +200,44 @@ else
   fi
 fi
 echo "run $RUNS_DIR/$RUN: $settings, $CHAIN chained jobs"
+
+# NEW_WATCHDOG=1 with REPLACE_PENDING=1 replaces the run's watchdog (see the header). Found before anything is submitted.
+REPLACE_WD=0; OLD_WD=()
+if [ "$REPLACE_PENDING" = 1 ] && [ "$NEW_WATCHDOG" = 1 ]; then
+  REPLACE_WD=1
+  if [ -n "${OLD_WATCHDOG:-}" ]; then
+    [ "$OLD_WATCHDOG" = none ] || for id in ${OLD_WATCHDOG//,/ }; do OLD_WD+=("$id"); done
+  else
+    wds=$(squeue -h -u "$USER" -n full_watchdog -o "%i") || { echo "squeue failed" >&2; exit 1; }
+    unknown=()
+    for id in $wds; do
+      out=$(scontrol show job "$id" 2>/dev/null | sed -n 's/.*StdOut=\([^ ]*\).*/\1/p' | head -1)
+      if [ -n "$out" ] && [ -f "$out" ]; then
+        if grep -qE "watching full_${RUN}( |\$)" "$out"; then OLD_WD+=("$id"); fi
+      else
+        unknown+=("$id")
+      fi
+    done
+    if [ "${#unknown[@]}" -gt 0 ]; then
+      echo "cannot tell which run full_watchdog ${unknown[*]} watches (no Slurm log yet): name the run's watchdog(s)" \
+           "with OLD_WATCHDOG=id[,id] (or OLD_WATCHDOG=none)" >&2
+      exit 1
+    fi
+  fi
+  # The old watchdog's monitor and anchor settings (its "watching" line), unless given.
+  last=$(grep -E "watching full_${RUN} \(monitor" "$RUNS_DIR/$RUN/watchdog.log" 2>/dev/null | tail -1 || true)
+  rec_mon=$(sed -n 's/.*(monitor \([01]\).*/\1/p' <<<"$last")
+  rec_anc=$(sed -n 's/.*, anchors \([^,)]*\).*/\1/p' <<<"$last"); [ "$rec_anc" = off ] && rec_anc=""
+  WD_MONITOR="${MONITOR:-${rec_mon:-1}}"
+  WD_ANCHORS="${ANCHORS-$rec_anc}"
+  first=$(grep -m1 -E "watching full_${RUN}( |\$)" "$RUNS_DIR/$RUN/watchdog.log" 2>/dev/null | cut -c1-19 | tr ' ' T || true)
+  WD_CAP_SINCE="${CAP_SINCE:-${first:-$(date +%Y-%m-%dT%H:%M:%S)}}"
+  dep=(); [ "${#OLD_WD[@]}" -gt 0 ] && dep=("--dependency=afterany:$(IFS=:; echo "${OLD_WD[*]}")")
+  echo "watchdog: replacing ${OLD_WD[*]:-none found} (monitor $WD_MONITOR, anchors ${WD_ANCHORS:-off}, cap ${GPU_HOURS:-none} from $WD_CAP_SINCE)"
+  W=$(RUN="$RUN" RUNS_DIR="$RUNS_DIR" GPU_HOURS="$GPU_HOURS" CAP_SINCE="$WD_CAP_SINCE" MONITOR="$WD_MONITOR" \
+      ANCHORS="$WD_ANCHORS" sb --parsable ${dep[@]+"${dep[@]}"} cluster/full_run_watchdog.sh) \
+    || { echo "watchdog sbatch failed: nothing submitted or cancelled" >&2; exit 1; }
+fi
 
 # BALANCE and its settings reach the jobs only when on, so BALANCE=0 submits exactly the old environment.
 bal=()
@@ -175,12 +255,16 @@ for _ in $(seq "$CHAIN"); do
   if [ "$DRY_RUN" = 1 ]; then echo "DRY_RUN ${job[*]}" >&2; ids+=("dry$RANDOM")
   else
     id=$("${job[@]}") || { echo "sbatch failed after submitting: ${ids[*]:-none}; nothing was cancelled (REPLACE_PENDING: the old pending jobs stay, the new ones wait behind them)" >&2
-                           [ "${#ids[@]}" -gt 0 ] && printf '%s\n' "${ids[@]}" >> "$RUNS_DIR/$RUN/jobs.txt"; exit 1; }
+                           [ "${#ids[@]}" -gt 0 ] && printf '%s\n' "${ids[@]}" >> "$RUNS_DIR/$RUN/jobs.txt"
+                           if [ "$REPLACE_WD" = 1 ]; then sc "$W" || echo "cancel the new watchdog $W by hand" >&2; fi
+                           exit 1; }
     ids+=("$id")
   fi
 done
-if [ "$REPLACE_PENDING" = 1 ] && [ "${NEW_WATCHDOG:-0}" != 1 ]; then
-  W="none submitted (the run's existing watchdog is kept; NEW_WATCHDOG=1 adds one)"
+if [ "$REPLACE_WD" = 1 ]; then
+  :  # submitted above, before the chain
+elif [ "$REPLACE_PENDING" = 1 ]; then
+  W="none submitted (the run's existing watchdog is kept; NEW_WATCHDOG=1 replaces it)"
 else
   W=$(RUN="$RUN" RUNS_DIR="$RUNS_DIR" GPU_HOURS="$GPU_HOURS" sb --parsable cluster/full_run_watchdog.sh)
 fi
@@ -199,6 +283,28 @@ if [ "$REPLACE_PENDING" = 1 ]; then
     fi
   fi
   echo "cancelled pending: ${PENDING_IDS[*]}"
+  if [ "$REPLACE_WD" = 1 ] && [ "${#OLD_WD[@]}" -gt 0 ]; then
+    # The new watchdog waits (afterany) on the old one: cancelling the old one starts it. If that fails, the new one
+    # would start only when the old one ends, and the old one hands over to a copy of itself before that: cancel the
+    # new one instead, so the run never has two.
+    if sc "${OLD_WD[@]}"; then
+      echo "cancelled old watchdog: ${OLD_WD[*]} (new watchdog $W starts now)"
+      [ "$DRY_RUN" = 1 ] || printf '%s\twatchdog %s replaced by %s\tgpu_hours %s monitor %s anchors %s cap_since %s\n' "$(date +%FT%T)" \
+        "${OLD_WD[*]}" "$W" "${GPU_HOURS:-none}" "$WD_MONITOR" "${WD_ANCHORS:-off}" "$WD_CAP_SINCE" >> "$RUNS_DIR/$RUN/launch_settings.history"
+    else
+      echo "warning: scancel of the old watchdog ${OLD_WD[*]} failed: cancelling the new one ($W); the old one keeps" \
+           "watching WITHOUT the new GPU-hour cap" >&2
+      sc "$W" || echo "warning: cancel the new watchdog $W by hand" >&2
+      W="$W (cancelled)"
+    fi
+    if [ "$DRY_RUN" != 1 ]; then
+      # An old watchdog that handed over to a copy of itself between the lookup and the cancel leaves that copy.
+      others=$(squeue -h -u "$USER" -n full_watchdog -o "%i" 2>/dev/null | grep -vxF -e "${W%% *}" $(printf -- '-e %s ' "${OLD_WD[@]}") | tr '\n' ' ' || true)
+      if [ -n "$others" ]; then
+        echo "note: other full_watchdog jobs queued: $others(check that none watches full_$RUN: their Slurm logs)" >&2
+      fi
+    fi
+  fi
 fi
 echo "chain: ${ids[0]} .. ${ids[${#ids[@]}-1]} (${#ids[@]} jobs, full_$RUN)    watchdog: $W"
 [ "$WORKERS" -gt 0 ] && echo "workers: $WORKERS per iteration (sp_$RUN, $RUNS_DIR/$RUN/workers.tsv), $SEGMENT_GAMES games per segment, $PER_JOB iterations per job"

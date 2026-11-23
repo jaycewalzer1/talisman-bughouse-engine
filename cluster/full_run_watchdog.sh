@@ -23,7 +23,7 @@
 #            anything: a stop-level alert is a recommendation for a person.
 # While monitor or anchor jobs remain after the chain has ended, the watchdog stays to submit and merge them.
 # Every decision goes to RUNS_DIR/RUN/watchdog.log. It resubmits itself before its 24 h limit while jobs remain.
-#   RUN=full1 RUNS_DIR=runs/full [GPU_HOURS=900] sbatch cluster/full_run_watchdog.sh
+#   RUN=full1 RUNS_DIR=runs/full [GPU_HOURS=900 [CAP_SINCE=2026-11-22T12:28:44]] sbatch cluster/full_run_watchdog.sh
 # DRY_RUN=1 prints every sbatch/scancel instead of running it (local checks with fake squeue/sacct on PATH).
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(git rev-parse --show-toplevel)}" || exit 1
@@ -34,6 +34,10 @@ LIFE_S="${LIFE_S:-84600}"   # 23.5 h, then hand over to a fresh copy
 # Only jobs that ended after the first watchdog started count, so a failure before a RESUME=1 relaunch does not.
 SINCE="${SINCE:-$(date +%Y-%m-%dT%H:%M:%S)}"
 GPU_HOURS="${GPU_HOURS:-}"
+# The GPU-hour cap counts jobs from CAP_SINCE (default SINCE). A watchdog that replaces another one mid-run
+# (launch_full_run.sh REPLACE_PENDING=1 NEW_WATCHDOG=1) gets the run's start here, so the cap covers the whole run,
+# while its crash checks (SINCE) start now.
+CAP_SINCE="${CAP_SINCE:-$SINCE}"
 MONITOR="${MONITOR:-1}"
 # Anchors are opt-in: a watchdog that picks this code up by its self-handover (no ANCHORS in its environment) must
 # not start spending ~21 GPU-hours per anchored iteration on the run's account without someone asking for it.
@@ -54,7 +58,7 @@ side_jobs() { squeue -h -u "$USER" -o "%i %j %T" "$@" | awk -v m="mon_${RUN}_it"
   'index($2, m) == 1 || index($2, a) == 1 { print $1 }'; }
 cancel() { say "CANCEL full_$RUN and sp_$RUN : $1"; sc -u "$USER" -n "full_$RUN"; sc -u "$USER" -n "sp_$RUN"; }
 gpu_hours() {  # GPU-hours of this run's jobs since SINCE (running jobs counted so far); monitor and anchors included
-  sacct -n -X -P -u "$USER" -S "$SINCE" -o JobName,ElapsedRaw,AllocTRES \
+  sacct -n -X -P -u "$USER" -S "$CAP_SINCE" -o JobName,ElapsedRaw,AllocTRES \
     | awk -F'|' -v r="$RUN" '$1 == "full_" r || $1 == "sp_" r || index($1, "mon_" r "_it") == 1 || index($1, "am_" r "_it") == 1 {
         if (match($3, /gres\/gpu=[0-9]+/)) s += $2 * substr($3, RSTART + 9, RLENGTH - 9) } END { printf "%.1f", s / 3600 }'
 }
@@ -125,7 +129,11 @@ monitor_pass() {
   fi
 }
 
-say "watching full_$RUN (monitor $MONITOR, anchors ${ANCHORS:-off})"
+if [ -n "$GPU_HOURS" ]; then
+  say "watching full_$RUN (monitor $MONITOR, anchors ${ANCHORS:-off}, cap $GPU_HOURS GPU-hours from $CAP_SINCE, job ${SLURM_JOB_ID:-none})"
+else
+  say "watching full_$RUN (monitor $MONITOR, anchors ${ANCHORS:-off})"
+fi
 start=$SECONDS
 while :; do
   monitor_pass
@@ -152,7 +160,8 @@ sys.exit(0 if rows and float(rows[-1]["vs_it13"]) < 0.40 else 1)' "$tsv"; then
   fi
   if [ $((SECONDS - start)) -ge "$LIFE_S" ]; then
     say "handing over to a fresh watchdog"
-    RUN=$RUN RUNS_DIR=$RUNS_DIR SINCE=$SINCE GPU_HOURS=$GPU_HOURS MONITOR=$MONITOR ANCHORS="$ANCHORS" sb cluster/full_run_watchdog.sh >/dev/null
+    RUN=$RUN RUNS_DIR=$RUNS_DIR SINCE=$SINCE CAP_SINCE=$CAP_SINCE GPU_HOURS=$GPU_HOURS MONITOR=$MONITOR ANCHORS="$ANCHORS" \
+      sb cluster/full_run_watchdog.sh >/dev/null
     exit 0
   fi
   sleep "$POLL_S"
