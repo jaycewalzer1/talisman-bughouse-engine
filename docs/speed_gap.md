@@ -55,4 +55,14 @@ Suggested for the final match and any row whose score is meant to be compared wi
 `MEASURE_WARM_MS=3000 MEASURE_REPEATS=10` (about 4 s more per part). Expected effect: our charge drops from ~0.052
 to ~0.043 while upstream's stays ~0.042-0.043, i.e. about 20% more nodes per decision for us at equal clocks. In the
 r4 long test the two parts where upstream happened to measure as slow as us scored 0.541 (n=579) against 0.493
-(n=766) in the other three.
+(n=766) in the other three. That split is weak evidence, not a predicted gain: the per-part scores are
+0.460 / 0.509 / 0.579 / 0.508 / 0.500, one of the two equal-charge parts (part 5) scored only 0.500, and the gap
+rests mostly on part 3. The difference of ~0.047 has a binomial SE of ~0.027 (z ~ 1.7, not significant at 0.05,
+and less so once the correlation within colour-swapped game pairs is allowed for). Even at face value 0.54 is well
+short of the 0.6 target, so equal charge is not expected to reach 0.6 on its own. Confirm the effect with the
+first row run with `MEASURE_WARM_MS=3000 MEASURE_REPEATS=10`: both arms should read ~0.043 in its
+`ms_per_node.json`.
+
+A shared `ms_per_node.json` (iterate.sh gates, `--ms-per-node-cache`) never mixes procedures: a cached wave 2 /
+upstream record whose `warm_ms` (absent = 0) differs from the requested one is re-measured rather than reused;
+`--ms-per-node` overrides are left alone.
