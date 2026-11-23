@@ -524,7 +524,19 @@ def arm_key(team: TeamSpec) -> str:
         key += "|" + ",".join(f"{k}={v}" for k, v in wave2_arm_flags(team).items())
     if team.kind in UPSTREAM_KINDS and team.player_kw.get("coreml") is not None:
         key += f"|coreml={team.player_kw['coreml']}"
+    eo = arm_engine_options(team)
+    if eo:  # raw UCI options (e.g. a tuning candidate's search settings) may change the cost of a node
+        key += "|eo:" + ",".join(f"{k}={v}" for k, v in eo.items())
     return key
+
+
+def arm_engine_options(team: TeamSpec) -> dict:
+    """An upstream-dialect team's raw ``engine_options`` (sorted by name), {} for none or another kind. They are part
+    of the arm's key and are set during its measurement, so a row that changes a search setting is charged that
+    setting's own ms_per_node (cluster/tune_match.sh). Rows without them keep their keys and measurements."""
+    if team.kind not in UPSTREAM_KINDS:
+        return {}
+    return {k: v for k, v in sorted((team.player_kw.get("engine_options") or {}).items())}
 
 
 def wave2_arm_flags(team: TeamSpec) -> dict:
@@ -543,19 +555,23 @@ def _wants_measure(team: TeamSpec) -> bool:
 
 
 def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int = 3, coreml: str | None = None,
-                         wave2: dict | None = None) -> dict:
+                         wave2: dict | None = None, engine_options: dict | None = None) -> dict:
     """measure_upstream_ms_per_node as a cache record (the same fields as measure_searched_ms_per_node's). With
-    ``wave2`` (flag overrides, {} for none) the binary is the wave 2 engine, measured with its flags set."""
+    ``wave2`` (flag overrides, {} for none) the binary is the wave 2 engine, measured with its flags set.
+    ``engine_options`` (raw UCI options of the arm) are set too, after the flags, as the arm sends them in play."""
     from arena.players.upstream import measure_upstream_ms_per_node, measure_wave2_ms_per_node
 
+    extra = {"options": dict(engine_options)} if engine_options else {}
     if wave2 is None:
-        ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml)
+        ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml,
+                                          **extra)
     else:
         ms = measure_wave2_ms_per_node(nodes=nodes, repeats=repeats, flags=wave2, binary=binary, model=model,
-                                       coreml=coreml)
+                                       coreml=coreml, **extra)
     return {"binary": binary, "model": model, "nodes_requested": nodes, "repeats": repeats, "ms_per_node": ms,
             "kind": "upstream" if wave2 is None else "wave2", "coreml": coreml, "host": os.uname().nodename,
-            "when": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"flags": wave2} if wave2 else {})}
+            "when": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"flags": wave2} if wave2 else {}),
+            **({"engine_options": dict(engine_options)} if engine_options else {})}
 
 
 def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int = 400, repeats: int = 3,
@@ -584,12 +600,14 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
             if t.kind in UPSTREAM_KINDS:
                 binary = binary.split("|", 1)[1]
             print(f"measuring ms_per_node for {binary} with {model} ...", flush=True)
+            eo = arm_engine_options(t)
+            extra = {"engine_options": eo} if eo else {}  # only when set: older measure callables lack the keyword
             if t.kind == "upstream":
                 cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
-                                              coreml=t.player_kw.get("coreml"))
+                                              coreml=t.player_kw.get("coreml"), **extra)
             elif t.kind == "wave2":
                 cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
-                                              coreml=t.player_kw.get("coreml"), wave2=wave2_arm_flags(t))
+                                              coreml=t.player_kw.get("coreml"), wave2=wave2_arm_flags(t), **extra)
             else:
                 cache[key] = measure(binary, model, nodes=nodes, repeats=repeats)
             cache[key].setdefault("model", model)

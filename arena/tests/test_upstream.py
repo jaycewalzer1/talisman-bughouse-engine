@@ -1118,3 +1118,38 @@ def test_wave2_hybrid_refuses_a_binary_without_the_options(tmp_path, monkeypatch
     binary, model, log = _fake_engine(tmp_path, monkeypatch, sorted(HYBRID_UCI_OPTIONS))
     ctl, d1, d2 = _play_two_searches(binary, model, hybrid=True, **NODUR)
     assert d1.kind == "move" and "setoption name HybridMode value gate" in log.read_text().splitlines()
+
+
+def test_engine_options_join_the_measurement_key_and_the_measurement(tmp_path):
+    # cluster/tune_match.sh: a tuning candidate that sends raw UCI search options (engine_options) is charged their
+    # own ms_per_node; arms without engine_options keep the keys they had before.
+    from arena.pool import Pool, apply_ms_per_node, arm_key, for_evaluation
+
+    pool = Pool.load("arena/pools/wave2.json")
+    hyb = {"durative_tree": False, "sit_gate": True, "hybrid": True}
+    plain = for_evaluation(pool, opponent="upstream-it13", contender_kw=hyb)
+    tuned = for_evaluation(pool, opponent="upstream-it13",
+                           contender_kw={**hyb, "engine_options": {"PolicyTemperaturePermille": 1100,
+                                                                   "CPUCTInitPermille": 2500}})
+    assert "|eo:" not in arm_key(plain.contender) and "|eo:" not in arm_key(plain.opponents[0])
+    assert arm_key(tuned.contender) == (arm_key(plain.contender)
+                                        + "|eo:CPUCTInitPermille=2500,PolicyTemperaturePermille=1100")
+    calls = []
+
+    def fake(b, m, nodes, repeats, coreml=None, wave2=None, **kw):
+        if wave2 is not None:  # the wave 2 arm; upstream-it13 is measured too, with nothing extra
+            calls.append((wave2, kw))
+        else:
+            assert kw == {}
+        return {"ms_per_node": 0.2}
+
+    apply_ms_per_node(for_evaluation(pool, opponent="upstream-it13",
+                                     contender_kw={**hyb, "ms_per_node": "measure",
+                                                   "engine_options": {"CPUCTInitPermille": 2500}}),
+                      str(tmp_path / "ms.json"), measure_upstream=fake)
+    assert calls == [({"durative_tree": False, "sit_gate": True, "hybrid_mode": "gate"},
+                      {"engine_options": {"CPUCTInitPermille": 2500}})]
+    calls.clear()
+    apply_ms_per_node(for_evaluation(pool, opponent="upstream-it13", contender_kw={**hyb, "ms_per_node": "measure"}),
+                      str(tmp_path / "ms2.json"), measure_upstream=fake)
+    assert calls == [({"durative_tree": False, "sit_gate": True, "hybrid_mode": "gate"}, {})]
