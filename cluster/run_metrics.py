@@ -294,29 +294,45 @@ def match_search(it_dir, unavailable):
 # ---------------------------------------------------------------------------------------------------- self-play data
 
 
-def read_dst(path):
+def read_dst(path, limit=None):
     """The fields the KPIs need from an HDST chunk (hivemind/distill/data.py read_chunk, stdlib struct instead of
-    numpy): per position the pocket plane values, the WDL target, and each board's policy target."""
+    numpy): per position the pocket plane values, the WDL target, and each board's policy target. Only the first
+    `limit` positions are read: a full self-play chunk is about 300 MB, which as Python tuples took the watchdog's
+    2 GB job past its memory limit."""
     with open(path, "rb") as f:
-        raw = f.read()
-    if raw[:4] != b"HDST":
-        raise ValueError("not an HDST chunk")
-    version, planes = struct.unpack_from("<II", raw, 4)
-    n, entries = struct.unpack_from("<QQ", raw, 12)
-    if version not in (2, 3) or planes not in (74, 78, 130):
-        raise ValueError(f"version {version}, {planes} planes")
-    offset = 28 + 8 * n * planes                                # plane bits
-    values = struct.unpack_from(f"<{n * planes}e", raw, offset)
-    offset += 2 * n * planes + 4 * n                            # plane values, value
-    wdl = struct.unpack_from(f"<{3 * n}f", raw, offset)
-    offset += 12 * n + 2 * n + 2 * n + n                        # wdl, moves_left, ply, outcome
-    counts = struct.unpack_from(f"<{2 * n}H", raw, offset)
-    offset += 4 * n
-    index = struct.unpack_from(f"<{entries}H", raw, offset)
-    offset += 2 * entries
-    prob = struct.unpack_from(f"<{entries}e", raw, offset)
-    if sum(counts) != entries:
-        raise ValueError("inconsistent policy counts")
+        head = f.read(28)
+        if head[:4] != b"HDST":
+            raise ValueError("not an HDST chunk")
+        version, planes = struct.unpack_from("<II", head, 4)
+        total, entries = struct.unpack_from("<QQ", head, 12)
+        if version not in (2, 3) or planes not in (74, 78, 130):
+            raise ValueError(f"version {version}, {planes} planes")
+        n = total if limit is None else min(total, limit)
+
+        def take(offset, fmt, count, size):
+            f.seek(offset)
+            raw = f.read(count * size)
+            if len(raw) != count * size:
+                raise ValueError("truncated chunk")
+            return struct.unpack(f"<{count}{fmt}", raw)
+
+        offset = 28 + 8 * total * planes                        # plane bits
+        values = take(offset, "e", n * planes, 2)
+        offset += 2 * total * planes + 4 * total                # plane values, value
+        wdl = take(offset, "f", 3 * n, 4)
+        offset += 12 * total + 2 * total + 2 * total + total    # wdl, moves_left, ply, outcome
+        if limit is None or n == total:
+            all_counts = take(offset, "H", 2 * total, 2)
+            if sum(all_counts) != entries:
+                raise ValueError("inconsistent policy counts")
+        counts = take(offset, "H", 2 * n, 2)
+        offset += 4 * total
+        used = sum(counts)
+        if used > entries:
+            raise ValueError("inconsistent policy counts")
+        index = take(offset, "H", used, 2)
+        offset += 2 * entries
+        prob = take(offset, "e", used, 2)
     return {"n": n, "planes": planes, "values": values, "wdl": wdl, "counts": counts, "index": index, "prob": prob}
 
 
@@ -342,7 +358,7 @@ def chunk_stats(paths, seed):
         if positions >= SAMPLE_POSITIONS:
             break
         try:
-            c = read_dst(path)
+            c = read_dst(path, SAMPLE_POSITIONS - positions)
         except (OSError, ValueError, struct.error):
             continue
         n, planes, block = c["n"], c["planes"], c["planes"] // 2

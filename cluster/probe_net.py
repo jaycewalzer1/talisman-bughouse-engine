@@ -369,8 +369,11 @@ def load_model(path, device, wide=None):
     import torch
     from hivemind.architectures.twin_board import load_twin_board_checkpoint
     model, _, _ = load_twin_board_checkpoint(torch.load(path, map_location="cpu"), wide=wide)
-    # channels_last: about 20% faster on CPU for the depthwise blocks; weights and outputs are unchanged.
-    return model.to(device).to(memory_format=torch.channels_last).eval()
+    # channels_last: about 20% faster on CPU for the depthwise blocks; weights and outputs are unchanged. CPU only: on
+    # PACE's cuDNN, channels_last weights fed the trainer's NCHW batches fail with "GET was unable to find an engine".
+    if str(device).startswith("cpu"):
+        model = model.to(memory_format=torch.channels_last)
+    return model.to(device).eval()
 
 
 def model_chunk(probe, model_layout):
@@ -416,7 +419,8 @@ def run_model(model, planes_all, batch, hooks=None):
     values, wdls, logits = [], [], ([], [])
     with torch.no_grad():
         for start in range(0, len(planes_all), batch):
-            out = model(planes_all[start:start + batch].contiguous(memory_format=torch.channels_last))
+            out = model(planes_all[start:start + batch].contiguous(
+                memory_format=torch.channels_last if planes_all.device.type == "cpu" else torch.contiguous_format))
             values.append(out[0].float().squeeze(1))
             wdls.append(torch.softmax(out[3].float(), 1))
             for board in range(2):
