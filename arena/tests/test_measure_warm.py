@@ -74,3 +74,38 @@ def test_measure_upstream_arm_records_warm_ms(monkeypatch):
     got.clear()
     rec = pool_mod.measure_upstream_arm("bin", "model.onnx", nodes=800, repeats=3)
     assert "warm_ms" not in got and "warm_ms" not in rec
+
+
+def test_cached_record_with_other_warm_ms_is_remeasured(tmp_path):
+    import json
+
+    from arena.pool import Pool, apply_ms_per_node, for_evaluation
+
+    pool = Pool.load("arena/pools/wave2.json")
+    row = for_evaluation(pool, opponent="upstream-it13", contender_kw={"ms_per_node": "measure"},
+                         opponent_kw={"ms_per_node": "measure"})
+    calls = []
+
+    def fake(b, m, nodes, repeats, coreml=None, wave2=None, warm_ms=0, **kw):
+        calls.append(warm_ms)
+        return {"ms_per_node": 0.05 if warm_ms == 0 else 0.043, **({"warm_ms": warm_ms} if warm_ms else {})}
+
+    cache = str(tmp_path / "c.json")
+    apply_ms_per_node(row, cache, measure_upstream=fake)  # cold records
+    assert calls == [0, 0]
+    calls.clear()
+    apply_ms_per_node(row, cache, measure_upstream=fake)  # same procedure: reused
+    assert calls == []
+    new, used = apply_ms_per_node(row, cache, measure_upstream=fake, warm_ms=3000)  # warm asked: re-measured
+    assert calls == [3000, 3000]
+    assert all(r["warm_ms"] == 3000 and r["ms_per_node"] == 0.043 for r in used.values())
+    assert all(r.get("warm_ms") == 3000 for r in json.load(open(cache)).values())
+    calls.clear()
+    apply_ms_per_node(row, cache, measure_upstream=fake, warm_ms=3000)  # resumed warm row: reused
+    assert calls == []
+    apply_ms_per_node(row, cache, measure_upstream=fake)  # cold asked of a warm cache: re-measured
+    assert calls == [0, 0]
+    calls.clear()
+    apply_ms_per_node(row, cache, measure_upstream=fake, warm_ms=3000,
+                      override={k: 0.04 for k in used})  # overrides are never re-measured
+    assert calls == []

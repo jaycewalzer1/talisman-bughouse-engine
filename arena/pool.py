@@ -585,7 +585,8 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
     per key; ``cache_path`` (JSON {key: measurement}) is read first and written after, so a resumed row reuses
     the values it started with. ``override`` {key: ms} skips the measurement for those keys. Returns the new pool
     and {key: measurement} for the keys used. ``warm_ms`` > 0: every wave 2 / upstream arm searches that long
-    before it is measured (measure_upstream_ms_per_node); 0 keeps the old procedure."""
+    before it is measured (measure_upstream_ms_per_node); 0 keeps the old procedure. A cached wave 2 / upstream
+    record whose warm_ms (absent = 0) differs from the requested one is re-measured, not reused."""
     cache: dict = {}
     if cache_path and os.path.exists(cache_path):
         with open(cache_path) as f:
@@ -600,6 +601,14 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
         key, legacy = arm_key(t), legacy_arm_key(t)
         if key not in cache and legacy in cache:
             key = legacy  # a row resumed from a cache written before the architecture key
+        rec = cache.get(key)
+        if (rec is not None and rec.get("source") != "override" and t.kind in ("upstream", "wave2")
+                and int(rec.get("warm_ms", 0)) != int(max(warm_ms, 0))):
+            # measured with a different warm-up (cold vs warm): do not mix procedures under one command line
+            print(f"  cached ms_per_node for {key} used warm_ms={int(rec.get('warm_ms', 0))}, "
+                  f"this run asks {int(max(warm_ms, 0))}: re-measuring", flush=True)
+            del cache[key]
+            key = arm_key(t)
         if key not in cache:
             binary, model = legacy.rsplit("|", 1)
             if t.kind in UPSTREAM_KINDS:
