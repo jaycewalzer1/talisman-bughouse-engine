@@ -21,6 +21,8 @@
 # Audit 2026-11-17 WP-A, all off unless set:
 #   MEASURE=1     measure ms per searched node per binary+network for every engine team without an ms_per_node
 #                 in its options (kept in runs/<NAME>/ms_per_node.json; MEASURE_NODES, default 400)
+#                 MEASURE_WARM_MS (default 0 = off): wave 2 / upstream arms search that long before they are
+#                 measured (a cold first arm reads ~20% slow on PACE, docs/speed_gap.md); MEASURE_REPEATS (3)
 #   SPRT=0,20     GSPRT over normalised Elo [ELO0,ELO1(,ALPHA,BETA)] after every game pair; stops when decided
 #   JITTER=lo,hi  think-time factor per search for every centralized Hivemind team (both sides)
 #   WORKERS       parallel games (default 3)
@@ -63,6 +65,8 @@ fi
 [ -n "${CONTENDER_KW:-}" ] && ARGS+=(--contender-kw "$CONTENDER_KW")
 [ -n "${OPPONENT_KW:-}" ] && ARGS+=(--opponent-kw "$OPPONENT_KW")
 [ "${MEASURE:-0}" = 1 ] && ARGS+=(--measure-ms-per-node --measure-nodes "${MEASURE_NODES:-400}")
+[ "${MEASURE:-0}" = 1 ] && [ -n "${MEASURE_WARM_MS:-}" ] && ARGS+=(--measure-warm-ms "$MEASURE_WARM_MS")
+[ "${MEASURE:-0}" = 1 ] && [ -n "${MEASURE_REPEATS:-}" ] && ARGS+=(--measure-repeats "$MEASURE_REPEATS")
 [ -n "${SPRT:-}" ] && ARGS+=(--sprt "$SPRT")
 [ -n "${JITTER:-}" ] && ARGS+=(--jitter "$JITTER")
 [ -n "${RULES:-}" ] && ARGS+=(--rules "$RULES")
@@ -81,7 +85,7 @@ if [ -n "${ENGINE_REF:-}" ]; then
 fi
 echo "opponent ${OPPONENT:-stock-centralized} nodes ${OPPONENT_NODES:-as in the pool}  pairs ${PAIRS:-800}  seed ${SEED:-0}"
 echo "contender options ${CONTENDER_KW:-none}  opponent options ${OPPONENT_KW:-none}  clock ${BASE_MS:-60000} ms"
-echo "measure ms/node ${MEASURE:-0}  sprt ${SPRT:-off}  jitter ${JITTER:-off}  workers ${WORKERS:-3}"
+echo "measure ms/node ${MEASURE:-0} warm ${MEASURE_WARM_MS:-0} ms repeats ${MEASURE_REPEATS:-3}  sprt ${SPRT:-off}  jitter ${JITTER:-off}  workers ${WORKERS:-3}"
 echo "pool ${POOL:-arena/pools/phase1.json}  openings ${OPENINGS:-eval}  rules ${RULES:-v2}"
 $PY -c "from arena.players.hivemind import DEFAULT_MODEL; print('engine model', DEFAULT_MODEL)"
 $PY cluster/warm_engine.py || exit 1

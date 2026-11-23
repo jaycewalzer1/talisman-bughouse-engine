@@ -431,13 +431,27 @@ def parse_hybrid(lines: list[str], res: SearchResult) -> SearchResult:
     return res
 
 
-def measure_upstream_ms_per_node(nodes: int = 800, repeats: int = 3, **kw) -> float:
-    """Wall ms per *searched* node from startpos (team T1, level lead, 100 ms move times)."""
+MEASURE_WARM_MAX_SEARCHES = 500  # cap on the warm-up searches of warm_ms (a hung or very slow engine still ends)
+
+
+def measure_upstream_ms_per_node(nodes: int = 800, repeats: int = 3, warm_ms: int = 0, **kw) -> float:
+    """Wall ms per *searched* node from startpos (team T1, level lead, 100 ms move times).
+
+    ``warm_ms`` > 0: after the 64-node warm-up, keep searching ``nodes``-node searches (not measured) until that much
+    search wall time has passed, then measure. 0 (default) is the old procedure. On PACE an arm measured cold (first
+    in its job, the GPU idle before it) read 0.050-0.054 ms/node while the same binary and engine file read 0.043
+    when measured warm, as did stock upstream (job 16047669, docs/speed_gap.md)."""
     start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1"
     p = UpstreamHivemindProcess(**kw)
     try:
         args = dict(team="T1", lead=0, team_move_ms=DEFAULT_MOVE_MS, opp_move_ms=DEFAULT_MOVE_MS)
         p.search_clock(start, start, nodes=64, **args)  # warm-up
+        if warm_ms > 0:
+            t0 = time.perf_counter()
+            for _ in range(MEASURE_WARM_MAX_SEARCHES):
+                p.search_clock(start, start, nodes=nodes, **args)
+                if (time.perf_counter() - t0) * 1000 >= warm_ms:
+                    break
         rs = [p.search_clock(start, start, nodes=nodes, **args) for _ in range(repeats)]
     finally:
         p.close()
@@ -1012,7 +1026,7 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
 
 def measure_wave2_ms_per_node(nodes: int = 800, repeats: int = 3, *, flags: dict | None = None, **kw) -> float:
     """``measure_upstream_ms_per_node`` for the wave 2 binary with the wave 2 flags set (``flags``: overrides as for
-    ``wave2_flag_options``), at level clocks of 60 s and 100 ms paces."""
+    ``wave2_flag_options``), at level clocks of 60 s and 100 ms paces (``warm_ms`` passes through)."""
     kw.setdefault("binary", WAVE2_BINARY)
     kw.setdefault("model", WAVE2_MODEL)
     kw.setdefault("cwd", WAVE2_ENGINE_DIR)

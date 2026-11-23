@@ -555,13 +555,16 @@ def _wants_measure(team: TeamSpec) -> bool:
 
 
 def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int = 3, coreml: str | None = None,
-                         wave2: dict | None = None, engine_options: dict | None = None) -> dict:
+                         wave2: dict | None = None, engine_options: dict | None = None, warm_ms: int = 0) -> dict:
     """measure_upstream_ms_per_node as a cache record (the same fields as measure_searched_ms_per_node's). With
     ``wave2`` (flag overrides, {} for none) the binary is the wave 2 engine, measured with its flags set.
-    ``engine_options`` (raw UCI options of the arm) are set too, after the flags, as the arm sends them in play."""
+    ``engine_options`` (raw UCI options of the arm) are set too, after the flags, as the arm sends them in play.
+    ``warm_ms`` > 0 searches that long before measuring (measure_upstream_ms_per_node; recorded when set)."""
     from arena.players.upstream import measure_upstream_ms_per_node, measure_wave2_ms_per_node
 
     extra = {"options": dict(engine_options)} if engine_options else {}
+    if warm_ms > 0:
+        extra["warm_ms"] = int(warm_ms)
     if wave2 is None:
         ms = measure_upstream_ms_per_node(nodes=nodes, repeats=repeats, binary=binary, model=model, coreml=coreml,
                                           **extra)
@@ -571,16 +574,18 @@ def measure_upstream_arm(binary: str, model: str, nodes: int = 800, repeats: int
     return {"binary": binary, "model": model, "nodes_requested": nodes, "repeats": repeats, "ms_per_node": ms,
             "kind": "upstream" if wave2 is None else "wave2", "coreml": coreml, "host": os.uname().nodename,
             "when": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"flags": wave2} if wave2 else {}),
-            **({"engine_options": dict(engine_options)} if engine_options else {})}
+            **({"engine_options": dict(engine_options)} if engine_options else {}),
+            **({"warm_ms": int(warm_ms)} if warm_ms > 0 else {})}
 
 
 def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int = 400, repeats: int = 3,
                       measure=measure_searched_ms_per_node, override: dict | None = None,
-                      measure_upstream=measure_upstream_arm) -> tuple[Pool, dict]:
+                      measure_upstream=measure_upstream_arm, warm_ms: int = 0) -> tuple[Pool, dict]:
     """Every engine team without an ``ms_per_node`` gets the measured one for its binary+network. One measurement
     per key; ``cache_path`` (JSON {key: measurement}) is read first and written after, so a resumed row reuses
     the values it started with. ``override`` {key: ms} skips the measurement for those keys. Returns the new pool
-    and {key: measurement} for the keys used."""
+    and {key: measurement} for the keys used. ``warm_ms`` > 0: every wave 2 / upstream arm searches that long
+    before it is measured (measure_upstream_ms_per_node); 0 keeps the old procedure."""
     cache: dict = {}
     if cache_path and os.path.exists(cache_path):
         with open(cache_path) as f:
@@ -602,6 +607,8 @@ def apply_ms_per_node(pool: Pool, cache_path: str | None = None, *, nodes: int =
             print(f"measuring ms_per_node for {binary} with {model} ...", flush=True)
             eo = arm_engine_options(t)
             extra = {"engine_options": eo} if eo else {}  # only when set: older measure callables lack the keyword
+            if warm_ms > 0:
+                extra["warm_ms"] = int(warm_ms)  # likewise
             if t.kind == "upstream":
                 cache[key] = measure_upstream(binary, model, nodes=nodes, repeats=repeats,
                                               coreml=t.player_kw.get("coreml"), **extra)
@@ -783,6 +790,12 @@ def main(argv=None) -> int:
             p.add_argument("--measure-ms-per-node", action="store_true",
                            help="measure ms per searched node per binary+network for engine teams without one")
             p.add_argument("--measure-nodes", type=int, default=400)
+            p.add_argument("--measure-repeats", type=int, default=3,
+                           help="measured searches per arm (after the warm-up)")
+            p.add_argument("--measure-warm-ms", type=int, default=0,
+                           help="wave 2 / upstream arms: search this long (ms of search wall time) before measuring; "
+                                "0 = the old 64-node warm-up only. A cold first arm reads ~20%% slow on PACE "
+                                "(docs/speed_gap.md)")
             p.add_argument("--ms-per-node-cache", default=None,
                            help="JSON file of measured ms_per_node per binary+network (default <out>/ms_per_node.json);"
                                 " point several rows at one file so they charge the same values")
@@ -878,7 +891,8 @@ def main(argv=None) -> int:
     if args.measure_ms_per_node or any(t.player_kw.get("ms_per_node") == "measure"
                                        for t in [pool.contender, *pool.opponents]):
         cache = args.ms_per_node_cache or os.path.join(args.out, "ms_per_node.json")
-        pool, used = apply_ms_per_node(pool, cache, nodes=args.measure_nodes)
+        pool, used = apply_ms_per_node(pool, cache, nodes=args.measure_nodes, repeats=args.measure_repeats,
+                                       warm_ms=args.measure_warm_ms)
         extra["ms_per_node"] = used
     if args.equal_ms_per_node:
         pool = equalize_ms_per_node(pool)
