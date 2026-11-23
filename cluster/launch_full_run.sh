@@ -12,7 +12,7 @@
 # that is not at cluster/wave2_engine.ref (the engines the readiness round checked).
 # Concurrent self-play: WORKERS=K adds K self-play worker jobs (-J sp_<RUN>) to every iteration (rl-loop
 # --shared-selfplay, cluster/selfplay_workers.sh); the main job trains and gates alone, the workers exit when the
-# iteration has its games. SEGMENT_GAMES (500 with workers, else wave2_iterate's 2000) is what one claim plays;
+# iteration has its games. SEGMENT_GAMES (500 with workers, 2000 with workers and BALANCE=1, else wave2_iterate's 2000) is what one claim plays;
 # PER_JOB (1; 2 with workers) iterations per chained job. GPU_HOURS=N caps the run: the watchdog sums the GPU-hours of
 # full_<RUN> and sp_<RUN> jobs and stops the run (no new workers, rl-loop.stop, pending jobs cancelled) at N.
 # WORKERS=0 is the old single-GPU chain, bit for bit. cluster/gpu_budget.py prints what N the account can afford.
@@ -35,12 +35,13 @@
 #   Switch back the same way with BALANCE=0 (BALANCE left unset keeps the recorded "balance 1").
 # Switching a RUNNING run to concurrent self-play, more iterations or a GPU-hour cap (same switch, at an iteration
 # boundary for the workers; cluster/README.md "Switching a running run"):
-#   RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 WORKERS=5 ITERS=20 GPU_HOURS=400 CHAIN=10 bash cluster/launch_full_run.sh
+#   RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 WORKERS=5 SEGMENT_GAMES=2000 ITERS=20 GPU_HOURS=400 CHAIN=10 bash cluster/launch_full_run.sh
 #   With REPLACE_PENDING=1, WORKERS, SEGMENT_GAMES, PER_JOB, ITERS (the MAX_ITER of the run) and GPU_HOURS may change
 #   too (config/wave2_extra, wide and games_per_iter may not); the change goes to launch_settings.history. rl-loop
 #   finishes the iteration in progress the way it began (an iteration begun without workers is finished by the main
 #   job alone, with its own segment size) and starts the next one with the new settings. With BALANCE=1 the games per
-#   iteration must be a multiple of SEGMENT_GAMES (rl-loop refuses otherwise). GPU_HOURS lives in the watchdog, so
+#   iteration must be a multiple of SEGMENT_GAMES (rl-loop refuses otherwise), and SEGMENT_GAMES defaults to 2000
+#   (another size needs BALANCE_ANY_SEGMENT=1: the balance prior's noise terms are calibrated on 2000-game segments). GPU_HOURS lives in the watchdog, so
 #   changing it needs NEW_WATCHDOG=1, which then REPLACES the run's watchdog: the new one is submitted first with
 #   --dependency=afterany on the old one (found by the "watching full_<RUN>" line of its Slurm log, or OLD_WATCHDOG=
 #   ids|none), then the old one is cancelled, so the two never run together. It keeps the old one's monitor and
@@ -108,12 +109,23 @@ NEW_WATCHDOG="${NEW_WATCHDOG:-0}"
 case "$WORKERS" in ''|*[!0-9]*) echo "WORKERS is a number" >&2; exit 1 ;; esac
 case "$BALANCE" in 0|1) ;; *) echo "BALANCE is 0 or 1" >&2; exit 1 ;; esac
 case "$NEW_WATCHDOG" in 0|1) ;; *) echo "NEW_WATCHDOG is 0 or 1" >&2; exit 1 ;; esac
-if [ "$WORKERS" -gt 0 ]; then SEGMENT_GAMES="${SEGMENT_GAMES:-500}"; PER_JOB="${PER_JOB:-2}"; else PER_JOB="${PER_JOB:-1}"; fi
+# Search balance's noise terms (the prior's sigma_hat/tau_hat from cluster/balance_prior.sbatch and the pooled
+# sigma_samples) are measured on 2000-game segments and are not rescaled by game count, so with BALANCE=1 the
+# workers' segment defaults to 2000 too, and another size is refused unless BALANCE_ANY_SEGMENT=1.
+if [ "$WORKERS" -gt 0 ]; then
+  if [ "$BALANCE" = 1 ]; then SEGMENT_GAMES="${SEGMENT_GAMES:-2000}"; else SEGMENT_GAMES="${SEGMENT_GAMES:-500}"; fi
+  PER_JOB="${PER_JOB:-2}"
+else PER_JOB="${PER_JOB:-1}"; fi
 case "$WIDE" in 0|1) ;; *) echo "WIDE is 0 or 1" >&2; exit 1 ;; esac
 for v in ITERS PER_JOB CHAIN GAMES_PER_ITER ${SEGMENT_GAMES:+SEGMENT_GAMES}; do
   case "${!v}" in ''|*[!0-9]*|0) echo "$v is a positive number (got '${!v}')" >&2; exit 1 ;; esac
 done
 case "$GPU_HOURS" in ''|[0-9]*) ;; *) echo "GPU_HOURS is a number of GPU-hours" >&2; exit 1 ;; esac
+if [ "$BALANCE" = 1 ] && [ "${SEGMENT_GAMES:-2000}" != 2000 ] && [ "${BALANCE_ANY_SEGMENT:-0}" != 1 ]; then
+  echo "BALANCE=1 with SEGMENT_GAMES $SEGMENT_GAMES: search balance's noise terms are calibrated on 2000-game segments" \
+       "and are not rescaled, so a smaller segment overstates Z. Use SEGMENT_GAMES=2000, or BALANCE_ANY_SEGMENT=1 to accept it" >&2
+  exit 1
+fi
 # rl-loop --search-balance plans whole segments: a remainder would fail the first job (and the watchdog the chain).
 if [ "$BALANCE" = 1 ] && [ $((GAMES_PER_ITER % ${SEGMENT_GAMES:-2000})) -ne 0 ]; then
   echo "BALANCE=1 needs GAMES_PER_ITER ($GAMES_PER_ITER) to be a multiple of SEGMENT_GAMES (${SEGMENT_GAMES:-2000})" >&2

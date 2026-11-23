@@ -31,7 +31,7 @@ class Slurm:
         self.env = {**os.environ, "FAKE_SLURM_Q": str(self.q), "PATH": f"{FAKE}:{os.environ['PATH']}",
                     "FULL_RUNS": str(self.runs), "NO_PULL": "1", "USER": os.environ.get("USER", "me")}
         for key in ("WORKERS", "SEGMENT_GAMES", "PER_JOB", "ITERS", "GPU_HOURS", "BALANCE", "CHAIN", "MONITOR",
-                    "ANCHORS", "CAP_SINCE", "OLD_WATCHDOG", "NEW_WATCHDOG", "DRY_RUN"):
+                    "ANCHORS", "CAP_SINCE", "OLD_WATCHDOG", "NEW_WATCHDOG", "DRY_RUN", "BALANCE_ANY_SEGMENT"):
             self.env.pop(key, None)
 
     def launch(self, **settings):
@@ -111,7 +111,7 @@ def test_switch_to_workers_more_iterations_and_a_cap(hybrid):
         "400", "2026-11-22T12:28:44", "1", "hybrid-it13")
     env = slurm.env_of(chain[0])
     assert (env["WORKERS"], env["SEGMENT_GAMES"], env["ITERS"], env["MAX_ITER"], env["BALANCE"], env["GAMES_PER_ITER"]) \
-        == ("5", "500", "2", "20", "1", "10000")
+        == ("5", "2000", "2", "20", "1", "10000")  # BALANCE=1: the segment the balance prior is calibrated on
     assert jobs[full[0]]["state"] == "RUNNING"  # the running job is kept
     assert [jobs[n]["state"] for n in full[1:]] == ["CANCELLED", "CANCELLED"]
     assert jobs[watchdog]["state"] == "CANCELLED" and jobs[other_wd]["state"] == "RUNNING"
@@ -119,7 +119,7 @@ def test_switch_to_workers_more_iterations_and_a_cap(hybrid):
     assert cancels == [f"scancel state=PENDING name= {full[1]} {full[2]}", f"scancel state= name= {watchdog}"]
     root = slurm.runs / "h1"
     settings = (root / "launch_settings.txt").read_text()
-    assert "iters 20" in settings and "workers 5  segment_games 500  per_job 2  gpu_hours 400  balance 1" in settings
+    assert "iters 20" in settings and "workers 5  segment_games 2000  per_job 2  gpu_hours 400  balance 1" in settings
     history = (root / "launch_settings.history").read_text().splitlines()
     assert "iters 4" in history[0] and "workers" not in history[0]
     assert history[1].split("\t")[1] == f"watchdog {watchdog} replaced by {new_wd}"
@@ -136,7 +136,8 @@ def test_a_cap_change_needs_the_new_watchdog(hybrid):
 @pytest.mark.parametrize("change, message", [
     ({"GAMES_PER_ITER": 20000}, "may change engine, balance, iters"),
     ({"WIDE": 1}, "may change engine, balance, iters"),
-    ({"SEGMENT_GAMES": 300}, "multiple of SEGMENT_GAMES"),
+    ({"SEGMENT_GAMES": 300, "BALANCE_ANY_SEGMENT": 1}, "multiple of SEGMENT_GAMES"),
+    ({"SEGMENT_GAMES": 500}, "calibrated on 2000-game segments"),
 ])
 def test_what_the_lineage_is_stays(hybrid, change, message):
     slurm, *_ = hybrid
@@ -153,6 +154,20 @@ def test_balance_is_kept_unless_given(hybrid):
     newest = max(slurm.jobs(), key=int)
     assert slurm.env_of(newest)["BALANCE"] == "1"
     assert "balance 1" in (slurm.runs / "h1" / "launch_settings.txt").read_text()
+
+
+def test_a_smaller_balance_segment_needs_the_override(hybrid):
+    slurm, *_ = hybrid
+    result = slurm.launch(**{**SWITCH, "SEGMENT_GAMES": 500, "BALANCE_ANY_SEGMENT": 1})
+    assert result.returncode == 0, result.stderr
+    assert slurm.env_of(max(slurm.jobs(), key=int))["SEGMENT_GAMES"] == "500"
+
+
+def test_workers_without_balance_keep_the_500_segment(hybrid):
+    slurm, *_ = hybrid
+    result = slurm.launch(**{**SWITCH, "BALANCE": 0})
+    assert result.returncode == 0, result.stderr
+    assert slurm.env_of(max(slurm.jobs(), key=int))["SEGMENT_GAMES"] == "500"
 
 
 def test_a_watchdog_without_a_log_must_be_named(hybrid):

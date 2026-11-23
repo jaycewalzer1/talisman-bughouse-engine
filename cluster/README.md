@@ -249,14 +249,18 @@ watchdog, so two never run together (if that cancel fails, the new one is cancel
 watching without the cap). The new one keeps the old one's `monitor`/`anchors` (its last `watching` line in
 `watchdog.log`; `MONITOR`/`ANCHORS` override) and counts the cap from the run's first `watching` line (`CAP_SINCE`
 overrides; its crash checks start now). With `BALANCE=1`, `GAMES_PER_ITER` must be a multiple of `SEGMENT_GAMES`.
+With `BALANCE=1` the workers' segment defaults to 2000 games (not 500) and another size is refused unless
+`BALANCE_ANY_SEGMENT=1`: the balance controller's noise terms (the prior's sigma_hat/tau_hat and the pooled
+sigma_samples) are measured on 2000-game segments and are not rescaled by game count, so smaller segments would
+overstate Z. 5 workers with 2000-game segments play hybrid1's 10000 games in one round (about 2.55 h).
 Tested locally end to end on a copy of `runs/wave2/int-shared` with the fake Slurm in `tests/cluster/fake_slurm`
 (`tests/cluster/test_launch_switch.py` covers the launcher alone).
 
 ```bash
 # hybrid1: 5 workers per iteration from it3 on (it2 finishes single-GPU), 20 iterations, a 400 GPU-hour cap
-DRY_RUN=1 RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 ITERS=20 CHAIN=10 GPU_HOURS=400 \
+DRY_RUN=1 RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 SEGMENT_GAMES=2000 ITERS=20 CHAIN=10 GPU_HOURS=400 \
   bash cluster/launch_full_run.sh
-RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 ITERS=20 CHAIN=10 GPU_HOURS=400 \
+RESUME=1 REPLACE_PENDING=1 NEW_WATCHDOG=1 RUN=hybrid1 BALANCE=1 WORKERS=5 SEGMENT_GAMES=2000 ITERS=20 CHAIN=10 GPU_HOURS=400 \
   bash cluster/launch_full_run.sh
 ```
 
