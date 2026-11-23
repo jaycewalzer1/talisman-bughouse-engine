@@ -8,12 +8,14 @@
 # The arena settings are the final match's (cluster/launch_final_match.sh): pool arena/pools/wave2.json, the pool's
 # contender (kind wave2) with the candidate's options, opponent upstream-it13, bughouse openings, rules v3, BASE_MS
 # 120000 equal clocks, MEASURE=1 (measures only an arm the candidate does not give an ms_per_node: with the space's
-# "fixed" charge both arms carry theirs), the engine pin as ENGINE_REF. Part k plays seed SEED_BASE + k with the same
+# "fixed" charge both arms carry theirs), the checked-out fork commit as ENGINE_REF (its engine/ code must equal the
+# pin's). Part k plays seed SEED_BASE + k with the same
 # PAIRS_PER_PART for every candidate of a round, so candidates meet the same openings in the same colours, pair by
 # pair (tune_status.py pairs them). SEED_BASE 5000 keeps tuning off the final match's (3000) and the long test's
 # (1000) schedules. A folder is never reused: the candidate's folder must not exist.
-# Settings: NAME (round), CAND (candidate JSON), PARTS (2), PAIRS_PER_PART (150: ~300 games fit 8 h, so the job ends
-# about when its schedule does), SEED_BASE (5000), BASE_MS (120000), TIME (08:00:00), WORKERS (3), TUNE_RUNS
+# Settings: NAME (round), CAND (candidate JSON), PARTS (2), PAIRS_PER_PART (150: more than most 8 h jobs play,
+# 238-296 in r4, so a part usually ends at its time limit without summary.json; tune_status.py reads its state from
+# jobs.tsv through squeue), SEED_BASE (5000), BASE_MS (120000), TIME (08:00:00), WORKERS (3), TUNE_RUNS
 # (runs/tune), DRY_RUN (0), SBATCH_DEPENDENCY (e.g. afterok:<job>). Cost: about 1.6 GPU-minutes a game at 120 s.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -55,6 +57,9 @@ have=$(git -C "$W2_DIR" rev-parse HEAD)
 if [ "$have" != "$PIN" ] && ! git -C "$W2_DIR" diff --quiet "$have" "$PIN" -- engine 2>/dev/null; then
   echo "$W2_DIR is at $have with other engine code than the pin $PIN: build at the pin first" >&2; exit 1
 fi
+# eval.sbatch refuses unless the fork HEAD equals ENGINE_REF exactly, so pin the commit actually checked out (same engine/
+# code as the pin, checked above), not the pin itself.
+RUN_REF="$have"
 if [ "$DRY_RUN" != 1 ]; then
   [ -e "$OUT" ] && { echo "$OUT exists: a round's candidate is launched once (new NAME, or another candidate)" >&2; exit 1; }
   mkdir -p "$OUT"
@@ -69,13 +74,13 @@ for k in $(seq "$PARTS"); do
   job="tune_${ROUND}_${CNAME}_p$k"
   if [ "$DRY_RUN" = 1 ]; then
     printf 'NAME=%q ENGINE_REF=%s OPPONENT=upstream-it13 CONTENDER_KW=%q %sBASE_MS=%s PAIRS=%s SEED=%s WORKERS=%s %s sbatch --parsable %s-t %s -J %s cluster/eval.sbatch\n' \
-      "${dir#runs/}" "$PIN" "$CKW" "$( [ "$OKW" = "{}" ] || printf 'OPPONENT_KW=%q ' "$OKW")" "$BASE_MS" \
+      "${dir#runs/}" "$RUN_REF" "$CKW" "$( [ "$OKW" = "{}" ] || printf 'OPPONENT_KW=%q ' "$OKW")" "$BASE_MS" \
       "$PAIRS_PER_PART" $((SEED_BASE + k)) "${WORKERS:-3}" "${W2[*]}" \
       "${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY }" "$TIME" "$job"
     continue
   fi
   mkdir -p "$dir"
-  id=$(export NAME="${dir#runs/}" ENGINE_REF="$PIN" OPPONENT=upstream-it13 CONTENDER_KW="$CKW" BASE_MS="$BASE_MS" \
+  id=$(export NAME="${dir#runs/}" ENGINE_REF="$RUN_REF" OPPONENT=upstream-it13 CONTENDER_KW="$CKW" BASE_MS="$BASE_MS" \
          PAIRS="$PAIRS_PER_PART" SEED=$((SEED_BASE + k)) WORKERS="${WORKERS:-3}" "${W2[@]}"
        [ "$OKW" = "{}" ] || export OPPONENT_KW="$OKW"
        sbatch --parsable ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} -t "$TIME" -J "$job" cluster/eval.sbatch)
@@ -85,5 +90,5 @@ done
 if [ "$DRY_RUN" = 1 ]; then
   echo "# dry run: $CNAME of round $ROUND, $PARTS parts x $PAIRS_PER_PART pairs; nothing submitted"
 else
-  echo "$CNAME (round $ROUND): ${#ids[@]} jobs (${ids[*]}), engine pin $PIN, $OUT"
+  echo "$CNAME (round $ROUND): ${#ids[@]} jobs (${ids[*]}), engine $RUN_REF (pin $PIN), $OUT"
 fi

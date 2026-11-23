@@ -31,6 +31,9 @@ have=$(git -C "$W2_DIR" rev-parse HEAD)
 if [ "$have" != "$PIN" ] && ! git -C "$W2_DIR" diff --quiet "$have" "$PIN" -- engine 2>/dev/null; then
   echo "$W2_DIR is at $have with other engine code than the pin $PIN: build at the pin first" >&2; exit 1
 fi
+# eval.sbatch refuses unless the fork HEAD equals ENGINE_REF exactly, so pin the commit actually checked out (same engine/
+# code as the pin, checked above), not the pin itself.
+RUN_REF="$have"
 mkdir -p "$OUT/models"
 cp "$ENGINES" "$OUT/engines.json"
 
@@ -73,7 +76,7 @@ while IFS=$'\t' read -r label opponent ckw okw; do
   for k in $(seq "$PARTS"); do
     dir="$OUT/$label/part$k"
     mkdir -p "$dir"
-    id=$(export NAME="${dir#runs/}" ENGINE_REF="$PIN" OPPONENT="$opponent" CONTENDER_KW="$ckw" BASE_MS="$BASE_MS" \
+    id=$(export NAME="${dir#runs/}" ENGINE_REF="$RUN_REF" OPPONENT="$opponent" CONTENDER_KW="$ckw" BASE_MS="$BASE_MS" \
            PAIRS="$PAIRS_PER_PART" SEED=$((SEED_BASE + k)) "${W2[@]}"
          [ "$okw" = "{}" ] || export OPPONENT_KW="$okw"
          sbatch --parsable -J "fm_${MATCH}_${label}_p$k" cluster/eval.sbatch)
@@ -82,5 +85,5 @@ while IFS=$'\t' read -r label opponent ckw okw; do
   done
   echo "$label: vs $opponent, $GAMES games in $PARTS parts"
 done < "$OUT/pairings.tsv"
-echo "final match $OUT: ${#ids[@]} jobs (${ids[*]}), engine pin $PIN"
+echo "final match $OUT: ${#ids[@]} jobs (${ids[*]}), engine $RUN_REF (pin $PIN)"
 echo "status: .venv/bin/python cluster/final_match_status.py $OUT"
