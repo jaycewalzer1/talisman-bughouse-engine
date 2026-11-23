@@ -35,6 +35,7 @@ import os
 import random
 import re
 import shlex
+import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -315,8 +316,10 @@ def main(argv=None) -> int:
             p.add_argument("--with-center", action="store_true", help="also play theta itself as 'base'")
         if mode == "combine":
             p.add_argument("--prev", required=True, help="the OAT round folder")
-            p.add_argument("--rule", choices=("positive", "ci"), default="positive",
-                           help="take a side when its dElo > 0 and LLR > 0 (positive) or its 95%% range is above 0")
+            p.add_argument("--rule", choices=("bonf", "ci", "positive"), default="bonf",
+                           help="take a side when its score gain is above 0 at 95%% corrected for the number of "
+                                "candidates read (bonf, default: two-sided alpha 0.05/m), its own 95%% range is "
+                                "above 0 (ci), or dElo > 0 and LLR > 0 (positive: loose, many null picks)")
     args = ap.parse_args(argv)
     if args.space is None:
         prev_space = os.path.join(args.prev, "space.json") if getattr(args, "prev", None) else None
@@ -351,12 +354,18 @@ def main(argv=None) -> int:
             prev = json.load(f)
         st = tune_status.status(args.prev)
         best: dict = {}
-        for row in st["candidates"]:
-            vb = row.get("vs_baseline")
-            if not vb or len(row["params"]) != 1:
-                continue
+        read = [r for r in st["candidates"] if r.get("vs_baseline") and len(r["params"]) == 1]
+        z_bonf = statistics.NormalDist().inv_cdf(1 - 0.025 / max(len(read), 1))
+        for row in read:
+            vb = row["vs_baseline"]
             (pname, v), = row["params"].items()
-            ok = vb["delo_ci95"][0] > 0 if args.rule == "ci" else (vb["delo"] > 0 and vb["llr"] > 0)
+            if args.rule == "bonf":
+                se = vb.get("dscore_se", float("nan"))
+                ok = se == se and vb["dscore"] - z_bonf * se > 0
+            elif args.rule == "ci":
+                ok = vb["delo_ci95"][0] > 0
+            else:
+                ok = vb["delo"] > 0 and vb["llr"] > 0
             if ok and (pname not in best or vb["delo"] > best[pname][1]):
                 best[pname] = (v, vb["delo"])
         if not best:

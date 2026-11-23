@@ -26,6 +26,14 @@ Decisions: H1 when LLR >= ln((1 - beta) / alpha), H0 when LLR <= ln(beta / (1 - 
 MIN_GAMES games (the variance of a handful of games is meaningless). The tests look at the data many times, which is
 what a GSPRT allows; the score ranges are fixed-sample ranges and are too narrow if read only when they look good.
 In an SPSA round (mode "spsa") no candidate is stopped early: the gradient needs every candidate's games.
+Each candidate's test against the baseline is at its own alpha: in a round of m candidates a false H1 somewhere is
+likely (about 1 - 0.95^m when none is better). A pick from such a round is a lead, not evidence; the evidence is the
+combine round's own paired test against the baseline (cluster/tune_round.py combine, more parts).
+
+Part state: a part is over when it wrote summary.json or its slurm job (from <cand>/jobs.tsv, asked through squeue)
+is gone; a part that hits its 8 h limit writes no summary and shows as "ended without summary (timed out?)". Off the
+cluster (no squeue) such a part shows as "no summary (running or timed out ...)". --cancel prints one scancel line
+per decided candidate with its job ids from jobs.tsv (or one --name line per part when jobs.tsv has none).
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ import glob
 import json
 import math
 import os
+import subprocess
 import sys
 
 MIN_GAMES = 100
@@ -141,19 +150,56 @@ def pair_index(g: dict) -> int:
     return (int(digits) - 1) // 2
 
 
-def load_candidate(cand_dir: str) -> dict:
-    """{"pairs": {(part, pair): (points of game 1 + game 2)}, "games", "errors", "wdl", "parts", "finished"} of one
-    candidate; only pairs with both games finished and neither in error count as pairs."""
+def read_jobs(cand_dir: str) -> dict:
+    """{"part<k>": slurm job id} from the candidate's jobs.tsv (cluster/tune_match.sh writes one line per part)."""
+    jobs = {}
+    path = os.path.join(cand_dir, "jobs.tsv")
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                cols = line.rstrip("\n").split("\t")
+                if len(cols) >= 4 and cols[1].startswith("part") and cols[3].strip():
+                    jobs[cols[1]] = cols[3].strip().split(";")[0]
+    return jobs
+
+
+def queued_jobs(ids) -> set | None:
+    """The ids among `ids` still pending or running in slurm (squeue), or None when squeue cannot be asked (not on
+    the cluster): the caller then cannot tell a running part from one that hit its time limit."""
+    ids = sorted({str(i) for i in ids if str(i).isdigit()})
+    if not ids:
+        return set()
+    try:
+        r = subprocess.run(["squeue", "-h", "-o", "%i", "-j", ",".join(ids)], capture_output=True, text=True,
+                           timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 and "Invalid job id" not in r.stderr:
+        return None
+    return {x.strip().split("_")[0] for x in r.stdout.split()} & set(ids)
+
+
+def load_candidate(cand_dir: str, queued=None) -> dict:
+    """{"pairs": {(part, pair): (points of game 1 + game 2)}, "games", "errors", "wdl", "parts", "finished", "state",
+    "jobs"} of one candidate; only pairs with both games finished and neither in error count as pairs. A part is over
+    when it wrote summary.json or its slurm job (jobs.tsv) is no longer queued: a part that hits its time limit
+    writes no summary. "state": "finished" (all parts wrote a summary), "ended" (all over, some without a summary:
+    timed out or failed), "running", or "unknown" (no summary everywhere and squeue not available).
+    queued: the set of job ids still in slurm, or None (ask squeue here)."""
     parts = sorted((d for d in glob.glob(os.path.join(cand_dir, "part*")) if os.path.isdir(d)),
                    key=lambda d: int(os.path.basename(d)[4:]) if os.path.basename(d)[4:].isdigit() else 0)
     by_pair: dict = {}
     errors = 0
     wdl = [0, 0, 0]
+    jobs = read_jobs(cand_dir)
     finished = bool(parts)
+    no_summary = []
     for d in parts:
         part = os.path.basename(d)
         games, done = read_games(d)
         finished = finished and done
+        if not done:
+            no_summary.append(part)
         for g in games:
             if "error" in g:
                 errors += 1
@@ -165,8 +211,17 @@ def load_candidate(cand_dir: str) -> dict:
     for key, gs in by_pair.items():
         if len(gs) == 2 and not any("error" in g for g in gs):
             pairs[key] = sum(game_points(g) for g in gs)
+    if finished or not parts:
+        state = "finished" if finished else "running"
+    else:
+        if queued is None:
+            queued = queued_jobs(jobs.get(p) for p in no_summary)
+        if queued is None or any(p not in jobs for p in no_summary):
+            state = "unknown"
+        else:
+            state = "running" if any(jobs[p] in queued for p in no_summary) else "ended"
     return {"pairs": pairs, "games": sum(wdl), "errors": errors, "wdl": wdl, "parts": len(parts),
-            "finished": finished}
+            "finished": finished, "state": state, "jobs": jobs}
 
 
 # ----------------------------------------------------------------------------------------------- statistics
@@ -204,7 +259,8 @@ def vs_baseline(c: dict, base: dict, delo0: float, delo1: float, alpha: float, b
     n = len(shared)
     out = {"shared_pairs": n, "shared_games": 2 * n}
     if n < 2:
-        return {**out, "dscore": float("nan"), "dscore_ci95": [float("nan")] * 2, "delo": float("nan"),
+        return {**out, "dscore": float("nan"), "dscore_se": float("nan"), "dscore_ci95": [float("nan")] * 2,
+                "delo": float("nan"),
                 "delo_ci95": [float("nan")] * 2, "rho": float("nan"), "llr": 0.0, "decision": "continue"}
     a = [c["pairs"][k] / 2.0 for k in shared]
     b = [base["pairs"][k] / 2.0 for k in shared]
@@ -221,7 +277,7 @@ def vs_baseline(c: dict, base: dict, delo0: float, delo1: float, alpha: float, b
     d1 = expected_score(eb + delo1) - expected_score(eb)
     llr = llr_normal(n, md, max(vd, 1e-9), d0, d1)
     clip = lambda x: min(max(x, 0.0), 1.0)  # the candidate's score on the shared pairs stays a score
-    return {**out, "dscore": md, "dscore_ci95": [md - half, md + half], "delo": to_elo(mb + md),
+    return {**out, "dscore": md, "dscore_se": math.sqrt(vd / n), "dscore_ci95": [md - half, md + half], "delo": to_elo(mb + md),
             "delo_ci95": [to_elo(clip(mb + md - half)), to_elo(clip(mb + md + half))], "rho": rho, "llr": llr,
             "decision": decide(llr, 2 * n, alpha, beta), "base_score_shared": mb}
 
@@ -251,13 +307,17 @@ def status(round_dir: str, elo0: float = 0.0, elo1: float = 20.0, delo0: float =
            alpha: float = 0.05, beta: float = 0.05, baseline: str | None = None) -> dict:
     rnd = load_round(round_dir)
     base_name = baseline or rnd.get("baseline")
-    loaded = {c["name"]: load_candidate(os.path.join(round_dir, c["name"])) for c in rnd["candidates"]}
+    dirs = {c["name"]: os.path.join(round_dir, c["name"]) for c in rnd["candidates"]}
+    all_ids = [i for d in dirs.values() for i in read_jobs(d).values()]
+    queued = queued_jobs(all_ids) if all_ids else set()
+    loaded = {n: load_candidate(d, queued) for n, d in dirs.items()}
     base = loaded.get(base_name) if base_name else None
     rows = []
     for c in rnd["candidates"]:
         data = loaded[c["name"]]
         row = {"name": c["name"], "params": c.get("changed", c.get("params", {})), "parts": data["parts"],
                "errors": data["errors"], "finished": data["finished"],
+               "state": data["state"], "jobs": data["jobs"],
                "vs_opponent": vs_opponent(data, elo0, elo1, alpha, beta)}
         if base is not None and c["name"] != base_name:
             row["vs_baseline"] = vs_baseline(data, base, delo0, delo1, alpha, beta)
@@ -273,8 +333,19 @@ def stoppable(st: dict) -> list[str]:
     if st.get("mode") == "spsa":
         return []
     return [r["name"] for r in st["candidates"]
-            if r["name"] != st["baseline"] and not r["finished"]
+            if r["name"] != st["baseline"] and r.get("state", "running") not in ("finished", "ended")
             and r.get("vs_baseline", {}).get("decision") in ("H0", "H1")]
+
+
+def cancel_line(st: dict, name: str) -> str:
+    """One scancel line for a candidate: by its job ids from jobs.tsv (scancel takes several ids), else one
+    --name line per part (scancel's --name takes a single job name)."""
+    row = next(r for r in st["candidates"] if r["name"] == name)
+    ids = [j for _, j in sorted(row.get("jobs", {}).items(), key=lambda kv: int(kv[0][4:] or 0))
+           if str(j).isdigit()]
+    if ids and len(ids) >= row["parts"]:
+        return "scancel " + " ".join(ids) + f"   # {name}"
+    return "\n".join(f"scancel -u \"$USER\" --name=tune_{st['round']}_{name}_p{k}" for k in range(1, 1 + row["parts"]))
 
 
 def _f(x: float, fmt: str) -> str:
@@ -303,7 +374,12 @@ def format_table(st: dict) -> str:
                   f"{_f(vb['rho'], '+5.2f')} {vb['llr']:+6.2f} {vb['decision']}")
         else:
             s += "  (baseline)" if r["name"] == st["baseline"] else ""
-        if not r["finished"]:
+        state = r.get("state", "finished" if r["finished"] else "running")
+        if state == "ended":
+            s += "  ended without summary (timed out?)"
+        elif state == "unknown":
+            s += "  no summary (running or timed out: squeue unavailable)"
+        elif state == "running":
             s += "  running"
         if r["errors"]:
             s += f"  {r['errors']} errors"
@@ -342,9 +418,7 @@ def main(argv=None) -> int:
         if st.get("mode") == "spsa":
             print("# SPSA round: no candidate is stopped early")
         for n in names:
-            print(f"scancel -u \"$USER\" --name=" + ",".join(
-                f"tune_{st['round']}_{n}_p{k}" for k in range(1, 1 + next(
-                    r["parts"] for r in st["candidates"] if r["name"] == n))))
+            print(cancel_line(st, n))
     return 0
 
 

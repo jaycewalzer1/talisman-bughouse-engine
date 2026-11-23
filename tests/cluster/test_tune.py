@@ -124,6 +124,41 @@ def test_decisions_and_cancel_lines(tmp_path):
     assert ts.decide(10.0, ts.MIN_GAMES - 1, 0.05, 0.05) == "continue"
 
 
+def test_part_state_from_jobs_and_cancel_by_job_id(tmp_path):
+    rnd = make_round(tmp_path, {"base": [[1] * 200], "bad": [[1] * 100 + [0] * 100, [1] * 10]})
+    for k in (1, 2):
+        os.remove(os.path.join(rnd, "bad", f"part{k}", "summary.json"))
+    with open(os.path.join(rnd, "bad", "jobs.tsv"), "w") as f:
+        f.write("bad\tpart1\tseed 5001\t111\nbad\tpart2\tseed 5002\t222;cluster\n")
+    cand = os.path.join(rnd, "bad")
+    assert ts.load_candidate(cand, queued={"222"})["state"] == "running"
+    assert ts.load_candidate(cand, queued=set())["state"] == "ended"   # timed out: no summary, job gone
+    assert ts.load_candidate(os.path.join(rnd, "base"), queued=set())["state"] == "finished"
+    # off the cluster squeue is missing: the state is unknown, never "running forever" by assumption
+    orig = ts.queued_jobs
+    try:
+        ts.queued_jobs = lambda ids: None
+        assert ts.load_candidate(cand)["state"] == "unknown"
+        st = ts.status(rnd)
+        assert ts.stoppable(st) == ["bad"]
+        assert ts.cancel_line(st, "bad") == "scancel 111 222   # bad"
+        assert "squeue unavailable" in ts.format_table(st)
+        ts.queued_jobs = lambda ids: set()
+        st = ts.status(rnd)
+        assert ts.stoppable(st) == []          # its jobs are gone: nothing to cancel
+        assert "ended without summary" in ts.format_table(st)
+    finally:
+        ts.queued_jobs = orig
+
+
+def test_cancel_without_jobs_tsv_prints_one_name_per_line(tmp_path):
+    rnd = make_round(tmp_path, {"base": [[1] * 200, [1]], "bad": [[1] * 100 + [0] * 100, [1]]})
+    os.remove(os.path.join(rnd, "bad", "part2", "summary.json"))
+    st = ts.status(rnd)
+    lines = ts.cancel_line(st, "bad").splitlines()
+    assert lines == ['scancel -u "$USER" --name=tune_r1_bad_p1', 'scancel -u "$USER" --name=tune_r1_bad_p2']
+
+
 def test_round_without_round_json(tmp_path):
     rnd = tmp_path / "x"
     write_row(str(rnd / "base" / "part1"), [1, 2])
@@ -265,6 +300,7 @@ def test_combine_takes_the_sides_that_beat_the_baseline(tmp_path, capsys):
     write_row(str(r1 / "CPUCTInitPermille_2750" / "part1"), [1] * 150 + [0] * 50)
     write_row(str(r1 / "PolicyTemperaturePermille_1100" / "part1"), [1] * 200)
     write_row(str(r1 / "PolicyTemperaturePermille_900" / "part1"), [1] * 190 + [0] * 10)
+    # PolicyTemperaturePermille_900 is 10 losses below the baseline; a barely-positive side is not taken by default
     assert run_round(tmp_path, "combine", "--name", "r2", "--prev", str(r1)) == 0
     r2 = json.load(open(tmp_path / "tune" / "r2" / "round.json"))
     assert r2["taken"].keys() == {"CPUCTInitPermille"}
@@ -275,6 +311,27 @@ def test_combine_takes_the_sides_that_beat_the_baseline(tmp_path, capsys):
     assert cp["value"] == 3250 and cp["default"] == 3000
     # the next round's baseline (from space_next) sends the combined value
     assert tr.candidate_kw(nxt, {}, "fixed")["contender_kw"]["engine_options"] == {"CPUCTInitPermille": 3250}
+
+
+def test_combine_default_rule_corrects_for_the_number_of_candidates(tmp_path, capsys):
+    assert run_round(tmp_path, "oat", "--name", "r1", "--params", "CPUCTInitPermille,PolicyTemperaturePermille") == 0
+    r1 = tmp_path / "tune" / "r1"
+    rng = random.Random(3)
+    base = [rng.choice([0, 1, 1, 2]) for _ in range(300)]
+    write_row(str(r1 / "base" / "part1"), base)
+    # a small gain: its own 95% range is above 0, but not at alpha 0.05 / 4 candidates
+    up = list(base)
+    flips = [i for i, x in enumerate(up) if x == 0][:5]   # d/se = sqrt(5): between 1.96 and z(0.025/4) = 2.50
+    for i in flips:
+        up[i] = 1
+    for name in ("CPUCTInitPermille_3250", "CPUCTInitPermille_2750", "PolicyTemperaturePermille_1100",
+                 "PolicyTemperaturePermille_900"):
+        write_row(str(r1 / name / "part1"), up if name == "CPUCTInitPermille_3250" else base)
+    vb = next(r for r in ts.status(str(r1))["candidates"] if r["name"] == "CPUCTInitPermille_3250")["vs_baseline"]
+    z4 = __import__("statistics").NormalDist().inv_cdf(1 - 0.025 / 4)
+    assert vb["dscore"] - 1.96 * vb["dscore_se"] > 0 > vb["dscore"] - z4 * vb["dscore_se"]
+    assert run_round(tmp_path, "combine", "--name", "r2", "--prev", str(r1)) == 1          # bonf: nothing taken
+    assert run_round(tmp_path, "combine", "--name", "r3", "--prev", str(r1), "--rule", "ci") == 0
 
 
 def test_tune_match_dry_run_prints_the_final_match_settings_and_creates_nothing(tmp_path):
@@ -288,10 +345,12 @@ def test_tune_match_dry_run_prints_the_final_match_settings_and_creates_nothing(
     assert r.returncode == 0, r.stderr
     lines = [l for l in r.stdout.splitlines() if "sbatch" in l]
     assert len(lines) == 3
-    pin = open(os.path.join(REPO, "cluster", "wave2_engine.ref")).read().strip()
+    # ENGINE_REF is the fork's checked-out commit (eval.sbatch refuses any other), which the pin check allowed
+    head = subprocess.run(["git", "-C", os.path.join(REPO, "third_party", "wave2-hivemind"), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
     for k, line in enumerate(lines, 1):
         assert f"-J tune_t_dry_clock_k_220_p{k} cluster/eval.sbatch" in line
-        assert f"SEED={5000 + k} " in line and "BASE_MS=120000" in line and f"ENGINE_REF={pin}" in line
+        assert f"SEED={5000 + k} " in line and "BASE_MS=120000" in line and f"ENGINE_REF={head}" in line
         for s in ("POOL=arena/pools/wave2.json", "SETUP=pool", "OPENINGS=bughouse", "RULES=v3", "MEASURE=1",
                   "OPPONENT=upstream-it13", "PAIRS=150", "-t 08:00:00"):
             assert s in line

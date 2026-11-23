@@ -74,7 +74,8 @@ Round kinds:
   plus/minus differences, clipped to `--max-move` steps, then writes the next pairs around the new theta. Numeric
   parameters only; `clock_k` moves on a log2 scale (one step = x1.41). SPSA rounds are never stopped early.
 - `combine --prev <oat or grid round>`: one candidate with every single-parameter change that beat the baseline
-  (`--rule positive`: dElo > 0 and LLR > 0; `--rule ci`: the 95% range above 0), against the baseline, with more parts
+  (default `--rule bonf`: the score gain above 0 at two-sided alpha 0.05/m for the m single-parameter candidates
+  read; `--rule ci`: its own 95% range above 0; `--rule positive`: dElo > 0 and LLR > 0, loose), against the baseline, with more parts
   (default 6). Writes `space_next.json` with those values as the next round's baseline (`--space` it next time).
 
 Every round folder holds `round.json`, `space.json` (the space it was written from), `candidates/*.json`, `launch.sh`,
@@ -89,8 +90,20 @@ decision uses) and `LLR3` on per-game W/D/L (rl_loop.py's `sprt_llr`). Against t
 with a 95% range, `rho` (correlation of the two candidates' pair scores on the same openings: how much the pairing
 helps), and a GSPRT on the paired differences of `H0: dElo = delo0` against `H1: dElo = delo1` (default `[0, 30]`),
 alpha = beta = 0.05, no decision before 100 games. `--cancel` prints `scancel` lines for candidates decided against
-the baseline (either way), never the baseline, never in an SPSA round. The 95% ranges are fixed-sample ranges: read
-them at the end, not every hour.
+the baseline (either way), never the baseline, never in an SPSA round: one `scancel <job ids>` line per candidate
+from its `jobs.tsv` (or one `--name` line per part, since `scancel --name` takes a single name). The 95% ranges are
+fixed-sample ranges: read them at the end, not every hour.
+
+**Many candidates, one alpha.** Each candidate's test against the baseline runs at its own alpha 0.05. With m null
+candidates in a round, a false H1 somewhere has probability about 1 - 0.95^m (23% at m = 5), and at ~1,150 games a
+candidate the dElo range is about +-57. A winner of a one-at-a-time or grid round is a lead, not evidence: the only
+evidence is the combine round's own paired test of the combined candidate against the baseline (more parts). Confirm
+a winner there, then once more with `--charge measure`, before it goes into the final match's ENGINES.
+
+**Part state.** A part is over when it wrote `summary.json` or its slurm job (from `jobs.tsv`, through `squeue`) has
+left the queue. A part that hits its 8 h limit (PAIRS_PER_PART 150 = 300 games is more than most 8 h jobs play; r4's
+parts played 238-296) writes no summary and shows as `ended without summary (timed out?)`; its finished pairs still
+count. Off the cluster, without `squeue`, such a part shows as `no summary (running or timed out ...)`.
 
 ## How many games
 
