@@ -68,8 +68,10 @@ for a, b in itertools.combinations(engines, 2):
     print("\t".join([label, opponent, json.dumps(a["kw"]), json.dumps(b["kw"])]))
 EOF
 
+# Warm measurement: a cold first-measured arm reads ~20% slow and gets ~20% fewer nodes per clock second
+# (docs/speed_gap.md; hybrid1 it2 anchors charged ours 0.050-0.052 vs the opponent 0.040-0.042).
 W2=(POOL=arena/pools/wave2.json SETUP=pool OPENINGS=bughouse RULES=v3 MEASURE=1 MEASURE_NODES=800
-    "WARM_KINDS=upstream wave2")
+    "WARM_KINDS=upstream wave2" "MEASURE_WARM_MS=${MEASURE_WARM_MS:-3000}" "MEASURE_REPEATS=${MEASURE_REPEATS:-10}")
 PAIRS_PER_PART=$((GAMES / 2 / PARTS))
 ids=()
 while IFS=$'\t' read -r label opponent ckw okw; do

@@ -159,8 +159,10 @@ print(f"{anchor}: {summary['games']} games, score {summary['score']:.3f}, Elo {s
 EOF
 }
 
+# Warm measurement: a cold first-measured arm reads ~20% slow and gets ~20% fewer nodes per clock second
+# (docs/speed_gap.md; hybrid1 it2 anchors charged ours 0.050-0.052 vs the opponent 0.040-0.042).
 W2=(POOL=arena/pools/wave2.json SETUP=pool OPENINGS=bughouse RULES=v3 MEASURE=1 MEASURE_NODES=800
-    "WARM_KINDS=upstream wave2")
+    "WARM_KINDS=upstream wave2" "MEASURE_WARM_MS=${MEASURE_WARM_MS:-3000}" "MEASURE_REPEATS=${MEASURE_REPEATS:-10}")
 all_done=1
 while IFS=$'\t' read -r anchor opponent okw ckw games parts seed_base base_ms ref; do
   adir="$OUT/$anchor"
