@@ -112,6 +112,19 @@ export function runsApi(): Plugin {
           res.end(JSON.stringify(r))
         })
       })
+      // GET /api/study/<path under runs/study>: tools/study_games.py output and the synced game logs, for study.html.
+      server.middlewares.use('/api/study', (req, res) => {
+        const parts = decodeURIComponent((req.url ?? '/').split('?')[0]).split('/').filter(Boolean)
+        const file = parts.length && parts.every(p => SAFE.test(p) && p !== '.' && p !== '..')
+          ? path.join(RUNS_DIR, 'study', ...parts) : null
+        if (!file || !/\.jsonl?$/.test(file) || !fs.existsSync(file)) {
+          res.statusCode = 404
+          res.end('not found')
+          return
+        }
+        res.setHeader('Content-Type', file.endsWith('.jsonl') ? 'application/x-ndjson' : 'application/json')
+        fs.createReadStream(file).pipe(res)
+      })
       server.middlewares.use('/api/runs', (req, res) => {
         const parts = decodeURIComponent((req.url ?? '/').split('?')[0]).split('/').filter(Boolean)
         if (parts.length === 0) {

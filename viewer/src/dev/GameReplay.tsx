@@ -13,7 +13,10 @@ import { replayStops } from './analyze'
 
 const fmtEval = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`
 
-export default function GameReplay({ events, onCursor }: { events: GameEvent[]; onCursor: (ts: number) => void }) {
+// jump: seek to the last stop at or before jump.ts (n changes on every request, so the same moment can be re-picked).
+export default function GameReplay({ events, onCursor, jump }: {
+  events: GameEvent[]; onCursor: (ts: number) => void; jump?: { ts: number; n: number }
+}) {
   const stops = useMemo(() => replayStops(events), [events])
   const source = useMemo(() => createReplaySource(events), [events])
   const [cur, setCur] = useState(0)
@@ -70,6 +73,13 @@ export default function GameReplay({ events, onCursor }: { events: GameEvent[]; 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [cur, goto, last, togglePlay])
+
+  useEffect(() => {
+    if (!jump || !stops.length) return
+    let i = 0
+    while (i < last && stops[i + 1].ts <= jump.ts) i++
+    goto(i)
+  }, [jump]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ts = stops[cur]?.ts
   useEffect(() => { if (ts != null) onCursor(ts) }, [onCursor, ts])

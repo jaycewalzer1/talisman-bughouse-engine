@@ -1,0 +1,61 @@
+/* Game study page (study.html), on the dev panel's tokens (dev.css). Us/them series colours pass the dataviz
+   palette validator on the panel ground: us #2f62b0, them #b07a24. */
+
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; margin: 0; }
+.st-page { min-height: 100vh; }
+.st-main { display: grid; gap: 32px; padding: 20px 24px 48px; max-width: 1500px; }
+.st-main h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.st-main h2 small, .st-main h3 small { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--dim); }
+.st-main h3 { margin: 18px 0 8px; font-size: 13px; font-weight: 600; }
+.st-note { margin: 0 0 8px; color: var(--dim); max-width: 90ch; }
+.st-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.st-seg { display: flex; gap: 4px; }
+.st-seg .on { background: var(--selected); font-weight: 500; }
+.st-sort select { font: inherit; }
+
+.st-find ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 110ch; line-height: 1.5; }
+.st-find b { font-weight: 600; }
+
+.st-table tbody tr, .st-list tbody tr { cursor: pointer; }
+.st-table tbody tr:hover, .st-list tbody tr:hover { background: var(--hover); }
+.st-table tbody tr.on, .st-list tbody tr.on { background: var(--selected); }
+.st-list { max-height: 420px; overflow-y: auto; }
+.st-win { color: var(--good); font-weight: 500; }
+.st-loss { color: var(--bad); font-weight: 500; }
+
+.st-chartwrap { position: relative; max-width: 720px; }
+.st-tip { position: absolute; top: 8px; right: 8px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 4px; padding: 6px 8px; line-height: 1.45; pointer-events: none; }
+
+.st-strips { display: grid; gap: 6px; max-width: 760px; }
+.st-strip { margin: 0; }
+.st-strip figcaption { color: var(--dim); margin-bottom: 2px; }
+.st-strip svg { cursor: crosshair; }
+.st-key { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: 3px; margin: 0 2px 0 8px; }
+.st-mark { stroke-width: 1; }
+.st-mark.turn { stroke: var(--text); stroke-dasharray: 4 3; stroke-width: 1.5; }
+.st-mark.swing { stroke: var(--bad); stroke-opacity: .55; }
+.st-mark.sit-us { stroke: #2f62b0; stroke-opacity: .25; }
+.st-mark.sit-them { stroke: #b07a24; stroke-opacity: .3; }
+.st-legend { display: inline-block; padding-left: 16px; margin-right: 10px; position: relative; }
+.st-legend::before { content: ''; position: absolute; left: 0; top: 50%; width: 12px; border-top: 2px solid; }
+.st-legend.turn::before { border-top-style: dashed; border-color: var(--text); }
+.st-legend.swing::before { border-color: var(--bad); }
+.st-legend.sit-us::before { border-color: #2f62b0; }
+.st-legend.sit-them::before { border-color: #b07a24; }
+
+.st-moments { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-width: 110ch; }
+.st-moments button { display: grid; grid-template-columns: 64px 160px 1fr; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; border-left: 3px solid var(--line); padding: 5px 8px; cursor: pointer; }
+.st-moments button:hover { background: var(--hover); }
+.st-moments .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+.st-moments .d { color: var(--dim); }
+.st-moments .turn button { border-left-color: var(--text); }
+.st-moments .swing button { border-left-color: var(--bad); }
+.st-moments .sit-us button { border-left-color: #2f62b0; }
+.st-moments .sit-them button { border-left-color: #b07a24; }
+.st-moments .mate button { border-left-color: var(--good); }
+
+@media (max-width: 700px) {
+  .st-main { padding: 16px; }
+  .st-moments button { grid-template-columns: 56px 1fr; }
+  .st-moments .d { grid-column: 1 / -1; }
+}
