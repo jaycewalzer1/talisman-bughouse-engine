@@ -223,3 +223,13 @@ def test_gives_up_after_max_tries_and_merges_what_it_has(gate):
     r = gate.call(GATE2_ARMS="equal", GATE2_GAMES=8, GATE2_PARTS=2)
     s = json.loads((gate.net / "equal" / "summary.json").read_text())
     assert s["pairs"] == 3 and s["gave_up"] == [2] and (gate.net / "done").is_file()
+
+
+def test_without_launch_settings_the_pin_names_the_engine(gate):
+    """A run root without launch_settings.txt (not a launcher layout) falls back to cluster/wave2_engine.ref instead of
+    exiting silently under pipefail."""
+    (gate.root / "launch_settings.txt").unlink()
+    (gate.repo / "cluster" / "wave2_engine.ref").write_text(gate.head + "\n")
+    r = gate.call(DRY_RUN=1)
+    assert r.returncode == 0, r.stderr
+    assert sum(line.startswith("DRY_RUN") for line in r.stdout.splitlines()) == 8

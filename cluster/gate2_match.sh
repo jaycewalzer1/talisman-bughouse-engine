@@ -79,7 +79,7 @@ fi
 # The engine the run plays: the commit in its launch_settings.txt ("engine <sha>"), else the pin. The checkout may be
 # at another commit only when the engine code is the same (eval.sbatch then gets the checkout's HEAD as ENGINE_REF).
 W2_DIR=third_party/wave2-hivemind
-want=$(sed -n 's/.*  engine \([0-9a-f]\{7,40\}\).*/\1/p' "$RUN_ROOT/launch_settings.txt" 2>/dev/null | head -1)
+want=$(sed -n 's/.*  engine \([0-9a-f]\{7,40\}\).*/\1/p' "$RUN_ROOT/launch_settings.txt" 2>/dev/null | head -1 || true)
 want="${want:-$(cat cluster/wave2_engine.ref)}"
 have=$(git -C "$W2_DIR" rev-parse HEAD 2>/dev/null || echo none)
 if [ "${have#"$want"}" = "$have" ] && ! git -C "$W2_DIR" diff --quiet "$have" "$want" -- engine 2>/dev/null; then
