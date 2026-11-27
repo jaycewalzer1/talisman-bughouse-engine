@@ -409,3 +409,41 @@ status. Cost gets `balance_overhead_gpu_hours` (inside the iteration's window, s
 `selfplay_gpu_h_by_arm`, and on the first balance iteration `balance_prior_gpu_hours` / `gpu_hours_total` (what
 `gpu_hours_cum` and `elo_per_gpu_hour` use). The dev panel's Metrics step has a "Search balance" section. Status by
 hand: `.venv/bin/python cluster/search_balance.py status runs/full/<RUN>`.
+
+## League pilot
+
+Phase 2 of `docs/plan_league_2026-11-25.md` (spec `docs/custom_engine_spec_v7_league.md` 7): two iterations of
+twin-s it13 (narrow, hybrid config) with per-game pace randomization (`--pace`), league opponents (`--league`: past
+generators and it13 at fixed paces), think_gain labels and the learned time policy (`--think-labels --think-policy
+--think-weight 0.1`) and the real-clock two-score gate (`--gate2`). `cluster/launch_league_pilot.sh` wraps
+`launch_full_run.sh` (unchanged) with `WIDE=0 ITERS=2 GAMES_PER_ITER=10000 WORKERS=3 SEGMENT_GAMES=500 GPU_HOURS=100
+CHAIN=2`; `PACE=0 LEAGUE=0 THINK=0 GATE2=0` drop a switch, `EXTRA` appends rl-loop flags, a `GATE2_*` setting off its
+default reaches both rl-loop (`--gate2-*`) and the pre-submitted arms.
+
+```bash
+DRY_RUN=1 RUN=league1 bash cluster/launch_league_pilot.sh   # prints every sbatch, the gate2 parts, writes nothing
+BUILD=1 RUN=league1 bash cluster/launch_league_pilot.sh     # first launch after the pin bump (PACE W2 is at 0839774)
+python3 cluster/league_pilot_status.py runs/full/league1     # --json for the raw numbers
+```
+
+Preflight refuses a pin (`cluster/wave2_engine.ref`) without d5802ee, and without `BUILD=1` stops with the build
+commands when the checkout is off the pin or `build-sp1`/`build-ninja` lack `--pace-k-min`/`--opponent-model`/
+`--think-policy` or rl-loop lacks `--pace`/`--league`/`--think-labels`/`--gate2` (for the switches on). `BUILD=1`
+moves the checkout to the pin (clean, none of your jobs queued; `ALLOW_BUSY=1`) and submits `lb_<RUN>`
+(`cluster/build.sh`, then `cluster/build_sp1.sh`); `THINK=1` submits the think check `tg_<RUN>`
+(`cluster/think_gain_check.sbatch`, after the build). The chain waits for both (`afterok`, through an sbatch shim on
+`launch_full_run.sh`'s PATH that turns `--dependency=singleton` into `--dependency=afterok:<ids>,singleton`). With
+`GATE2=1` the launcher then writes `runs/full/<RUN>/gate2/wave2.json` and pre-submits it13's two gate arms
+(`cluster/gate2_match.sh RUN_ROOT incumbent <it13 onnx>`, eval jobs after the build via `SBATCH_DEPENDENCY`), so
+iteration 1 waits only for the candidate's arms. Build and think check ids go to `runs/full/<RUN>/pilot_jobs.tsv`.
+
+**Cost and cap.** About 41 GPU-hours for iteration 1 (self-play ~13, val 0.7, labels 1.5, train 1.7, 100 ms gate 1.2,
+gate2 candidate 10.7 + incumbent 10.7, idle main job ~1.5) and about 30 for iteration 2. The watchdog's `GPU_HOURS`
+(100) counts `full_`, `sp_`, `mon_`, `am_` and now `g2_<RUN>_*`, `tg_<RUN>`, `lb_<RUN>` jobs; at the cap it also
+cancels their pending jobs, and `gate2_match.sh` stops submitting on `STOP_WORKERS`. Runs without such jobs count
+as before.
+
+**Phase 0 (chk1).** On the Mac, `bash cluster/phase0_chk1.sh` copies `runs/tune/chk1` (sym160, rev_opp160; small files
+only) from `pace` into `runs/study/tune/chk1`, writes and prints `status.txt` (`tune_status.py`; no `round.json`
+needed) and rebuilds `runs/study/study.json` (`tools/study_games.py`). `SRC=<dir>` copies a local folder instead,
+`REMOTE=<host>` another ssh alias, `DRY_RUN=1` prints the rsync.
