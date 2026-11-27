@@ -173,12 +173,11 @@ def test_submits_once_and_merges_finished_parts(gate):
     rows = (gate.net / "free" / "pairs.tsv").read_text().splitlines()
     assert rows[0] == "part\tpair_index\topening_id\tcontender_team\tscore_pair\tgame_ids"
     assert rows[1] == "1\t0\t100\tT1,T2\t0.5\tp00001,p00002" and len(rows) == 201
-    import sys
-    sys.path.insert(0, os.path.join(W2, "src"))
-    try:
-        from hivemind import gate2
-    finally:
-        sys.path.pop(0)
+    # The fork's reader takes the file (loaded by path: another `hivemind`, the old stack's, may be imported).
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("w2_gate2", os.path.join(W2, "src", "hivemind", "gate2.py"))
+    gate2 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate2)
     assert len(gate2.read_pairs(gate.net, "free")) == 200
     assert gate.call().stdout == ""  # done: nothing more
 
