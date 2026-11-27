@@ -73,6 +73,28 @@ def _close(player) -> None:
         pass
 
 
+# Spec v7 counters a controller reports when one of its v7 options is on (opponent sit pace from observation, the
+# learned time policy). They ride on the game's ``game_end`` event under "controller_telemetry" ({team: {...}}), so
+# summaries (and summaries rebuilt from the event file on resume) carry them; cluster/gate2_match.sh sums
+# ``think_head_missing`` for our team. Controllers with every v7 option off add nothing: their files stay as before.
+V7_TELEMETRY_KEYS = ("opp_sit_pace", "opp_k_levels", "think_looks", "think_head_missing", "think_gain_sum",
+                     "think_scale_sum")
+
+
+def controller_telemetry(created) -> dict:
+    """{team: v7 counters} for the team controllers behind ``created`` (seat players) with a v7 option on."""
+    out: dict = {}
+    for p in created:
+        ctl = getattr(p, "controller", None)
+        if ctl is None or not hasattr(ctl, "telemetry") or getattr(ctl, "team", None) in out:
+            continue
+        if not getattr(ctl, "think_head", False) and getattr(ctl, "opp_sit_pace", "own_k") == "own_k":
+            continue
+        tel = ctl.telemetry()
+        out[ctl.team] = {k: tel[k] for k in V7_TELEMETRY_KEYS if k in tel}
+    return out
+
+
 def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
     """Build players and run one game. spec keys: game_id, t1_setup, t2_setup, kind, seed, nodes,
     base_ms, increment_ms, fens, channel_delay_ms, max_plies, charge_wall_time, player_kw (optional), rules
@@ -117,7 +139,11 @@ def play_game(spec: dict, on_event=None) -> tuple[list[dict], object]:
             if on_event is not None:
                 on_event(end)
             return events, GameResult("draw", "aborted")
-        return [event_to_dict(e) for e in sim.events], result
+        events = [event_to_dict(e) for e in sim.events]
+        tel = controller_telemetry(created)
+        if tel and events and events[-1].get("type") == "game_end":
+            events[-1] = {**events[-1], "controller_telemetry": tel}
+        return events, result
     finally:
         for p in created:
             _close(p)

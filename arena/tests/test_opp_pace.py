@@ -333,7 +333,7 @@ def _first_decision(proc, **kw):
 
 
 def test_think_head_quick_look_then_scaled_budget_both_charged():
-    tp = pytest.importorskip("arena.think_policy")
+    import arena.think_policy as tp
     proc = LegalProcess(gain=(0.6, 0.1), look_nodes=20)
     ctl, dec = _first_decision(proc, think_head=True, new_game_at_start=True)
     clock_budget = round(60_000 / 110 / 2.0)  # 273 nodes
@@ -351,7 +351,7 @@ def test_think_head_quick_look_then_scaled_budget_both_charged():
 
 
 def test_think_head_missing_line_keeps_the_clock_budget():
-    tp = pytest.importorskip("arena.think_policy")
+    import arena.think_policy as tp
     proc = LegalProcess(gain=None)
     ctl, dec = _first_decision(proc, think_head=True)
     clock_budget = round(60_000 / 110 / 2.0)
@@ -367,7 +367,6 @@ def test_think_head_off_runs_one_search():
 
 
 def test_think_head_in_a_game_with_opp_pace_observed():
-    pytest.importorskip("arena.think_policy")
     ctl, proc = play({"opp_sit_pace": "observed", "think_head": True}, proc=LegalProcess(gain=(0.2, 0.2)))
     t = ctl.telemetry()
     assert t["think_looks"] == t["searches"] > 10 and t["think_head_missing"] == 0

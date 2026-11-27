@@ -119,6 +119,7 @@ def summarize_game(events: Iterable[dict]) -> dict:
     Top-level: game_id, setup, result, reason, board, loser_seat, loser_team, plies, duration_ms,
     flag (bool), seats (from game_start), flag_while ("sitting"/"moving"/None: what the flagged seat was doing),
     flag_other_check (bool/None: the other board's side to move was in check when the flag fell).
+    controller_telemetry ({team: {...}}, only when a controller had a spec v7 option on: arena.run.V7_TELEMETRY_KEYS).
     """
     events = list(events)
     start = next((e for e in events if e.get("type") == "game_start"), {})
@@ -191,6 +192,8 @@ def summarize_game(events: Iterable[dict]) -> dict:
         "capped_decisions": capped,
         "continuity": continuity,
         "hybrid": hybrid,
+        # spec v7: the controllers' counters when a v7 option was on (absent otherwise, as in older summaries)
+        **({"controller_telemetry": end["controller_telemetry"]} if end and end.get("controller_telemetry") else {}),
     }
 
 
