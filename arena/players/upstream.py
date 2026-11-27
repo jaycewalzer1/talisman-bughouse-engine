@@ -42,6 +42,7 @@ import logging
 import os
 import random
 import re
+import statistics
 import subprocess
 import threading
 import time
@@ -533,6 +534,13 @@ class UpstreamTeamController:
         """How long a pass waits (unless an event wakes it) when ``sit_ms`` is not set: the team's move time."""
         return max(DEFAULT_MOVE_MS, int(opts["team_move_ms"]))
 
+    def _search(self, seat: str, obs: Observation, budget: int, opts: dict) -> tuple[SearchResult, int, int]:
+        """One decision's search: (result, nodes requested, nodes searched). The wave 2 controller's think head
+        adds a quick look here (both searches' nodes count)."""
+        res = self.process.search_clock(obs.fens["A"], obs.fens["B"], team=self.team, nodes=budget, **opts)
+        self.searches += 1
+        return res, budget, (res.nodes if res.nodes > 0 else budget)
+
     def decide(self, seat: str, obs: Observation) -> Decision:
         if not obs.legal_moves:
             return Decision(kind="wait", wait_ms=200, stall_reason="no_moves")
@@ -548,12 +556,10 @@ class UpstreamTeamController:
             budget_ms = int(round(budget * self.ms_per_node))
             opts = self.time_options(obs, budget_ms)
             self.last_options = dict(opts)
-            res = self.process.search_clock(obs.fens["A"], obs.fens["B"], team=self.team, nodes=budget, **opts)
-            self.searches += 1
-            searched = res.nodes if res.nodes > 0 else budget
-            self.nodes_requested += budget
+            res, requested, searched = self._search(seat, obs, budget, opts)
+            self.nodes_requested += requested
             self.nodes_searched += searched
-            charged = searched if self.charge == "searched" else budget
+            charged = searched if self.charge == "searched" else requested
             own = int(round(charged * self.ms_per_node))
             queued = max(0, self._busy_until - obs.now_ms) if self.serial else 0
             think, nodes = queued + own, charged
@@ -722,11 +728,18 @@ def seat_on_turn_ms(obs: Observation) -> dict:
 # A wave 2 pass also re-checks after SIT_INFER_FACTOR x budget (default_sit_ms):
 # a sitting opponent lands nothing, so no event would wake us before RULES v3 adjudicates the sit-off (5 s), and
 # the seat's clock runs whether it sits or searches.
+# Spec v7 4.1 (audit #3): ``clock_k`` there is OUR pace, so an opponent that thinks slower than we do reads as
+# sitting while it still thinks. ``opp_k`` gives each opponent seat its own pace (the wave 2 controller's
+# ``opp_sit_pace``: "observed" estimates it from that seat's landed decisions, ``OppPaceEstimator``; "fixed" takes
+# ``opp_clock_k``); None (and "own_k", the default) keeps the old rule bit for bit. Self-play needs no change: its
+# C++ side (SeatClockGame) hands the engine the true SeatSitting/SeatElapsedMs and observed paces, and nothing there
+# mirrors this estimate; tools/strength_harness.py, the only other caller, keeps the default.
 SIT_INFER_FACTOR = 1.5
 
 
 def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
-                   factor: float = SIT_INFER_FACTOR, clock_k: float | None = None) -> tuple[dict, dict]:
+                   factor: float = SIT_INFER_FACTOR, clock_k: float | None = None, *,
+                   opp_k: dict | None = None) -> tuple[dict, dict]:
     """``({seat: SeatElapsedMs}, {seat: SeatSitting})`` with self-play's meaning (``SeatClockGame``,
     ``engine/src/tools/seat_clock_game.h`` in wave2-hivemind; durative diagnosis D4), inferred from what the arena
     sees. Self-play sends both for the other team's seats on turn only: ``elapsed_ms`` = ms since the seat's
@@ -749,7 +762,10 @@ def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
 
     Our own seats: sitting 0, elapsed ``seat_on_turn_ms`` (the tree ignores the root team's elapsed; through UCI the
     wide planes read it as the board's time since its last landing, self-play's ``boardElapsedMs``). All 0 when
-    the observation has no landing times."""
+    the observation has no landing times.
+
+    ``opp_k`` ({seat: k}, spec v7 4.1): a seat in it uses its own ``k`` in place of ``clock_k`` for its budget
+    (clock at ``L`` / ``opp_k[seat]``); seats not in it, and every seat when it is None, keep ``clock_k``."""
     elapsed = seat_on_turn_ms(obs)
     sitting = {s: 0 for s in SEATS}
     if obs.last_move_ms is None:
@@ -758,8 +774,9 @@ def seat_decisions(obs: Observation, team: str, paces: dict, budget_ms: int,
     on_turn = {b: s for b, s in obs.to_move.items() if s in sitting and TEAM_OF[s] != team}
 
     def threshold(seat: str, start: int) -> float:
-        if clock_k:
-            own = (max(0, int(obs.clocks_ms[seat])) + max(0, now - start)) / float(clock_k)
+        k = opp_k[seat] if opp_k is not None and seat in opp_k else clock_k
+        if k:
+            own = (max(0, int(obs.clocks_ms[seat])) + max(0, now - start)) / float(k)
         else:
             own = float(budget_ms)
         if len(on_turn) == 2:
@@ -851,6 +868,102 @@ class PocketLandingTracker:
         return ",".join(f"{UCI_SEAT[seat]}:{piece}:{now - at}" for at, seat, piece in recent)
 
 
+# Spec v7 4.1: the wave 2 controller's ``opp_sit_pace`` values, and the observed estimator's window and minimum.
+OPP_SIT_PACES = ("own_k", "observed", "fixed")
+OPP_PACE_WINDOW = 12
+OPP_PACE_MIN_SAMPLES = 3
+OPP_PACE_QUANTILE = 0.75
+# Fallback levels of OppPaceEstimator.estimate, in order (telemetry keys).
+OPP_PACE_LEVELS = ("seat", "seat_q75", "team", "opp_clock_k", "own_k")
+
+
+def _quantile(xs: list, q: float) -> float:
+    """Linear-interpolated quantile (numpy's default) of a non-empty list."""
+    v = sorted(float(x) for x in xs)
+    pos = (len(v) - 1) * float(q)
+    lo = int(pos)
+    hi = min(lo + 1, len(v) - 1)
+    return v[lo] + (v[hi] - v[lo]) * (pos - lo)
+
+
+class OppPaceEstimator:
+    """Per opponent seat, the pace ``k`` it plays at (think time = clock / k), from its landed decisions (spec v7
+    4.1, audit #3).
+
+    A decision's sample is ``(clock_at_handoff_ms, think_ms)``: handoff is the landing that put the seat on turn (its
+    board's previous landing), think its own landing minus that. The arena only shows the seat's clock, which runs
+    only while it is on turn and has no increment, so two off-turn readings with exactly one move of the seat between
+    them give both: the earlier reading is its clock at the handoff (it stood still since), the drop is its think
+    (lag and minimum move time included, as in the observed paces the threshold compares with). Readings with more
+    than one move between them are skipped (which decision took how long is unknown). A decision during which
+    ``seat_decisions`` called the seat sitting (``mark_sitting``) is tagged ``sat``: it took a sit's time, not a
+    think's.
+
+    ``estimate``: median of ``clock_at_handoff / max(1, think)`` over the last ``OPP_PACE_WINDOW`` untagged samples;
+    with fewer than ``OPP_PACE_MIN_SAMPLES`` untagged, the 75th percentile of all its samples (sits read slow, so a
+    high quantile skips them); with fewer samples than that, the same two rules on the opponent team's pooled
+    samples; then ``opp_clock_k``; then our own ``clock_k`` (the old rule)."""
+
+    def __init__(self, team: str, window: int = OPP_PACE_WINDOW, min_samples: int = OPP_PACE_MIN_SAMPLES,
+                 quantile: float = OPP_PACE_QUANTILE) -> None:
+        self.opp_team = "T2" if team == "T1" else "T1"
+        self.seats = tuple(s for s in SEATS if TEAM_OF[s] == self.opp_team)
+        self.window, self.min_samples, self.quantile = int(window), int(min_samples), float(quantile)
+        self.samples: dict[str, list[tuple[int, int, bool]]] = {s: [] for s in self.seats}  # (clock, think, sat)
+        self._start: dict[str, tuple[int, bool]] = {}
+        self._last: dict[str, tuple[int, int]] = {}  # seat -> (moves made, clock) at its last off-turn reading
+        self._sat: dict[str, set[int]] = {s: set() for s in self.seats}  # decisions (moves made before) sat in
+
+    def _made(self, fens: dict, seat: str) -> int:
+        board = BOARD_OF[seat]
+        if board not in self._start:
+            parts = fens[board].split()
+            self._start[board] = (int(parts[5]) if len(parts) > 5 else 1, parts[1] == "w")
+        start_full, start_white = self._start[board]
+        return _moves_made(fens[board], seat, start_full, start_white)
+
+    def observe(self, fens: dict, clocks_ms: dict, to_move: dict) -> None:
+        for seat in self.seats:
+            made = self._made(fens, seat)
+            if to_move.get(BOARD_OF[seat]) == seat:
+                continue  # its clock is running: no clean reading
+            clock = int(clocks_ms[seat])
+            prev = self._last.get(seat)
+            self._last[seat] = (made, clock)
+            if prev is not None and made == prev[0] + 1:
+                self.samples[seat].append((prev[1], max(0, prev[1] - clock), prev[0] in self._sat[seat]))
+                self._sat[seat].discard(prev[0])
+
+    def mark_sitting(self, fens: dict, to_move: dict, sitting: dict) -> None:
+        """Tag the current decision of each opponent seat on turn that ``sitting`` calls sitting."""
+        for seat in self.seats:
+            if sitting.get(seat) and to_move.get(BOARD_OF[seat]) == seat:
+                self._sat[seat].add(self._made(fens, seat))
+
+    def _rule(self, samples: list) -> tuple[float, str] | None:
+        ratios = [c / max(1, t) for c, t, _ in samples]
+        untagged = [c / max(1, t) for c, t, sat in samples if not sat][-self.window:]
+        if len(untagged) >= self.min_samples:
+            return statistics.median(untagged), "seat"
+        if len(ratios) >= self.min_samples:
+            return _quantile(ratios, self.quantile), "seat_q75"
+        return None
+
+    def estimate(self, seat: str, opp_clock_k: float | None = None,
+                 own_k: float | None = None) -> tuple[float | None, str]:
+        """(k, level) for ``seat``, level one of ``OPP_PACE_LEVELS``; k None only at "own_k" without a clock_k."""
+        got = self._rule(self.samples[seat])
+        if got is not None:
+            return got
+        pooled = [x for s in self.seats for x in self.samples[s]]
+        got = self._rule(pooled)
+        if got is not None:
+            return got[0], "team"
+        if opp_clock_k:
+            return float(opp_clock_k), "opp_clock_k"
+        return (float(own_k) if own_k else None), "own_k"
+
+
 class Wave2TeamController(UpstreamTeamController):
     """The wave 2 engine (spec v4 durative tree in upstream v3) as a team brain: everything ``UpstreamTeamController``
     sends, plus per search ``SeatClocksMs`` (the arena's four clocks, current at ``now``: the on-turn seats are
@@ -872,19 +985,58 @@ class Wave2TeamController(UpstreamTeamController):
     wave 2 pool sets 100 and 75; the opponents' paces, read off the clocks, already include both. Both 0 (the
     default) send the bare budget. ``SeatElapsedMs`` was ``now - last landing`` on the board until durative
     diagnosis D4 (docs/durative_diagnosis.md): for a sitting opponent the tree then landed it at
-    ``max(1, pace - elapsed)``, often 1 ms, where self-play (and so training) lands it a full pace later."""
+    ``max(1, pace - elapsed)``, often 1 ms, where self-play (and so training) lands it a full pace later.
+
+    Spec v7 (both off by default, so a row without them sends exactly what it sent before):
+    ``opp_sit_pace`` picks the pace in each opponent seat's sit threshold (``seat_decisions``' ``opp_k``):
+    ``"own_k"`` our own ``clock_k`` (the old rule), ``"observed"`` that seat's pace read off its landed decisions
+    (``OppPaceEstimator``; ``opp_clock_k`` is its first fallback), ``"fixed"`` ``opp_clock_k`` for both seats.
+    ``think_head`` (learned time policy, 4.2): before each new search a ``QUICK_LOOK_NODES`` look under the same
+    options reads the network's ``think_gain`` for the deciding seat's board, and the main search gets
+    ``arena.think_policy.budget(clock budget, p, ...)`` nodes; both searches are charged (nodes and time). Without a
+    ``think_gain`` line the clock budget is used unchanged (``think_head_missing``). ``RootMoveTimeMs`` stays the
+    clock budget's, for both searches. ``telemetry()`` returns these counters with the hybrid and continuity ones."""
 
     kind = "wave2"
     label = "Wave2"
 
     def __init__(self, team: str, process: UpstreamHivemindProcess, nodes: int = 400,
                  ms_per_node: float = WAVE2_MS_PER_NODE, *, pass_cap_k: int = 8, root_min_ms: int = 0,
-                 root_lag_ms: int = 0, new_game_at_start: bool = False, **kw) -> None:
+                 root_lag_ms: int = 0, new_game_at_start: bool = False, opp_sit_pace: str = "own_k",
+                 opp_clock_k: float | None = None, think_head: bool = False, **kw) -> None:
         super().__init__(team, process, nodes, ms_per_node, **kw)
         self.pass_cap_k = int(pass_cap_k)
         if root_min_ms < 0 or root_lag_ms < 0:
             raise ValueError(f"root_min_ms and root_lag_ms must be >= 0, got {root_min_ms}, {root_lag_ms}")
         self.root_min_ms, self.root_lag_ms = int(root_min_ms), int(root_lag_ms)
+        # Spec v7 4.1: the opponents' pace in the sit threshold.
+        if opp_sit_pace not in OPP_SIT_PACES:
+            raise ValueError(f"opp_sit_pace must be one of {OPP_SIT_PACES}, got {opp_sit_pace!r}")
+        if opp_clock_k is not None:
+            if isinstance(opp_clock_k, bool) or not isinstance(opp_clock_k, (int, float)) or not opp_clock_k > 0:
+                raise ValueError(f"opp_clock_k must be a number > 0, got {opp_clock_k!r}")
+            if opp_sit_pace == "own_k":
+                raise ValueError("opp_clock_k needs opp_sit_pace 'observed' or 'fixed' (own_k ignores it)")
+        elif opp_sit_pace == "fixed":
+            raise ValueError("opp_sit_pace 'fixed' needs opp_clock_k")
+        self.opp_sit_pace = opp_sit_pace
+        self.opp_clock_k = None if opp_clock_k is None else float(opp_clock_k)
+        self.opp_pace = OppPaceEstimator(team)
+        self.opp_k_estimates: dict[str, float] = {}  # last k used per opponent seat (observed, fixed)
+        self.opp_k_levels: dict[str, int] = dict.fromkeys(OPP_PACE_LEVELS, 0)  # observed: estimates per level
+        # Spec v7 4.2: the learned time policy. Imported only when on, so a missing module matters only then.
+        if not isinstance(think_head, bool):
+            raise ValueError(f"think_head must be true or false, got {think_head!r}")
+        self.think_head = think_head
+        self._think_policy = None
+        if think_head:
+            from arena import think_policy
+
+            self._think_policy = think_policy
+        self.think_looks = 0  # quick looks run
+        self.think_head_missing = 0  # looks without a think_gain line (clock budget used unchanged)
+        self.think_gain_sum = 0.0  # sum of the p values used (mean = sum / (looks - missing))
+        self.think_scale_sum = 0.0  # sum of their budget scales
         self.landings = PocketLandingTracker()
         # Wave 2c (spec v5): with an engine that keeps its tree between searches, one ucinewgame at this
         # controller's first search starts the game with no tree and no carried plan. Telemetry per search.
@@ -907,7 +1059,8 @@ class Wave2TeamController(UpstreamTeamController):
         opts = super().time_options(obs, budget_ms)  # observes the clocks first
         paces = {s: self.tracker.seat_ms(s, budget_ms) for s in SEATS}
         self.landings.observe(obs.fens, obs.now_ms, obs.last_move_ms)
-        elapsed, sitting = seat_decisions(obs, self.team, paces, budget_ms, clock_k=self.clock_k)
+        opp_k = self._opp_k(obs)
+        elapsed, sitting = seat_decisions(obs, self.team, paces, budget_ms, clock_k=self.clock_k, opp_k=opp_k)
         # Spec v6: an event seat a hybrid sit waited for in vain is sitting until its board lands (then T3 fails
         # and the gate makes us move), whatever seat_decisions infers.
         for seat, landed in list(self._missed.items()):
@@ -916,6 +1069,8 @@ class Wave2TeamController(UpstreamTeamController):
                 del self._missed[seat]
             else:
                 sitting[seat], elapsed[seat] = 1, 0
+        if self.opp_sit_pace == "observed":
+            self.opp_pace.mark_sitting(obs.fens, obs.to_move, sitting)
         opts["options"] = {
             "SeatClocksMs": seat_values(obs.clocks_ms),
             "SeatPaceMs": seat_values(paces),
@@ -928,6 +1083,61 @@ class Wave2TeamController(UpstreamTeamController):
             opts["new_game"] = True
             self._new_game_pending = False
         return opts
+
+    def _opp_k(self, obs: Observation) -> dict | None:
+        """Spec v7 4.1: ``seat_decisions``' ``opp_k`` for the opponent seats on turn (None for "own_k"). A seat
+        whose estimate falls through to our own clock_k without one is left out (the old budget rule)."""
+        if self.opp_sit_pace == "own_k":
+            return None
+        if self.opp_sit_pace == "observed":
+            self.opp_pace.observe(obs.fens, obs.clocks_ms, obs.to_move)
+        out = {}
+        for board, seat in obs.to_move.items():
+            if TEAM_OF.get(seat) != self.opp_pace.opp_team:
+                continue
+            if self.opp_sit_pace == "fixed":
+                k = self.opp_clock_k
+            else:
+                k, level = self.opp_pace.estimate(seat, self.opp_clock_k, self.clock_k)
+                self.opp_k_levels[level] += 1
+            if k is not None:
+                out[seat] = self.opp_k_estimates[seat] = float(k)
+        return out
+
+    def _search(self, seat: str, obs: Observation, budget: int, opts: dict) -> tuple[SearchResult, int, int]:
+        """Spec v7 4.2: with ``think_head``, a quick look reads ``think_gain`` and scales the main budget."""
+        tp = self._think_policy
+        if tp is None:
+            return super()._search(seat, obs, budget, opts)
+        look = self.process.search_clock(obs.fens["A"], obs.fens["B"], team=self.team, nodes=tp.QUICK_LOOK_NODES,
+                                         **opts)
+        self.think_looks += 1
+        p = None
+        if look.think_gain is None or look.no_root:
+            self.think_head_missing += 1
+        else:
+            p = min(1.0, max(0.0, float(look.think_gain[0 if BOARD_OF[seat] == "A" else 1])))
+            self.think_gain_sum += p
+            self.think_scale_sum += tp.scale(p)
+            if round(budget * tp.scale(p)) - tp.QUICK_LOOK_NODES > self.max_nodes:
+                self._capped = True
+        main = tp.budget(budget, p, self.min_nodes, self.max_nodes)
+        main_opts = {k: v for k, v in opts.items() if k != "new_game"}  # the look already started the game
+        res = self.process.search_clock(obs.fens["A"], obs.fens["B"], team=self.team, nodes=main, **main_opts)
+        self.searches += 1
+        looked = look.nodes if look.nodes > 0 else tp.QUICK_LOOK_NODES
+        return res, tp.QUICK_LOOK_NODES + main, looked + (res.nodes if res.nodes > 0 else main)
+
+    def telemetry(self) -> dict:
+        """The controller's counters (spec v5 continuity, v6 hybrid, v7 opponent pace and think head)."""
+        return {"searches": self.searches, "passes": self.passes, "no_root_results": self.no_root_results,
+                "reuse_hits": self.reuse_hits, "reused_visits": self.reused_visits,
+                "plan_carries": self.plan_carries, "hybrid_triggers": self.hybrid_triggers,
+                "hybrid_sits": self.hybrid_sits, "hybrid_missed": self.hybrid_missed,
+                "opp_sit_pace": self.opp_sit_pace, "opp_k_estimates": dict(self.opp_k_estimates),
+                "opp_k_levels": dict(self.opp_k_levels), "think_looks": self.think_looks,
+                "think_head_missing": self.think_head_missing, "think_gain_sum": self.think_gain_sum,
+                "think_scale_sum": self.think_scale_sum}
 
     def decide(self, seat: str, obs: Observation) -> Decision:
         missed = self._check_hybrid_wake(seat, obs)
@@ -996,8 +1206,11 @@ class Wave2TeamController(UpstreamTeamController):
 # Spec v6: a hybrid sit waits at most its expected event time plus this (spec v6, "Wake and missed events").
 HYBRID_WAKE_SLACK_MS = 100
 
-# Wave 2 controller options beyond CONTROLLER_KW (Wave2TeamController: our own action cost in the tree).
-WAVE2_CONTROLLER_KW = ("root_min_ms", "root_lag_ms")
+# Wave 2 controller options beyond CONTROLLER_KW (Wave2TeamController: our own action cost in the tree; spec v7:
+# the opponents' pace in the sit threshold and the learned time policy). The first two are whole ms; the others are
+# passed as given and validated by the controller.
+WAVE2_CONTROLLER_KW = ("root_min_ms", "root_lag_ms", "opp_sit_pace", "opp_clock_k", "think_head")
+_WAVE2_INT_KW = ("root_min_ms", "root_lag_ms")
 
 
 def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
@@ -1008,7 +1221,9 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
     durative diagnosis' ``own_pace_below_root``, ``wait_node_acting_eval``, ``blockable_check_not_mate``, and spec
     v6's ``hybrid_mode`` with its knobs) and the presets ``continuity`` and ``hybrid`` (``WAVE2_PRESETS``; a hybrid
     row also sets ``durative_tree: false``); ``engine_options`` are sent after the flags, so they win.
-    ``team_tree_reuse`` or ``plan_carry`` on implies ``reuse_tree`` plus one ``ucinewgame`` at the first search."""
+    ``team_tree_reuse`` or ``plan_carry`` on implies ``reuse_tree`` plus one ``ucinewgame`` at the first search.
+    Controller options: ``CONTROLLER_KW`` and ``WAVE2_CONTROLLER_KW`` (spec v7: ``opp_sit_pace``, ``opp_clock_k``,
+    ``think_head``)."""
     flags = wave2_flag_options(**{k: kw.get(k) for k in (*WAVE2_FLAGS, *WAVE2_PRESETS)})
     options = {**flags, **(kw.get("engine_options") or {})}
     # Fix 1 or fix 3 on: the engine's state must survive between searches, so no ucinewgame per search; the
@@ -1018,7 +1233,8 @@ def wave2_team(team: str, *, seed: int = 0, nodes: int = 400, **kw) -> dict:
                                    options=options, reset_tree=not reuse, coreml=kw.get("coreml"),
                                    cwd=WAVE2_ENGINE_DIR)
     ckw = {k: kw[k] for k in CONTROLLER_KW if kw.get(k) is not None}
-    ckw.update({k: int(kw[k]) for k in WAVE2_CONTROLLER_KW if kw.get(k) is not None})
+    ckw.update({k: int(kw[k]) if k in _WAVE2_INT_KW else kw[k]
+                for k in WAVE2_CONTROLLER_KW if kw.get(k) is not None})
     ctl = Wave2TeamController(team, proc, nodes=nodes, ms_per_node=float(kw.get("ms_per_node") or WAVE2_MS_PER_NODE),
                               seed=seed, pass_cap_k=flags["PassCapK"], new_game_at_start=reuse, **ckw)
     return {s: ctl.player(s) for s in team_seats(team)}
@@ -1043,4 +1259,5 @@ __all__ = ["UpstreamHivemindProcess", "UpstreamTeamController", "UpstreamSeat", 
            "measure_wave2_ms_per_node", "PocketLandingTracker", "fen_pockets", "WAVE2_BINARY", "WAVE2_MODEL", "WAVE2_MS_PER_NODE", "WAVE2_FLAGS",
            "WAVE2_ENGINE_DIR", "WAVE2_CONTINUITY_FLAGS", "WAVE2_PRESETS", "WAVE2_STATE_FLAGS", "CONTINUITY_PRESET_OPTION",
            "expand_wave2_presets", "wave2_carries_state", "parse_continuity", "parse_hybrid", "WAVE2_HYBRID_FLAGS",
-           "HYBRID_UCI_OPTIONS", "HYBRID_WAKE_SLACK_MS"]
+           "HYBRID_UCI_OPTIONS", "HYBRID_WAKE_SLACK_MS", "OppPaceEstimator", "OPP_SIT_PACES", "OPP_PACE_LEVELS",
+           "WAVE2_CONTROLLER_KW"]
