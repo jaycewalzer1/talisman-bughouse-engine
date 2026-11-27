@@ -385,3 +385,19 @@ def test_status_is_robust_to_missing_files(tmp_path):
     assert "GPU-hours: n/a off-cluster" in r.stdout and "league plan: none" in r.stdout
     r = subprocess.run(["python3", STATUS, str(tmp_path / "nothing")], env=env, capture_output=True, text=True)
     assert r.returncode == 0 and "no such run folder" in r.stdout
+
+
+# ----------------------------------------------------------------------------------------------- think gain check
+def test_think_gain_check_resolves_relative_paths():
+    """add-head and the probe run inside the wave2 checkout and the engine runs from its own folder, so the default
+    OUT (runs/think_gain_check/<job>) and any relative ENGINE / IT13_PT must reach them as absolute paths."""
+    env = {k: v for k, v in os.environ.items() if k not in ("OUT", "W2", "ENGINE", "IT13_ONNX", "IT13_PT", "PY")}
+    env.update(DRY_RUN="1", SLURM_JOB_ID="77", ENGINE="third_party/wave2-hivemind/engine/build-x/hivemind",
+               IT13_PT="artifacts/it13.pt")
+    r = subprocess.run(["bash", os.path.join(REPO, "cluster", "think_gain_check.sbatch")], env=env, cwd=REPO,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert f"OUT={REPO}/runs/think_gain_check/77" in r.stdout
+    assert f"--checkpoint {REPO}/artifacts/it13.pt --out {REPO}/runs/think_gain_check/77/headed" in r.stdout
+    assert f"--engine {REPO}/third_party/wave2-hivemind/engine/build-x/hivemind" in r.stdout
+    assert "build:" not in r.stdout  # ENGINE given

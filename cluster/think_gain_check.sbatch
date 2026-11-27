@@ -36,6 +36,11 @@ IT13_PT="${IT13_PT:-}"
 POSITIONS="${POSITIONS:-50}"
 SEED="${SEED:-0}"
 TOL="${TOL:-2e-2}"
+# Absolute paths: add-head and the probe run inside W2, and the engine runs with its own folder as cwd, so a path
+# relative to the repo root would land in, or be looked up from, the wrong folder.
+abspath() { case "$1" in ""|/*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+OUT=$(abspath "$OUT"); W2=$(abspath "$W2"); W2PY=$(abspath "$W2PY"); PY=$(abspath "$PY")
+ENGINE=$(abspath "$ENGINE"); IT13_ONNX=$(abspath "$IT13_ONNX"); IT13_PT=$(abspath "$IT13_PT")
 HEADED="$OUT/headed"
 NET="twin-s-clock-it13-think"
 
