@@ -401,6 +401,11 @@ searches' most-visited entries differ (a pass counts), else 0; boards not on tur
 budget on 5% of them gives `noise_rate`. Writes `think_labels.npz` into the segment's training data dir and prints
 one JSON line: `{records, labelled, rate_a, rate_b, noise_rate, gpu_s}`. Cost at the defaults: about 29k labels per
 10k-game iteration, (1 + 4) x the recorded budget each, about 1.5 GPU-hours.
+Under `--think-policy` the "recorded budget" is the state line's `think_ref_nodes` (the budget at think scale 1: pace,
+clock and playout cap as for `target_nodes`), not `target_nodes`, which already carries the generator head's scale:
+otherwise a position the head rated high would be labelled 2B against 8B and one rated low 0.5B against 2B, and the
+head's targets would be pulled back toward its own mean (review of 2026-11-27). Without `--think-policy` the state
+lines and labels are as before.
 
 ### 6.3 Engine (fork C++)
 

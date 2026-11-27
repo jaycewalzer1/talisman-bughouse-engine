@@ -700,12 +700,54 @@ root must copy it (the first attempt here failed its seg01 with "league opponent
   `--dependency=afterok:<build>`, the incumbent parts after the build. The scratch copy under `runs/` was removed.
 * `DRY_RUN=1 bash cluster/think_gain_check.sbatch`: prints build, add-head, probe, compare and UCI search steps.
 
-### 12.6 Not done or still open
+### 12.6 Review fixes (2026-11-27)
+
+Two reviews of the integrated round; each finding checked against the code, fixed with a test or rejected with a
+reason. Engine pin bumped to the fork's `60e94fa` (contains `c45be01`); build `W2:engine/build-fixer` (same flags as
+`build-int`, `-j4`, `nice`).
+
+| Finding | Verdict | Fix |
+|---|---|---|
+| R2.1 `think_gain_check.sbatch` with its default relative `OUT`: add-head and the probe run inside the fork checkout, the engine runs from its build folder, so the headed networks land in, and are looked up from, the wrong folder; compare and uci_search FAIL and the chain never starts | confirmed | `0872d38`: `OUT`, `W2`, `ENGINE`, `IT13_*` and the pythons made absolute. A **non-dry local run** from the repo root with no `OUT`, relative `ENGINE` (`build-int`) and relative `IT13_PT`, 10 positions: build SKIP, headed PASS, probe PASS, compare PASS (headed vs it13 0.0, probe think 3.0e-3, value 3.0e-3 vs ONNX Runtime), uci_search PASS (`think_gain 0.3333 0.3333` headed, none it13). New dry-run test on the absolute paths |
+| R2.2 sbatch has no `SBATCH_DEPENDENCY` input variable: with `BUILD=1` the incumbent's 8 gate parts started at once on the old binary | confirmed (the repo said so in `launch_checks.sh`) | `bb911b6`: `gate2_match.sh` passes it as `--dependency`; tests check every fake `sbatch` call gets it (and none without). Launcher dry run with `BUILD=1`: all 8 incumbent parts `--dependency=afterok:<lb_ job>` |
+| R1.2 an arm with no finished pairs (all games errors, or every part `GAVE_UP`) never wrote `done`: rl-loop polled for `--gate2-timeout-h` (10 h of an idle main GPU job) | confirmed | `bb911b6`: merged as `pairs 0` (summary with `score` null, header-only `pairs.tsv`, a line on stderr) so the net dir is done and `hivemind.gate2.decide` returns "incomplete" at once; test. Note: if it is the *incumbent* whose arm has 0 pairs, its cached result makes every later candidate "incomplete" too; that is now visible at once in the status instead of costing 10 h per iteration |
+| R2.3 the watchdog did not notice a failed `lb_`/`tg_` (the chain stays PENDING on DependencyNeverSatisfied, the queue never empties) | confirmed | `6c94d4a`: `sacct --name lb_<RUN>,tg_<RUN>` FAILED/OUT_OF_MEMORY/TIMEOUT cancels the run; tests for a failed build and a timed-out think check |
+| R2.4 crash/gate/workers cancels left the run's `g2_` jobs running outside the cap | confirmed | `6c94d4a`: `cancel()` also scancels the run's gate2 arms, think check and build, running or pending (other runs' jobs untouched; test). A gate2 stage that times out in rl-loop still leaves the candidate's parts queued; they stay under the watchdog and its cap |
+| R1.1 think labels measured the gain against the budget the head itself had scaled (from it2 on: high-p positions labelled 2B vs 8B, low-p 0.5B vs 2B, pulling the targets toward the head's own mean) | confirmed | fork `60e94fa`: under `--think-policy` each state line also carries `think_ref_nodes` (pace, clock and cap at think scale 1; the field is absent without `--think-policy`, so off-mode state dumps are byte-identical) and `hivemind.think labels` searches base and repeat at it and deep at 4x it. C++ tests (headed `think_probe.onnx`: written references equal `pace_node_budget(..., 1.0, ...)` per search and differ from `target_nodes` where the scale is 1.625; no field without the policy) and Python tests; spec v7 6.2 amended. The pace clock the search saw is still the scaled one (second order) |
+| R1.3 `print_think_gain` (one extra batch inference before `bestmove`) inflates a headed network's measured ms/node, so at it1 the candidate gets slightly fewer nodes in both arms | real, **deferred** | the cost is real in play too (the engine runs that inference every verbose search), so only the size differs: about 1 of ~100 batches in the 800-node measurement vs about 1 of ~900 in a 60 s game move, i.e. roughly 1% fewer nodes for the candidate in the equal arm at it1 only (from it2 both networks have the head). The direction is against promotion (conservative). The fix needs an engine UCI option plus controller and measurement plumbing on both repos; left for after the pilot |
+| R2.5 test gaps | addressed by the tests above | |
+
+The reviewer's calibration note on R1.1 stays open: labels come from paced self-play budgets (pace nodes 200-3200 at
+the pilot defaults) while the free arm applies p at clock budgets of roughly 7,000+ nodes.
+
+Suites after the fixes (fork `60e94fa`, main with the pin bump; load 20-90 from other agents throughout):
+
+| Check | Result |
+|---|---|
+| C++ `build-fixer/tests/hivemind_tests` (full, 4 workers) | 655 tests: 651 passed, 1 skipped, 3 failed, 223 s. `SearchBalanceSelfPlay.StateDumpDoesNotChangeTheRunAndReanalyseReproducesIt` as before (4-worker builds). `RootMateSearchTest.CertifiedConditionalMateWinsBehindOnTime` and `EngineTest.DetectsKnightCaptureFeedAfterBc6` are new in this run but fail the same way (the first every time, the second on and off) in the integrator's `build-int` binary, which has none of these changes: timing under load, not the fix. `LeaguePace*`, `Pace*`, `ThinkPolicy*`, `ThinkGain*` all pass (2 new tests) |
+| Fork Python `uv run --offline pytest tests` | 397 tests: 388 passed, 9 failed, 1594 s: the 8 bsdtar `--compare` as before, and `test_rl_loop_search_balance.py::test_a_challenger_plan_runs_end_to_end` (`--games` 2 where 1 is expected), which fails the same way at `c45be01` in a scratch worktree with the same controller: older than this round (WP1 saw it fail once) |
+| Main `arena/tests tests/cluster` | 497 passed, 1 skipped on the first run, plus 1 failure and 3 setup errors that were the fork being off the old pin; after the pin bump those (`test_tune.py`, `test_launch_switch.py`, 27 tests) pass. 7 new cluster tests |
+| Main `arena/tests_phase1` | 105 passed |
+| `bash -n` on the four changed or launched scripts | OK |
+| Launcher dry run `DRY_RUN=1 BUILD=1 RUN=league1` (fake Slurm, engines `build-fixer`) | pin `60e94fa` (contains `d5802ee`), build `lb_`, think check after it, chain shim, and the 8 incumbent gate parts each with `--dependency=afterok:<lb_ job>` |
+| Headed self-play (it1 candidate of the smoke below, `--think-policy true`, pace 16-4096 nodes, 2 games) | 68 records, all with `think_ref_nodes`; 21 differ from `target_nodes` by the head's scale (ratio 0.957-0.984; mean scale 0.989) |
+
+Smoke rerun (`runs/smoke_league/e2e_fix`, the 12.4 setup on `build-fixer`, 2 iterations, 39 min): it1 self-play,
+labels 401 of 790 (rates 0.158/0.093, noise 0.087), 19 train steps, head added; gate2 candidate equal 1.000, free 0.750,
+incumbent it13 1.000/1.000: d free -0.25, **not promoted**. it2 (generator still it13: scale 1.000, every state line has
+`think_ref_nodes` equal to `target_nodes`): labels 381 of 777, 25 steps, gate2 candidate 1.000/1.000, incumbent reused
+from cache: d sum 0, **promoted**. `league_pilot_status.py` prints both iterations. As in 12.4 the counts show the
+plumbing only; this run's promoted network came at it2, so the headed-generator path (labels at `think_ref_nodes` !=
+`target_nodes`) is covered by the self-play check above and the unit tests, not by this smoke.
+
+### 12.7 Not done or still open
+
+* R1.3 (think_gain print counted in the measured ms/node) deferred, see 12.6; the label-vs-arena budget calibration.
 
 * Nothing on PACE: the build at the pin, the think_gain check on TensorRT (the TensorRT binding has never been
   compiled), the pilot launch and the existing hybrid1 run's status all wait for PACE access. Before `BUILD=1 RUN=league1
-  bash cluster/launch_league_pilot.sh` there: push `talisman/wave2` (the build fetches the pin from the fork) and
-  `custom-engine`. Nothing was pushed here.
+  bash cluster/launch_league_pilot.sh` there: push `talisman/wave2` (the build fetches the pin `60e94fa` from the
+  fork) and `custom-engine`. Nothing was pushed here.
 * `wave2_parity.sh`, `wave2_game_parity.sh` and `hybrid_parity.sh` need a rerun on a quiet machine (12.3).
 * `SearchBalanceSelfPlay.StateDumpDoesNotChangeTheRunAndReanalyseReproducesIt` still fails in 4-worker builds (older
   than v7).
