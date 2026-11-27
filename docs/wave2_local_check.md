@@ -600,3 +600,118 @@ there) and push `custom-engine`. None of this was done here.
 * `hybrid_parity.sh` position 7 needed a second attempt (11.1).
 * The self-play smoke kept no hybrid sit (11.3).
 * The 8 tar failures are the Mac's bsdtar; the shim used here is not in the repo.
+
+## 12. League round (spec v7)
+
+The integration check of `docs/custom_engine_spec_v7_league.md` (WP1-WP5 as built, plan phases 1-2) before the league
+pilot goes to PACE. Engine: `talisman/wave2` at `c45be01` (WP1/3/4 on top of `d5802ee`, plus the integration's test
+fix); `cluster/wave2_engine.ref` bumped to it. Main repo: `custom-engine` (WP1/2/4/5 plus the integration fixes below).
+Network for every run: twin-s-clock it13 (`engine/models/twin-s-clock-it13.onnx`, sha256 `f4ac25e3...`, its checkpoint
+`artifacts/distill/twin-s-clock-it13/twin-s-clock-it13.pt`) on ONNX Runtime (Core ML EP), and the networks the smoke
+trained from it. The Mac was busy throughout: other agents' manim renders and old-stack hivemind engines, load 20 at the
+start and 100-190 during the parity scripts. Nothing ran on PACE (not reachable).
+
+### 12.1 Integration fixes
+
+| Fix | Where | Why |
+|---|---|---|
+| `think_head_missing` and the other v7 counters reach game files and summaries | `arena/run.py` (`controller_telemetry`, `V7_TELEMETRY_KEYS`), `arena/stats.py`, `arena/tests/test_controller_telemetry.py` (3 tests) | WP2 kept them on the controller only, so `gate2_match.sh` could never report `think_head_missing`. Now a `game_end` event carries `controller_telemetry` `{team: {...}}`, and so the summary and `results.jsonl`, **only when a team controller has `think_head` on or `opp_sit_pace` other than `own_k`**: rows without v7 options write exactly the files they wrote before |
+| `arena/think_policy` guards removed from `arena/tests/test_opp_pace.py` | WP2's test | the module exists since `9fd13f8` |
+| `gate2_match.sh` without `launch_settings.txt` | `cluster/gate2_match.sh`, new test | the `sed ... \| head` read exited the script silently under `pipefail`; it now falls back to the pin |
+| `gate2_match.sh` merge globbed `part*` | same, test extended | a file named `part1.log` next to the part folders crashed the merge (`int('1.log')`) in the smoke below; only `part<k>` folders count now |
+| `league_pilot_status.py` keys | `cluster/league_pilot_status.py` | reads `hivemind.league.segment_summary`'s `mean_k_learner` and `mean_s` (WP5 had guessed other names) |
+| `LeaguePaceSelfPlay.OffModeKeepsBudgetsOutputsAndColumns` | `W2:engine/tests/test_league_pace.cc` | its second run must write the same record count, which only a one-worker build guarantees (120 vs 104 records in the 4-worker build); the comparison now runs only when `SearchParams::NUM_SEARCH_THREADS == 1` |
+| pin | `cluster/wave2_engine.ref` = `c45be018f15b64d7b087be379a9b39e172a13c52` | contains `d5802ee`; with the fork at the pin the dry-run tests that refused (fork off the pin) run again |
+
+### 12.2 Build and suites
+
+| Check | Result |
+|---|---|
+| Clean build `W2:engine/build-int` (`-G Ninja -DCMAKE_BUILD_TYPE=Release -DHIVEMIND_BACKEND=onnxruntime -DHIVEMIND_USE_CCACHE=OFF`, 4 search workers, tests on), `nice`, `-j6` | OK, 51/51 steps |
+| C++ suite `build-int/tests/hivemind_tests` (full, at `fcc5ac7`) | 653 tests: 650 passed, 1 skipped (`MateRaceTest.MeasureFrozenRaceOnTheGame`), 2 failed, 238 s: `SearchBalanceSelfPlay.StateDumpDoesNotChangeTheRunAndReanalyseReproducesIt` (fails in every 4-worker build, `build-ninja` included; passes in one-worker builds, as WP3/WP4 found) and `LeaguePaceSelfPlay.OffModeKeepsBudgetsOutputsAndColumns` (fixed above; after the fix `Pace*:LeaguePace*` 12/12) |
+| Fork Python `uv run --offline pytest tests` (`c45be01`) | 395 tests: 387 passed, 8 failed, 489 s: all 8 the macOS bsdtar `--compare` (6 in `tests/data/test_archive.py`, 2 in `tests/test_cli_rl_loop.py`), as in 11.1. `test_rl_loop_search_balance.py::test_a_challenger_plan_runs_end_to_end`, which WP1 saw fail once, passed (also alone) |
+| Main `arena/tests tests/cluster` | 493 passed, 1 skipped, 0 failed, 254 s (the dry-run tests that refused with the fork off the pin pass now) |
+| Main `arena/tests_phase1` | 105 passed |
+| `bash -n` on `launch_league_pilot.sh`, `gate2_match.sh`, `phase0_chk1.sh`, `full_run_watchdog.sh` | OK |
+
+### 12.3 Parity
+
+| Check | Result |
+|---|---|
+| Off-mode self-play identity vs `d5802ee` (both one-worker builds; it13, the hybrid flags, base mix 60/120 s, seat move times, 4 games, 50 nodes, seed 4242, state dump on) | **byte-identical**: HDST chunk `search_4242_00000.dst`, `states.jsonl`, `seat_clocks.tsv`, `games.pgn` (less its Date tag), every `selfplay game` line. The `d5802ee` source was checked file by file against `git show d5802ee:` |
+| `engine/tests/stock_parity.sh` (`JOBS=4`) | 8/8 identical |
+| `engine/tests/wave2_parity.sh` (`JOBS=4`) | 6/8, then 5/8 on a rerun; **not conclusive**: the differing positions changed between runs (5 and 8, then 2, 3 and 5), and the differences are node counts of the last progress line (a search stopped early, 242 vs 314 nodes at a 300 budget), the mark of a starved machine, not of code |
+| `engine/tests/wave2_game_parity.sh` (`JOBS=4`) | 4/5: selfplay pgn and clocks, tournament pgn and tsv identical; the 10-search UCI session differed (root width 15 vs 13, 74 vs 42 nodes: an early stop again) |
+| `engine/tests/hybrid_parity.sh` (`JOBS=4`) | 4/8 identical with no trigger, positive control fired on 3 of 3. This script compares **one binary with itself** (`HybridMode gate` vs `off`), so its differences cannot come from the v7 code; they are the same early stops |
+
+The v7 commits do not touch the search (`agent.cc` only prints `think_gain` after a verbose search when the network has
+the head; it13 has none), the stock parity and the self-play identity are exact, and the same-binary script differs as
+much as the cross-binary ones. **The three search-parity scripts should be rerun on a quiet machine** before reading
+them as a pass; they were 8/8, 8/8 and 5/5 at load 28 in 11.1.
+
+### 12.4 League smoke on the Mac (rl-loop end to end, gate through the fake Slurm)
+
+`runs/smoke_league/e2e1` (git-ignored). rl-loop from the fork's `.venv`, engine `build-int/hivemind` for self-play,
+reanalyse and the 100 ms match: `--wave2 --durative-tree false --sit-gate true --hybrid --base-mix 20000:1 --pace
+--pace-nodes 32:96 --league --think-labels --think-label-fraction 0.5 --think-policy --think-weight 0.1 --gate2
+--gate2-games 4 --gate2-parts 1 --gate2-base-ms 15000 --gate2-min-pairs 2 --gate2-poll-s 5`, 8 games of 2 per segment,
+2 validation games, `--parallel-games 2 --batch-size 64 --match-games 2 --match-movetime 100`. The gate script was a
+local wrapper: it calls the real `cluster/gate2_match.sh` with `tests/cluster/fake_slurm` on PATH, then plays each
+queued `g2_` job here with the `arena.pool run` line of `eval.sbatch` and the job's saved environment (wave 2 binary
+`build-int/hivemind.bin`, upstream `third_party/upstream-hivemind/engine/build-ninja/hivemind.bin`, `MEASURE=1` with 2
+repeats and no warm-up, 2 workers; `modules.sh`, warm-up and the parity check are PACE-only and skipped) and marks the
+job done. Two iterations, 12 and 17 minutes.
+
+| Stage | it1 | it2 |
+|---|---|---|
+| league plan (frozen) | 4 segments: self 2, fixed 2 (`fixed:k80`, `fixed:k110`, weight 1), past 0 (no promoted generator yet) | the same: it1's network is promoted but is the current generator, so it is not a past opponent (spec 5.3); past appears from it3 |
+| self-play | seg00 self 289 records, seg01 fixed:k80 222 (learner 0-0-2), seg02 self 189, seg03 fixed:k110 153 (learner 1-0-1); val 371 (stock, no pace/league/think flags) | 394, 217 (1-0-1), 346, 146 (0-0-2) |
+| pace and think scale (segment markers) | mean k self 213/216, league learner 116/226, opponents 80/110 as fixed; mean s 1.000 (it13 has no head: `think_missing` = every searched decision) | mean s 0.990-0.991, `think_missing 0`: the promoted generator carries the head and self-play scales by it |
+| league-only records | `states.jsonl` = header + 2 game lines + 222 records, chunk 222 records: only the learner's decisions | |
+| think labels | 853 records, 441 labelled, rates A 0.087 / B 0.132, noise 0.091, 44 s | 1103, 551, 0.150 / 0.112, noise 0.123, 186 s |
+| train | 20 steps, `--think-weight 0.1`, head added to it13's checkpoint; `C.onnx` outputs `value, pi_a, pi_b, wdl_out, moves_left, think_gain` | 33 steps from it1's headed checkpoint, replay share 0.20 |
+| 100 ms gate | 0.500 (2 games) | 0.500 |
+| gate2 (4 games = 2 pairs per arm, 15 s base) | candidate `7cc48e04`: equal 1.000, free 1.000, `think_head_missing` 0 (mean think_gain 0.327, mean scale 0.99 over 44 looks in game 1); incumbent it13 `f4ac25e3`: equal 1.000, free 1.000, `think_head_missing` 208 (no head: clock budget). d equal 0, free 0, sum 0: **promoted** | candidate `fb7059dc`: equal 1.000, free 0.750; incumbent `7cc48e04` **reused from it1's cache** (no games played for it). d equal 0, free -0.25 (SE 0.25, no drop at 2 pairs), sum -0.25: **not promoted**, generator stays |
+
+Also checked on the smoke's files:
+
+* `RUN_ROOT/gate2/wave2.json` written by rl-loop equals `python -m hivemind.gate2 wave2-json` on the same flags (what
+  the launcher pre-writes), so the launcher's file and rl-loop's never conflict.
+* `promote.done` keeps the 100 ms `score` and gains `gate2`; `stages/gate2.done` has both networks' summaries, arms,
+  settings and hours (0.135 and 0.134).
+* `cluster/league_pilot_status.py runs/smoke_league/e2e1` prints every stage: league plan with PFSP weights,
+  self-play per kind with learner W-D-L, mean k and scale, labels, train steps, both gates and the decision.
+* In the gate games the observed opponent pace was used (`opp_k_levels`: mostly `seat`, a few `team`/`own_k`
+  fallbacks early in a game).
+
+The smoke's own setup mistake, kept here because PACE runs avoid it by construction: rl-loop's league needs
+`<lineage>-it0.onnx` before iteration 1 (the fixed opponent); `wave2_iterate.sbatch`'s init writes it, a hand-made run
+root must copy it (the first attempt here failed its seg01 with "league opponent network ... not found").
+
+### 12.5 Cluster dry runs (fake Slurm)
+
+* `DRY_RUN=1 RUN=league1 bash cluster/launch_league_pilot.sh` with the stock local engines: stops with the build
+  message (build-sp1 and build-ninja list none of `--pace-k-min`, `--opponent-model`, `--think-policy`), as expected.
+* The same with `PILOT_SP_ENGINE`/`PILOT_MATCH_ENGINE` = `build-int/hivemind`: pin `c45be01` (contains `d5802ee`),
+  `WAVE2_EXTRA` = `--durative-tree false --sit-gate true --hybrid --pace --league --think-labels --think-policy
+  --think-weight 0.1 --gate2`, think check `tg_league1`, chain of 2 `full_league1` jobs with the afterok shim,
+  watchdog, `wave2.json` from wave2-json, and the incumbent's 8 gate parts (equal and free, parts 1-4, 100 games each
+  at 60000 ms, `ENGINE_REF` = the pin). With `BUILD=1`: the build `lb_league1` first, the think check
+  `--dependency=afterok:<build>`, the incumbent parts after the build. The scratch copy under `runs/` was removed.
+* `DRY_RUN=1 bash cluster/think_gain_check.sbatch`: prints build, add-head, probe, compare and UCI search steps.
+
+### 12.6 Not done or still open
+
+* Nothing on PACE: the build at the pin, the think_gain check on TensorRT (the TensorRT binding has never been
+  compiled), the pilot launch and the existing hybrid1 run's status all wait for PACE access. Before `BUILD=1 RUN=league1
+  bash cluster/launch_league_pilot.sh` there: push `talisman/wave2` (the build fetches the pin from the fork) and
+  `custom-engine`. Nothing was pushed here.
+* `wave2_parity.sh`, `wave2_game_parity.sh` and `hybrid_parity.sh` need a rerun on a quiet machine (12.3).
+* `SearchBalanceSelfPlay.StateDumpDoesNotChangeTheRunAndReanalyseReproducesIt` still fails in 4-worker builds (older
+  than v7).
+* The smoke's gate counts are far too small to say anything about strength; it shows the plumbing, both decisions and
+  the cache, not a result.
+* `afterok:<ids>,singleton` through the launcher's sbatch shim is untested on real Slurm (WP5).
+* WP2's item 6 on it2's network and reading hybrid1's self-play value targets are still PACE-side
+  (`docs/hoarding_diagnosis.md`).
+* The 8 tar failures are the Mac's bsdtar.
