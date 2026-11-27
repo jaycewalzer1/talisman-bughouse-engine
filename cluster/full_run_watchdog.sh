@@ -6,13 +6,16 @@
 # Every 30 minutes while a full_<RUN> job is left:
 #   crash    a full_<RUN> job FAILED or ran out of memory (the next job would repeat it)  -> cancel the chain
 #   gate     the last finished iteration scores under 0.40 against it13 (results.tsv vs_it13) -> cancel the chain
+#   pilot    the league pilot's engine build lb_<RUN> or think check tg_<RUN> FAILED, ran out of memory or timed out
+#            (the chain waits on them and would stay pending forever)                    -> cancel the chain
 #   workers  3 or more self-play workers (sp_<RUN>, launch_full_run.sh WORKERS=K) FAILED or ran out of memory -> cancel
 #   cap      with GPU_HOURS set, the GPU-hours of full_<RUN>, sp_<RUN>, mon_<RUN>_* and am_<RUN>_* jobs since the run
 #            began reach it -> stop: STOP_WORKERS (no new workers, monitor or anchor jobs), rl-loop.stop (the main job
 #            exits before its next stage), pending jobs cancelled; running jobs finish their segment or stage.
 #            The league pilot's jobs count too (cluster/launch_league_pilot.sh, spec v7 7.3): gate2 arms g2_<RUN>_*
 #            (cluster/gate2_match.sh, which also stops submitting on STOP_WORKERS), the think check tg_<RUN> and the
-#            engine build lb_<RUN>; their pending jobs are cancelled at the cap. A run without them counts as before.
+#            engine build lb_<RUN>; their pending jobs are cancelled at the cap, and all of them (running too) at a
+#            crash, gate, pilot or workers cancel. A run without them counts and cancels as before.
 # The training monitor (cluster/README.md, "Training monitor"; MONITOR=0 switches it off), every pass:
 #   probe    an iteration with stages/train.done and no metrics/itN.probe.json gets cluster/monitor_iteration.sbatch
 #            (-J mon_<RUN>_itN; at most MONITOR_TRIES (2) jobs an iteration, listed in metrics/monitor_jobs.tsv)
@@ -62,7 +65,13 @@ side_jobs() { squeue -h -u "$USER" -o "%i %j %T" "$@" | awk -v m="mon_${RUN}_it"
 # The league pilot's gate2 arms (one name per network, arm and part), think check and build (cancelled at the cap only).
 pilot_jobs() { squeue -h -u "$USER" -o "%i %j %T" "$@" | awk -v g="g2_${RUN}_" -v t="tg_${RUN}" -v b="lb_${RUN}" \
   'index($2, g) == 1 || $2 == t || $2 == b { print $1 }'; }
-cancel() { say "CANCEL full_$RUN and sp_$RUN : $1"; sc -u "$USER" -n "full_$RUN"; sc -u "$USER" -n "sp_$RUN"; }
+cancel() {  # the chain, its workers and the league pilot's jobs (gate2 arms, think check, build), pending or running
+  say "CANCEL full_$RUN and sp_$RUN : $1"; sc -u "$USER" -n "full_$RUN"; sc -u "$USER" -n "sp_$RUN"
+  local pilot; pilot=$(pilot_jobs | tr '\n' ' ')
+  # shellcheck disable=SC2086  # word splitting: one id each
+  [ -n "$pilot" ] && { say "CANCEL league pilot jobs: $pilot"; sc $pilot; }
+  return 0
+}
 gpu_hours() {  # GPU-hours of this run's jobs since SINCE (running jobs counted so far); monitor, anchors, pilot included
   sacct -n -X -P -u "$USER" -S "$CAP_SINCE" -o JobName,ElapsedRaw,AllocTRES \
     | awk -F'|' -v r="$RUN" '$1 == "full_" r || $1 == "sp_" r || index($1, "mon_" r "_it") == 1 || index($1, "am_" r "_it") == 1 ||
@@ -155,6 +164,11 @@ while :; do
   else
     bad=$(sacct -n -X -u "$USER" -S "$SINCE" --name "full_$RUN" -o JobID,State | grep -E 'FAILED|OUT_OF_ME' | head -1)
     if [ -n "$bad" ]; then cancel "a job failed: $bad"; break; fi
+    # The league pilot's build and think check: the chain waits on them (afterok), so after a failure it stays
+    # PENDING (DependencyNeverSatisfied) and the queue never empties; a run without them finds nothing here.
+    pbad=$(sacct -n -X -u "$USER" -S "$SINCE" --name "lb_$RUN,tg_$RUN" -o JobID,JobName,State \
+             | grep -E 'FAILED|OUT_OF_ME|TIMEOUT' | head -1)
+    if [ -n "$pbad" ]; then cancel "the pilot's build or think check failed: $pbad"; break; fi
     wbad=$(sacct -n -X -u "$USER" -S "$SINCE" --name "sp_$RUN" -o JobID,State | grep -cE 'FAILED|OUT_OF_ME' || true)
     if [ "$wbad" -ge 3 ]; then cancel "$wbad self-play workers failed"; break; fi
     tsv="$ROOT/results.tsv"

@@ -276,6 +276,51 @@ def test_without_pilot_jobs_the_cap_is_counted_as_before(tmp_path):
     assert set(states.values()) == {"PENDING"}
 
 
+def run_watchdog_cancel(tmp, failed):
+    """The watchdog with the chain pending and the pilot's jobs queued; sacct reports `failed` ("<name> <state>") for
+    the --name query that lists that job, nothing else."""
+    q = tmp / "q"
+    q.mkdir(exist_ok=True)
+    d = tmp / "sacct_bin"
+    d.mkdir(exist_ok=True)
+    name, state = failed.split()
+    script(d / "sacct", f'case " $* " in *" {name}"*|*",{name} "*) echo "999 {name} {state}" ;; esac\nexit 0\n')
+    env = {**os.environ, "FAKE_SLURM_Q": str(q), "USER": os.environ.get("USER", "me"),
+           "PATH": f"{d}:{FAKE}:{os.environ['PATH']}"}
+    dummy = tmp / "job.sbatch"
+    dummy.write_text("#!/bin/bash\n")
+    ids = {}
+    for job in ("full_league1", "g2_league1_0123abcd_equal_p1", "g2_league1_0123abcd_free_p2", "tg_league1",
+                "g2_other_0123abcd_equal_p1", "full_other"):
+        ids[job] = subprocess.run(["sbatch", "--parsable", "-J", job, str(dummy)], env=env, capture_output=True,
+                                  text=True, check=True).stdout.strip()
+    (q / f"{ids['g2_league1_0123abcd_free_p2']}.state").write_text("RUNNING\n")
+    wd = {**env, "RUN": "league1", "RUNS_DIR": str(tmp / "full"), "MONITOR": "0", "POLL_S": "0"}
+    r = subprocess.run(["bash", WATCHDOG], env=wd, capture_output=True, text=True, cwd=REPO, timeout=60)
+    states = {job: (q / f"{n}.state").read_text().strip() for job, n in ids.items()}
+    return r, (tmp / "full" / "league1" / "watchdog.log").read_text(), states
+
+
+@pytest.mark.parametrize("failed", ["lb_league1 FAILED", "tg_league1 TIMEOUT"])
+def test_a_failed_build_or_think_check_cancels_the_run(tmp_path, failed):
+    """The chain waits on lb_/tg_ (afterok) and would stay pending forever: the watchdog cancels it, and with it the
+    pilot's gate2 arms, running or pending, of this run only."""
+    r, log, states = run_watchdog_cancel(tmp_path, failed)
+    assert r.returncode == 0, r.stderr
+    assert "the pilot's build or think check failed" in log and "CANCEL league pilot jobs" in log
+    assert states == {"full_league1": "CANCELLED", "g2_league1_0123abcd_equal_p1": "CANCELLED",
+                      "g2_league1_0123abcd_free_p2": "CANCELLED", "tg_league1": "CANCELLED",
+                      "g2_other_0123abcd_equal_p1": "PENDING", "full_other": "PENDING"}
+
+
+def test_a_crash_cancel_takes_the_gate2_arms_with_it(tmp_path):
+    r, log, states = run_watchdog_cancel(tmp_path, "full_league1 FAILED")
+    assert r.returncode == 0, r.stderr
+    assert "a job failed" in log and "pilot's build" not in log
+    assert states["g2_league1_0123abcd_free_p2"] == "CANCELLED" and states["g2_league1_0123abcd_equal_p1"] == "CANCELLED"
+    assert states["g2_other_0123abcd_equal_p1"] == "PENDING" and states["full_other"] == "PENDING"
+
+
 # ----------------------------------------------------------------------------------------------- status
 def write(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
