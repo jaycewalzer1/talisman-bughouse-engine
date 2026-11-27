@@ -24,7 +24,8 @@
 # RUN_ROOT/STOP_WORKERS (the watchdog's GPU-hour cap) means merge only.
 # Settings: GATE2_GAMES (400 per arm, 200 pairs), GATE2_PARTS (4), GATE2_BASE_MS (60000), GATE2_FREE_K (160),
 # GATE2_EQUAL_K (110), GATE2_SEED_BASE (7000), GATE2_OPP_SIT (observed|own_k), GATE2_ARMS ("equal free"),
-# GATE2_TIME (05:00:00), MAX_TRIES (3), DRY_RUN (1: print the sbatch commands, submit nothing), NO_SUBMIT.
+# GATE2_TIME (05:00:00), MAX_TRIES (3), DRY_RUN (1: print the sbatch commands, submit nothing), NO_SUBMIT,
+# SBATCH_DEPENDENCY (e.g. afterok:<build job>; sbatch does not read it, so it is passed as --dependency).
 set -euo pipefail
 RUN_ROOT="${1:-}"; LABEL="${2:-}"; ONNX="${3:-}"
 [ -n "$RUN_ROOT" ] && [ -n "$LABEL" ] && [ -n "$ONNX" ] || { echo "usage: gate2_match.sh RUN_ROOT LABEL ONNX" >&2; exit 2; }
@@ -191,14 +192,15 @@ for part in parts:
 pairs = sorted((key, gs) for key, gs in by_pair.items() if len(gs) == 2)
 scores = [sum(points(g) for g in gs) / 2 for _, gs in pairs]
 n = len(scores)
-if not games or not n:
-    sys.exit(f"{adir}: no finished pairs")
-score = sum(points(g) for g in games) / len(games)
-pm = sum(scores) / n
+# Every part is done or given up here, so no pairs (all games errors, or every part GAVE_UP) is final: the arm is
+# still merged (pairs 0, a header-only pairs.tsv) so the net dir reaches done and hivemind.gate2 decides "incomplete"
+# at once, instead of rl-loop polling until --gate2-timeout-h.
+score = sum(points(g) for g in games) / len(games) if games else None
+pm = sum(scores) / n if n else None
 half = 1.959963984540054 * math.sqrt(sum((s - pm) ** 2 for s in scores) / (n - 1) / n) if n > 1 else float("nan")
 summary = {"arm": arm, "label": cfg["label"], "sha16": cfg["sha256"][:16], "games": len(games), "pairs": n,
            "score": score, "score_ci": [max(0.0, pm - half), min(1.0, pm + half)] if n > 1 else None,
-           "elo": round(elo(score, len(games)), 1), "wins": sum(points(g) == 1 for g in games),
+           "elo": round(elo(score, len(games)), 1) if games else None, "wins": sum(points(g) == 1 for g in games),
            "losses": sum(points(g) == 0 for g in games), "draws": sum(points(g) == 0.5 for g in games),
            "errors": errors, "turns_ahead": ahead / (ahead + behind) if ahead + behind else None,
            "ms_per_node": {f"part{k}": v for k, v in sorted(ms.items())}, "parts": len(parts), "gave_up": gave_up,
@@ -214,7 +216,12 @@ with open(os.path.join(adir, "pairs.tsv.tmp"), "w") as f:
 os.replace(os.path.join(adir, "pairs.tsv.tmp"), os.path.join(adir, "pairs.tsv"))
 json.dump(summary, open(os.path.join(adir, "summary.json.tmp"), "w"), indent=1)
 os.replace(os.path.join(adir, "summary.json.tmp"), os.path.join(adir, "summary.json"))
-print(f"gate2 {cfg['label']} {arm}: {summary['games']} games, {n} pairs, score {score:.3f}, Elo {summary['elo']:+.0f}")
+if not n:
+    print(f"gate2 {cfg['label']} {arm}: no finished pairs ({len(games)} games, {errors} errors, gave up {gave_up}); "
+          "merged as 0 pairs, the gate cannot promote", file=sys.stderr)
+    print(f"gate2 {cfg['label']} {arm}: 0 pairs ({len(games)} games, {errors} errors)")
+else:
+    print(f"gate2 {cfg['label']} {arm}: {summary['games']} games, {n} pairs, score {score:.3f}, Elo {summary['elo']:+.0f}")
 EOF
 }
 
@@ -255,10 +262,10 @@ while IFS=$'\t' read -r arm ckw ref; do
     vars=(NAME="${dir#"$REPO"/runs/}" ENGINE_REF="$have" OPPONENT=upstream-it13 CONTENDER_KW="$ckw" BASE_MS="$BASE_MS"
           PAIRS=$((GAMES / 2 / PARTS)) SEED=$((SEED_BASE + k)) "${W2[@]}")
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      printf 'DRY_RUN'; printf ' %q' "${vars[@]}" sbatch --parsable -J "$name" -t "${GATE2_TIME:-05:00:00}" -o "$dir/eval_%j.log" cluster/eval.sbatch; echo
+      printf 'DRY_RUN'; printf ' %q' "${vars[@]}" sbatch --parsable ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} -J "$name" -t "${GATE2_TIME:-05:00:00}" -o "$dir/eval_%j.log" cluster/eval.sbatch; echo
       id="dry$k"
     else
-      id=$(env "${vars[@]}" sbatch --parsable -J "$name" -t "${GATE2_TIME:-05:00:00}" -o "$dir/eval_%j.log" cluster/eval.sbatch)
+      id=$(env "${vars[@]}" sbatch --parsable ${SBATCH_DEPENDENCY:+--dependency=$SBATCH_DEPENDENCY} -J "$name" -t "${GATE2_TIME:-05:00:00}" -o "$dir/eval_%j.log" cluster/eval.sbatch)
     fi
     [ "${DRY_RUN:-0}" = 1 ] || printf '%s\tpart%s\t%s\t%s\t%s\n' "$arm" "$k" "$id" "$(date +%FT%T)" "$have" >> "$OUT/jobs.tsv"
     echo "gate2 $LABEL $arm part$k: submitted $id ($((GAMES / PARTS)) games at $BASE_MS ms, try $((tries + 1)))"

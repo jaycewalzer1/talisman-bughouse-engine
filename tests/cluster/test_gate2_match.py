@@ -234,3 +234,49 @@ def test_without_launch_settings_the_pin_names_the_engine(gate):
     r = gate.call(DRY_RUN=1)
     assert r.returncode == 0, r.stderr
     assert sum(line.startswith("DRY_RUN") for line in r.stdout.splitlines()) == 8
+
+
+def test_an_arm_without_pairs_is_merged_as_zero_pairs(gate):
+    """Every part done (only error rows) or given up: the arm is merged with pairs 0 and the net dir is done, so
+    rl-loop's gate decides "incomplete" at once instead of polling until --gate2-timeout-h."""
+    assert gate.call(GATE2_ARMS="equal", GATE2_GAMES=8, GATE2_PARTS=2).returncode == 0
+    for name in os.listdir(gate.q):
+        if name.endswith(".state"):
+            (gate.q / name).write_text("FAILED\n")
+    d = gate.net / "equal" / "part1"
+    (d / "summary.json").write_text(json.dumps({"games": [{"game_id": "p00001", "error": "engine crashed"}] * 4}))
+    (gate.net / "equal" / "part2" / "GAVE_UP").touch()
+    r = gate.call(GATE2_ARMS="equal", GATE2_GAMES=8, GATE2_PARTS=2)
+    assert r.returncode == 0, r.stderr
+    assert "no finished pairs" in r.stderr and "0 pairs (0 games, 4 errors)" in r.stdout
+    s = json.loads((gate.net / "equal" / "summary.json").read_text())
+    assert s["pairs"] == 0 and s["games"] == 0 and s["errors"] == 4 and s["score"] is None and s["gave_up"] == [2]
+    assert (gate.net / "equal" / "pairs.tsv").read_text().splitlines() == [
+        "part\tpair_index\topening_id\tcontender_team\tscore_pair\tgame_ids"]
+    assert (gate.net / "done").is_file()
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("w2_gate2", os.path.join(W2, "src", "hivemind", "gate2.py"))
+    gate2 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate2)
+    result = gate2.decide(gate.net, gate.net, arms=("equal",))
+    assert not result["promoted"] and result["reason"].startswith("incomplete")
+
+
+def test_sbatch_dependency_reaches_sbatch(gate):
+    """sbatch does not read SBATCH_DEPENDENCY from the environment, so the script passes it as --dependency (the
+    league launcher's incumbent arms wait for the build job this way)."""
+    r = gate.call(DRY_RUN=1, SBATCH_DEPENDENCY="afterok:4242")
+    assert r.returncode == 0, r.stderr
+    dry = [line for line in r.stdout.splitlines() if line.startswith("DRY_RUN")]
+    assert len(dry) == 8 and all("--dependency=afterok:4242" in line for line in dry)
+    r = gate.call(SBATCH_DEPENDENCY="afterok:4242")
+    assert r.returncode == 0, r.stderr
+    deps = [(gate.q / f).read_text().strip() for f in os.listdir(gate.q) if f.endswith(".dep")]
+    assert len(deps) == 8 and set(deps) == {"afterok:4242"}
+
+
+def test_without_sbatch_dependency_no_dependency_is_passed(gate):
+    r = gate.call()
+    assert r.returncode == 0, r.stderr
+    deps = [(gate.q / f).read_text().strip() for f in os.listdir(gate.q) if f.endswith(".dep")]
+    assert len(deps) == 8 and set(deps) == {""}
