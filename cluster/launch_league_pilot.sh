@@ -23,7 +23,7 @@
 #   chain    cluster/launch_full_run.sh (unchanged). Its chain jobs wait (afterok) on the build and the think check:
 #            launch_full_run.sh has no dependency setting, so an sbatch shim put first on its PATH turns the chain's
 #            --dependency=singleton into --dependency=afterok:<ids>,singleton. Its watchdog counts the pilot's jobs.
-#   GATE2=1  runs/full/<RUN>/gate2/wave2.json (python -m hivemind.gate2 wave2-json --wave2 <config flags> <EXTRA>)
+#   GATE2=1  runs/full/<RUN>/gate2/wave2.json (python -m hivemind.gate2 wave2-json --wave2 <WAVE2_EXTRA>)
 #            and the incumbent's gate arms (it13 = the lineage's first generator, same sha) through
 #            cluster/gate2_match.sh with the GATE2_* settings (spec v7 3.3 defaults), so iteration 1 waits only for
 #            the candidate's arms. A GATE2_* setting off its default is also passed to rl-loop (--gate2-*), so both
@@ -165,7 +165,8 @@ B=""
 if [ "$BUILD" = 1 ]; then
   [ -n "$missing" ] && sed 's/^/build for: /' <<<"$missing"
   if [ "$DRY_RUN" != 1 ]; then
-    busy=$(squeue -h -u "$USER" -o "%j" | grep -v watchdog | sort -u | tr '\n' ' ') || { echo "squeue failed" >&2; exit 1; }
+    names=$(squeue -h -u "$USER" -o "%j") || { echo "squeue failed" >&2; exit 1; }
+    busy=$(grep -v -e watchdog -e "^$" <<<"$names" | sort -u | tr "\n" " " || true)
     if [ -n "$busy" ] && [ "${ALLOW_BUSY:-0}" != 1 ]; then
       echo "jobs of yours still queued: $busy" >&2
       echo "The build rebuilds the engines in $W2 that they may run: wait for them, or ALLOW_BUSY=1" >&2
@@ -249,7 +250,7 @@ if [ "$GATE2" = 1 ]; then
   # gate2_match.sh reads the run's engine from launch_settings.txt (launch_full_run.sh wrote it; not in a dry run)
   [ -f "$g2root/launch_settings.txt" ] || echo "config pilot-dry-run  engine $pin" > "$g2root/launch_settings.txt"
   # shellcheck disable=SC2086  # the flags are split on purpose
-  wave2_args=(--wave2 $config_flags $EXTRA)
+  wave2_args=(--wave2 $flags)   # wave2-json ignores the non-wave-2 flags (named on stderr)
   [ -n "${BASE_MIX:-}" ] && wave2_args+=(--base-mix "$BASE_MIX")
   if (cd "$W2" && "$W2PY" -m hivemind.gate2 wave2-json "${wave2_args[@]}") > "$g2root/gate2/wave2.json.tmp"; then
     mv "$g2root/gate2/wave2.json.tmp" "$g2root/gate2/wave2.json"
