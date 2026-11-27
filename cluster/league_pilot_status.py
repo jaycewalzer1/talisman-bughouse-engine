@@ -8,7 +8,7 @@ library only; every file it reads may be missing (a run that has not got there y
 Per iteration (RUN_ROOT/runs/rl-itN/stages):
   stages     the stage markers present (generator, league_plan, seg*, val, think_labels, train, match_*, gate2, promote)
   league     stages/league_plan.done: segments by opponent kind (self, past:itM, fixed:kK), PFSP weights when recorded
-  self-play  finished segments per kind: games, learner W-D-L, mean pace k and think scale (each segment marker's
+  self-play  finished segments per kind: games, learner W-D-L, the learner's mean pace k and think scale (each segment marker's
              "league" summary, spec v7 5.3)
   labels     stages/think_labels.done: records, labelled, label rates per board, noise rate (or the failure)
   train      steps; the 100 ms gate (match_generator, the old curve) and the 100 ms score vs it13
@@ -123,11 +123,11 @@ def selfplay(stages: str, plan_segments: dict) -> dict:
         k["games"] += games
         for key, alt in (("wins", "w"), ("draws", "d"), ("losses", "l")):
             k[key] += int(first(lg, key, alt, "learner_" + key) or 0)
-        mean_k = first(lg, "mean_k", "k_mean", "k")
+        mean_k = first(lg, "mean_k_learner", "mean_k", "k_mean", "k")
         if mean_k is not None:
             k["_k"][0] += float(mean_k) * max(games, 1)
             k["_k"][1] += max(games, 1)
-        scale = first(lg, "think_scale", "mean_think_scale", "scale")
+        scale = first(lg, "mean_s", "think_scale", "mean_think_scale", "scale")
         if scale is not None:
             k["_s"][0] += float(scale) * max(games, 1)
             k["_s"][1] += max(games, 1)
