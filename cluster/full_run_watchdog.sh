@@ -9,7 +9,10 @@
 #   workers  3 or more self-play workers (sp_<RUN>, launch_full_run.sh WORKERS=K) FAILED or ran out of memory -> cancel
 #   cap      with GPU_HOURS set, the GPU-hours of full_<RUN>, sp_<RUN>, mon_<RUN>_* and am_<RUN>_* jobs since the run
 #            began reach it -> stop: STOP_WORKERS (no new workers, monitor or anchor jobs), rl-loop.stop (the main job
-#            exits before its next stage), pending jobs cancelled; running jobs finish their segment or stage
+#            exits before its next stage), pending jobs cancelled; running jobs finish their segment or stage.
+#            The league pilot's jobs count too (cluster/launch_league_pilot.sh, spec v7 7.3): gate2 arms g2_<RUN>_*
+#            (cluster/gate2_match.sh, which also stops submitting on STOP_WORKERS), the think check tg_<RUN> and the
+#            engine build lb_<RUN>; their pending jobs are cancelled at the cap. A run without them counts as before.
 # The training monitor (cluster/README.md, "Training monitor"; MONITOR=0 switches it off), every pass:
 #   probe    an iteration with stages/train.done and no metrics/itN.probe.json gets cluster/monitor_iteration.sbatch
 #            (-J mon_<RUN>_itN; at most MONITOR_TRIES (2) jobs an iteration, listed in metrics/monitor_jobs.tsv)
@@ -56,10 +59,14 @@ queued() { squeue -h -u "$USER" -n "full_$RUN,sp_$RUN" -o "%i" | head -1; }
 # Monitor and anchor jobs have one name per iteration (and part), so they are matched by prefix.
 side_jobs() { squeue -h -u "$USER" -o "%i %j %T" "$@" | awk -v m="mon_${RUN}_it" -v a="am_${RUN}_it" \
   'index($2, m) == 1 || index($2, a) == 1 { print $1 }'; }
+# The league pilot's gate2 arms (one name per network, arm and part), think check and build (cancelled at the cap only).
+pilot_jobs() { squeue -h -u "$USER" -o "%i %j %T" "$@" | awk -v g="g2_${RUN}_" -v t="tg_${RUN}" -v b="lb_${RUN}" \
+  'index($2, g) == 1 || $2 == t || $2 == b { print $1 }'; }
 cancel() { say "CANCEL full_$RUN and sp_$RUN : $1"; sc -u "$USER" -n "full_$RUN"; sc -u "$USER" -n "sp_$RUN"; }
-gpu_hours() {  # GPU-hours of this run's jobs since SINCE (running jobs counted so far); monitor and anchors included
+gpu_hours() {  # GPU-hours of this run's jobs since SINCE (running jobs counted so far); monitor, anchors, pilot included
   sacct -n -X -P -u "$USER" -S "$CAP_SINCE" -o JobName,ElapsedRaw,AllocTRES \
-    | awk -F'|' -v r="$RUN" '$1 == "full_" r || $1 == "sp_" r || index($1, "mon_" r "_it") == 1 || index($1, "am_" r "_it") == 1 {
+    | awk -F'|' -v r="$RUN" '$1 == "full_" r || $1 == "sp_" r || index($1, "mon_" r "_it") == 1 || index($1, "am_" r "_it") == 1 ||
+                             index($1, "g2_" r "_") == 1 || $1 == "tg_" r || $1 == "lb_" r {
         if (match($3, /gres\/gpu=[0-9]+/)) s += $2 * substr($3, RSTART + 9, RLENGTH - 9) } END { printf "%.1f", s / 3600 }'
 }
 stop_run() {
@@ -67,7 +74,7 @@ stop_run() {
   echo "$1" > "$ROOT/STOP_WORKERS"
   mkdir -p "$ROOT/runs" && touch "$ROOT/runs/rl-loop.stop"
   sc -u "$USER" -t PENDING -n "full_$RUN"; sc -u "$USER" -t PENDING -n "sp_$RUN"
-  pend=$(side_jobs -t PENDING | tr '\n' ' ')
+  pend=$( { side_jobs -t PENDING; pilot_jobs -t PENDING; } | tr '\n' ' ')
   # shellcheck disable=SC2086  # word splitting: one id each
   [ -n "$pend" ] && sc $pend
 }
