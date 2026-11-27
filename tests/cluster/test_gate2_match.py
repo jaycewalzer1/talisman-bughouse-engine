@@ -159,6 +159,7 @@ def test_submits_once_and_merges_finished_parts(gate):
     for name in os.listdir(gate.q):
         if name.endswith(".state"):
             (gate.q / name).write_text("COMPLETED\n")
+    (gate.net / "free" / "part1.log").write_text("a stray log next to the part folders is not a part\n")
     r = gate.call()
     assert r.returncode == 0, r.stderr
     assert "gate2 it1-cand equal: 400 games, 200 pairs, score 1.000" in r.stdout

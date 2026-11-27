@@ -156,7 +156,8 @@ def counter(g, name):  # a per-team counter the controller reports (e.g. think_h
 games, errors, by_pair, ms, gave_up = [], 0, {}, {}, []
 ahead = behind = 0
 missing = None
-parts = sorted(glob.glob(os.path.join(adir, "part*")), key=lambda d: int(d.rsplit("part", 1)[1]))
+parts = sorted((d for d in glob.glob(os.path.join(adir, "part*"))  # part<k> folders only, not a stray part1.log
+                if os.path.isdir(d) and d.rsplit("part", 1)[1].isdigit()), key=lambda d: int(d.rsplit("part", 1)[1]))
 for part in parts:
     k = int(part.rsplit("part", 1)[1])
     if os.path.exists(os.path.join(part, "GAVE_UP")) and not os.path.exists(os.path.join(part, "summary.json")):
